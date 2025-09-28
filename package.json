@@ -1,0 +1,88 @@
+{
+  "name": "@aredes.me/mcp-dadosbr",
+  "version": "0.1.0",
+  "description": "Model Context Protocol server for Brazilian public data lookup (CNPJ companies and CEP postal codes) with configurable API endpoints",
+  "type": "module",
+  "module": "lib/index.ts",
+  "main": "build/lib/adapters/cli.js",
+  "bin": {
+    "mcp-dadosbr": "build/lib/bin/mcp-dadosbr.js"
+  },
+  "files": [
+    "build/",
+    "README.md",
+    "LICENSE",
+    ".mcprc.example.json"
+  ],
+  "scripts": {
+    "dev": "tsx lib/adapters/cli.ts",
+    "build": "tsc",
+    "build:worker": "tsc -p tsconfig.worker.json",
+    "start": "node build/lib/adapters/cli.js",
+    "test": "node test/integration.js",
+    "prepublishOnly": "npm run build",
+    "postinstall": "echo 'MCP DadosBR installed! Run with: npx @aredes.me/mcp-dadosbr or mcp-dadosbr'",
+    "mcp:start": "MCP_TRANSPORT=http MCP_HTTP_PORT=3000 mcp-dadosbr",
+    "mcp:cnpj": "node scripts/mcp-client.js cnpj",
+    "mcp:cep": "node scripts/mcp-client.js cep",
+    "mcp:test": "npm run mcp:cnpj 11222333000181 && npm run mcp:cep 01310100",
+    "deploy": "wrangler deploy",
+    "deploy:staging": "wrangler deploy --env staging",
+    "cf:logs": "wrangler tail",
+    "cf:kv:create": "wrangler kv:namespace create MCP_CACHE",
+    "cf:kv:create:preview": "wrangler kv:namespace create MCP_CACHE --preview",
+    "test:sse": "node examples/sse-client.js"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "brazil",
+    "brazilian-data",
+    "cnpj",
+    "cep",
+    "dados-publicos",
+    "opencnpj",
+    "opencep",
+    "company-lookup",
+    "postal-code",
+    "address-validation",
+    "api-integration",
+    "typescript",
+    "nodejs",
+    "claude-desktop",
+    "continue-dev",
+    "stdio-transport",
+    "http-transport",
+    "configurable-apis",
+    "self-hosting"
+  ],
+  "author": "Cristiano Aredes <cristiano@aredes.me>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cristianoaredes/mcp-dadosbr.git"
+  },
+  "bugs": {
+    "url": "https://github.com/cristianoaredes/mcp-dadosbr/issues"
+  },
+  "homepage": "https://github.com/cristianoaredes/mcp-dadosbr#readme",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.18.2",
+    "express": "^5.0.1",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20250927.0",
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.0.0",
+    "tsx": "^4.0.0",
+    "typescript": "^5.0.0",
+    "wrangler": "^4.40.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

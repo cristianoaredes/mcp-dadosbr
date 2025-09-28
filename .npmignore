@@ -1,0 +1,34 @@
+# Source files (publish compiled build only)
+lib/
+tsconfig.json
+tsconfig.worker.json
+
+# Development files  
+.kiro/
+test/
+docs/
+.github/
+
+# Build artifacts
+node_modules/
+*.log
+*.tgz
+
+# Development configs
+.env
+.env.local
+.mcprc.json
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Git files
+.git/
+.gitignore

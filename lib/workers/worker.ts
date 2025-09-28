@@ -1,0 +1,490 @@
+/**
+ * Cloudflare Worker entry point for MCP DadosBR
+ * Supports both HTTP JSON-RPC and Server-Sent Events (SSE) for remote MCP
+ * Based on Cloudflare's MCP Agent documentation
+ */
+
+import { 
+  handleMCPRequest, 
+  handleMCPEndpoint,
+  handleCORS,
+  handleHealthCheck,
+  corsHeaders,
+  Env
+} from "../adapters/cloudflare.js";
+import { MCPRequest } from "../types/index.js";
+
+// Local type for ExportedHandler to avoid conflicts
+type WorkerExportedHandler<Env = unknown> = {
+  fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response>;
+};
+
+declare global {
+  interface ExecutionContext {
+    waitUntil(promise: Promise<any>): void;
+    passThroughOnException(): void;
+  }
+}
+
+/**
+ * Handle Server-Sent Events (SSE) endpoint for streaming MCP
+ * Based on Cloudflare's MCP Agent SSE documentation
+ */
+async function handleSSEEndpoint(
+  request: Request,
+  env: Env
+): Promise<Response> {
+  // Check if client accepts SSE (relaxed for MCP connectors)
+  const acceptHeader = request.headers.get("Accept");
+  if (acceptHeader && !acceptHeader.includes("text/event-stream") && !acceptHeader.includes("*/*")) {
+    return new Response("SSE endpoint requires Accept: text/event-stream", {
+      status: 400,
+      headers: corsHeaders,
+    });
+  }
+
+  // Create SSE response stream
+  const { readable, writable } = new TransformStream();
+  const writer = writable.getWriter();
+  const encoder = new TextEncoder();
+
+  // SSE headers
+  const sseHeaders = {
+    "Content-Type": "text/event-stream",
+    "Cache-Control": "no-cache",
+    Connection: "keep-alive",
+    ...corsHeaders,
+  };
+
+  // Send initial connection event
+  const sendSSEMessage = async (data: any, event?: string, id?: string) => {
+    let message = "";
+    if (id) message += `id: ${id}\n`;
+    if (event) message += `event: ${event}\n`;
+    message += `data: ${JSON.stringify(data)}\n\n`;
+
+    try {
+      await writer.write(encoder.encode(message));
+    } catch (error) {
+      console.error("SSE write error:", error);
+    }
+  };
+
+  // Handle the SSE connection
+  (async () => {
+    try {
+      // Send connection established event
+      await sendSSEMessage(
+        {
+          type: "connection",
+          status: "connected",
+          server: "mcp-dadosbr",
+          version: "1.0.0",
+          timestamp: new Date().toISOString(),
+        },
+        "connection"
+      );
+
+      // Send server capabilities
+      await sendSSEMessage(
+        {
+          jsonrpc: "2.0",
+          id: "init",
+          result: {
+            protocolVersion: "2024-11-05",
+            capabilities: {
+              tools: {},
+            },
+            serverInfo: {
+              name: "mcp-dadosbr",
+              version: "1.0.0",
+            },
+          },
+        },
+        "message"
+      );
+
+      // Keep connection alive with periodic pings
+      const pingInterval = setInterval(async () => {
+        try {
+          await sendSSEMessage(
+            {
+              type: "ping",
+              timestamp: new Date().toISOString(),
+            },
+            "ping"
+          );
+        } catch (error) {
+          clearInterval(pingInterval);
+        }
+      }, 30000); // Ping every 30 seconds
+
+      // Handle incoming messages from request body (if any)
+      if (request.method === "POST") {
+        try {
+          const body = await request.text();
+          if (body) {
+            const mcpRequest: MCPRequest = JSON.parse(body);
+
+            const config = {
+              transport: env.MCP_TRANSPORT || "http",
+              httpPort: parseInt(env.MCP_HTTP_PORT || "8787"),
+              cacheSize: parseInt(env.MCP_CACHE_SIZE || "256"),
+              cacheTTL: parseInt(env.MCP_CACHE_TTL || "60000"),
+            };
+
+            const response = await handleMCPRequest(mcpRequest, env);
+            await sendSSEMessage(
+              response,
+              "message",
+              mcpRequest.id?.toString()
+            );
+          }
+        } catch (error) {
+          await sendSSEMessage(
+            {
+              jsonrpc: "2.0",
+              id: null,
+              error: {
+                code: -32700,
+                message: "Parse error",
+                data: error instanceof Error ? error.message : "Invalid JSON",
+              },
+            },
+            "error"
+          );
+        }
+      }
+
+      // Clean up on connection close
+      setTimeout(() => {
+        clearInterval(pingInterval);
+        writer.close();
+      }, 300000); // Close after 5 minutes of inactivity
+    } catch (error) {
+      console.error("SSE handler error:", error);
+      await sendSSEMessage(
+        {
+          type: "error",
+          message: error instanceof Error ? error.message : "Unknown error",
+        },
+        "error"
+      );
+      writer.close();
+    }
+  })();
+
+  return new Response(readable, {
+    status: 200,
+    headers: sseHeaders,
+  });
+}
+
+/**
+ * Main Cloudflare Worker fetch handler
+ */
+export default {
+  async fetch(
+    request: Request,
+    env: Env,
+    _ctx: ExecutionContext
+  ): Promise<Response> {
+    const url = new URL(request.url);
+
+    // Handle CORS preflight
+    const corsResponse = handleCORS(request);
+    if (corsResponse) {
+      return corsResponse;
+    }
+
+    // Route handling
+    switch (url.pathname) {
+      case "/health":
+        return handleHealthCheck();
+
+      case "/mcp":
+        // HTTP JSON-RPC endpoint
+        if (request.method !== "POST") {
+          return new Response("Method not allowed", {
+            status: 405,
+            headers: corsHeaders,
+          });
+        }
+        return await handleMCPEndpoint(request, env);
+
+      case "/sse":
+        // Server-Sent Events endpoint for streaming MCP
+        if (request.method !== "GET" && request.method !== "POST") {
+          return new Response("Method not allowed", {
+            status: 405,
+            headers: corsHeaders,
+          });
+        }
+        return await handleSSEEndpoint(request, env);
+
+      case "/.well-known/oauth-authorization-server":
+      case "/.well-known/openid_configuration":
+        // OAuth discovery endpoint for ChatGPT MCP connector
+        const baseUrl = new URL(request.url).origin;
+        const oauthConfig = {
+          issuer: baseUrl,
+          authorization_endpoint: `${baseUrl}/oauth/authorize`,
+          token_endpoint: `${baseUrl}/oauth/token`,
+          userinfo_endpoint: `${baseUrl}/oauth/userinfo`,
+          jwks_uri: `${baseUrl}/.well-known/jwks.json`,
+          scopes_supported: ["openid", "profile", "mcp"],
+          response_types_supported: ["code"],
+          grant_types_supported: ["authorization_code"],
+          subject_types_supported: ["public"],
+          id_token_signing_alg_values_supported: ["RS256"],
+          token_endpoint_auth_methods_supported: ["client_secret_basic", "none"]
+        };
+
+        return new Response(JSON.stringify(oauthConfig, null, 2), {
+          status: 200,
+          headers: {
+            "Content-Type": "application/json",
+            ...corsHeaders,
+          },
+        });
+
+      case "/oauth/authorize":
+        // Simple OAuth authorize endpoint (for MCP connector)
+        const authUrl = new URL(request.url);
+        const clientId = authUrl.searchParams.get("client_id");
+        const redirectUri = authUrl.searchParams.get("redirect_uri");
+        const state = authUrl.searchParams.get("state");
+        
+        if (!redirectUri) {
+          return new Response("Missing redirect_uri", { status: 400, headers: corsHeaders });
+        }
+
+        // For MCP connector, we'll auto-approve and redirect with a dummy code
+        const code = "mcp_access_granted_" + Date.now();
+        const redirectUrl = new URL(redirectUri);
+        redirectUrl.searchParams.set("code", code);
+        if (state) redirectUrl.searchParams.set("state", state);
+
+        return new Response(null, {
+          status: 302,
+          headers: {
+            Location: redirectUrl.toString(),
+            ...corsHeaders,
+          },
+        });
+
+      case "/oauth/token":
+        // OAuth token endpoint
+        if (request.method !== "POST") {
+          return new Response("Method not allowed", { status: 405, headers: corsHeaders });
+        }
+
+        const tokenResponse = {
+          access_token: "mcp_token_" + Date.now(),
+          token_type: "Bearer",
+          expires_in: 3600,
+          scope: "mcp"
+        };
+
+        return new Response(JSON.stringify(tokenResponse), {
+          status: 200,
+          headers: {
+            "Content-Type": "application/json",
+            ...corsHeaders,
+          },
+        });
+
+      case "/oauth/userinfo":
+        // OAuth userinfo endpoint
+        const userInfo = {
+          sub: "mcp-dadosbr-user",
+          name: "MCP DadosBR User",
+          preferred_username: "mcp-user"
+        };
+
+        return new Response(JSON.stringify(userInfo), {
+          status: 200,
+          headers: {
+            "Content-Type": "application/json",
+            ...corsHeaders,
+          },
+        });
+
+      case "/.well-known/jwks.json":
+        // JSON Web Key Set (dummy for MCP)
+        const jwks = {
+          keys: []
+        };
+
+        return new Response(JSON.stringify(jwks), {
+          status: 200,
+          headers: {
+            "Content-Type": "application/json",
+            ...corsHeaders,
+          },
+        });
+
+      case "/openapi.json":
+        // OpenAPI schema for ChatGPT integration
+        const openApiSchema = {
+          openapi: "3.0.0",
+          info: {
+            title: "MCP DadosBR API",
+            description: "Brazilian public data lookup API for CNPJ (companies) and CEP (postal codes)",
+            version: "1.0.0"
+          },
+          servers: [{ url: new URL(request.url).origin }],
+          paths: {
+            "/cnpj/{cnpj}": {
+              get: {
+                summary: "Look up CNPJ company data",
+                parameters: [{
+                  name: "cnpj",
+                  in: "path",
+                  required: true,
+                  schema: { type: "string" },
+                  description: "CNPJ number (with or without formatting)"
+                }],
+                responses: {
+                  "200": { description: "Company information" },
+                  "404": { description: "CNPJ not found" }
+                }
+              }
+            },
+            "/cep/{cep}": {
+              get: {
+                summary: "Look up CEP postal code data",
+                parameters: [{
+                  name: "cep",
+                  in: "path",
+                  required: true,
+                  schema: { type: "string" },
+                  description: "CEP postal code (with or without formatting)"
+                }],
+                responses: {
+                  "200": { description: "Address information" },
+                  "404": { description: "CEP not found" }
+                }
+              }
+            }
+          }
+        };
+
+        return new Response(JSON.stringify(openApiSchema, null, 2), {
+          status: 200,
+          headers: {
+            "Content-Type": "application/json",
+            ...corsHeaders,
+          },
+        });
+
+      case "/":
+        // Root endpoint with basic info
+        const info = {
+          service: "MCP DadosBR",
+          description:
+            "Model Context Protocol server for Brazilian public data",
+          version: "1.0.0",
+          runtime: "cloudflare-workers",
+          free_tier: {
+            workers: "100,000 requests/day",
+            kv: "100,000 reads/day, 1,000 writes/day, 1GB storage",
+            note: "Perfect for MCP remote server hosting",
+          },
+          endpoints: {
+            mcp: "/mcp (HTTP JSON-RPC)",
+            sse: "/sse (Server-Sent Events)",
+            health: "/health",
+          },
+          tools: ["cnpj_lookup", "cep_lookup"],
+          documentation: "https://github.com/cristianoaredes/mcp-dadosbr",
+          cloudflare_docs: {
+            agents: "https://developers.cloudflare.com/agents/",
+            sse: "https://developers.cloudflare.com/agents/api-reference/http-sse/",
+            pricing:
+              "https://developers.cloudflare.com/workers/platform/pricing/",
+          },
+        };
+
+        return new Response(JSON.stringify(info, null, 2), {
+          status: 200,
+          headers: {
+            "Content-Type": "application/json",
+            ...corsHeaders,
+          },
+        });
+
+      default:
+        // Handle REST API endpoints for ChatGPT integration
+        const pathMatch = url.pathname.match(/^\/(cnpj|cep)\/(.+)$/);
+        if (pathMatch && request.method === "GET") {
+          const [, toolType, value] = pathMatch;
+          
+          try {
+            const mcpRequest: MCPRequest = {
+              jsonrpc: "2.0",
+              id: Date.now(),
+              method: "tools/call",
+              params: {
+                name: `${toolType}_lookup`,
+                arguments: { [toolType]: value }
+              }
+            };
+
+            const config = {
+              transport: env.MCP_TRANSPORT || "http",
+              httpPort: parseInt(env.MCP_HTTP_PORT || "8787"),
+              cacheSize: parseInt(env.MCP_CACHE_SIZE || "256"),
+              cacheTTL: parseInt(env.MCP_CACHE_TTL || "60000"),
+            };
+
+            const mcpResponse = await handleMCPRequest(mcpRequest, env);
+            
+            if (mcpResponse.error) {
+              return new Response(
+                JSON.stringify({
+                  error: mcpResponse.error.message,
+                  code: mcpResponse.error.code,
+                  data: mcpResponse.error.data
+                }),
+                {
+                  status: mcpResponse.error.code === -32603 && mcpResponse.error.data === "Not found" ? 404 : 400,
+                  headers: {
+                    "Content-Type": "application/json",
+                    ...corsHeaders,
+                  },
+                }
+              );
+            }
+
+            return new Response(JSON.stringify(mcpResponse.result, null, 2), {
+              status: 200,
+              headers: {
+                "Content-Type": "application/json",
+                ...corsHeaders,
+              },
+            });
+          } catch (error) {
+            return new Response(
+              JSON.stringify({
+                error: "Internal server error",
+                message: error instanceof Error ? error.message : "Unknown error"
+              }),
+              {
+                status: 500,
+                headers: {
+                  "Content-Type": "application/json",
+                  ...corsHeaders,
+                },
+              }
+            );
+          }
+        }
+
+        return new Response("Not found", {
+          status: 404,
+          headers: corsHeaders,
+        });
+    }
+  },
+} satisfies WorkerExportedHandler<Env>;

@@ -1,0 +1,17 @@
+{
+  "_comment": "MCP DadosBR Configuration Example",
+  "_defaults": {
+    "cnpj": "https://api.opencnpj.org/",
+    "cep": "https://opencep.com/v1/"
+  },
+  "apiUrls": {
+    "cnpj": "https://your-custom-cnpj-api.com/api/cnpj/",
+    "cep": "https://your-custom-cep-api.com/api/cep/"
+  },
+  "auth": {
+    "headers": {
+      "X-API-Key": "your-api-key-here",
+      "Authorization": "Bearer your-token-here"
+    }
+  }
+}
