@@ -3,6 +3,8 @@ main = "build/lib/workers/worker.js"
 compatibility_date = "2025-09-27"
 compatibility_flags = ["nodejs_compat"]
 
+# Custom domain configuration - Will be set up via Dashboard
+
 [env.production]
 name = "mcp-dadosbr-aredes-prod"
 
