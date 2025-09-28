@@ -9,19 +9,22 @@ export const configSchema = z
     cnpjBaseUrl: z
       .string()
       .url()
-      .describe("Custom CNPJ API base URL")
+      .describe("Custom CNPJ API base URL (default: https://opencnpj.org/api/v1)")
+      .default("https://opencnpj.org/api/v1")
       .optional(),
     cepBaseUrl: z
       .string()
       .url()
-      .describe("Custom CEP API base URL")
+      .describe("Custom CEP API base URL (default: https://opencep.com/v1)")
+      .default("https://opencep.com/v1")
       .optional(),
     authHeaders: z
       .record(z.string())
-      .describe("Extra headers merged into outbound API requests")
+      .describe("Extra headers for API requests (optional, for custom APIs requiring authentication)")
+      .default({})
       .optional(),
   })
-  .describe("Optional overrides for external API configuration");
+  .describe("Optional configuration - uses default Brazilian public APIs if not specified");
 
 interface CreateServerOptions {
   config?: Partial<ApiConfig>;
