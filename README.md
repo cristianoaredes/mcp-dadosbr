@@ -1,5 +1,6 @@
 # MCP DadosBR 🇧🇷
 
+[![smithery badge](https://smithery.ai/badge/@cristianoaredes/mcp-dadosbr)](https://smithery.ai/server/@cristianoaredes/mcp-dadosbr)
 [![npm version](https://badge.fury.io/js/@aredes.me%2Fmcp-dadosbr.svg)](https://www.npmjs.com/package/@aredes.me/mcp-dadosbr)
 [![npm downloads](https://img.shields.io/npm/dm/@aredes.me/mcp-dadosbr.svg)](https://www.npmjs.com/package/@aredes.me/mcp-dadosbr)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -20,6 +21,15 @@ _[English](#english) | [Português](#português)_
 
 ## ⚡ Instalação Rápida
 
+### Installing via Smithery
+
+To install mcp-dadosbr automatically via [Smithery](https://smithery.ai/server/@cristianoaredes/mcp-dadosbr):
+
+```bash
+npx -y @smithery/cli install @cristianoaredes/mcp-dadosbr --client claude
+```
+
+### Manual Installation
 ```bash
 npm install -g @aredes.me/mcp-dadosbr
 ```
@@ -105,6 +115,15 @@ npm install -g @aredes.me/mcp-dadosbr
 
 ## ⚡ Quick Install
 
+### Installing via Smithery
+
+To install mcp-dadosbr automatically via [Smithery](https://smithery.ai/server/@cristianoaredes/mcp-dadosbr):
+
+```bash
+npx -y @smithery/cli install @cristianoaredes/mcp-dadosbr
+```
+
+### Manual Installation
 ```bash
 npm install -g @aredes.me/mcp-dadosbr
 ```
