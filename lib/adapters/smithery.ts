@@ -20,8 +20,7 @@ export const configSchema = z
       .optional(),
     authHeaders: z
       .record(z.string())
-      .describe("Extra headers for API requests (optional, for custom APIs requiring authentication)")
-      .default({})
+      .describe("Extra headers for API requests (optional)")
       .optional(),
   })
   .describe("Optional configuration - uses default Brazilian public APIs if not specified");
