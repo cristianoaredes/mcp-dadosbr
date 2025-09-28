@@ -1,0 +1,112 @@
+name: Deploy to Cloudflare Workers
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - "workers/**"
+      - "wrangler.toml"
+      - "package.json"
+      - "tsconfig.worker.json"
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Deployment environment"
+        required: true
+        default: "staging"
+        type: choice
+        options:
+          - staging
+          - production
+
+jobs:
+  deploy:
+    name: Deploy to Cloudflare Workers
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20.x"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build worker
+        run: npm run build:worker
+
+      - name: Deploy to Cloudflare Workers
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          environment: ${{ github.event.inputs.environment || 'staging' }}
+          workingDirectory: "."
+          wranglerVersion: "3.95.0"
+
+      - name: Test deployment
+        if: success()
+        run: |
+          # Wait for deployment to be ready
+          sleep 30
+
+          # Test the deployment (you'll need to update the URL)
+          WORKER_URL="https://mcp-dadosbr-${{ github.event.inputs.environment || 'staging' }}.aredes.me"
+
+          # Health check
+          curl -f "$WORKER_URL/health" || exit 1
+
+          # MCP tools list test
+          curl -f -X POST "$WORKER_URL/mcp" \
+            -H "Content-Type: application/json" \
+            -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' || exit 1
+
+          echo "✅ Deployment test passed"
+
+      - name: Create deployment summary
+        if: always()
+        run: |
+          echo "## 🚀 Cloudflare Workers Deployment" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Environment:** ${{ github.event.inputs.environment || 'staging' }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Status:** ${{ job.status }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ "${{ job.status }}" == "success" ]; then
+            echo "✅ **Deployment successful!**" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Endpoints:**" >> $GITHUB_STEP_SUMMARY
+            echo "- Health: https://mcp-dadosbr-${{ github.event.inputs.environment || 'staging' }}.aredes.me/health" >> $GITHUB_STEP_SUMMARY
+            echo "- MCP: https://mcp-dadosbr-${{ github.event.inputs.environment || 'staging' }}.aredes.me/mcp" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ **Deployment failed**" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Please check the logs above for error details." >> $GITHUB_STEP_SUMMARY
+          fi
+
+  notify:
+    name: Notify deployment status
+    runs-on: ubuntu-latest
+    needs: deploy
+    if: always()
+
+    steps:
+      - name: Notify success
+        if: needs.deploy.result == 'success'
+        run: |
+          echo "🎉 Cloudflare Workers deployment successful!"
+          echo "Environment: ${{ github.event.inputs.environment || 'staging' }}"
+          echo "Commit: ${{ github.sha }}"
+
+      - name: Notify failure
+        if: needs.deploy.result == 'failure'
+        run: |
+          echo "❌ Cloudflare Workers deployment failed!"
+          echo "Environment: ${{ github.event.inputs.environment || 'staging' }}"
+          echo "Commit: ${{ github.sha }}"
+          exit 1

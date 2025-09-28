@@ -1,0 +1,49 @@
+name = "mcp-dadosbr-aredes"
+main = "build/lib/workers/worker.js"
+compatibility_date = "2025-09-27"
+compatibility_flags = ["nodejs_compat"]
+
+[env.production]
+name = "mcp-dadosbr-aredes-prod"
+
+[env.staging]
+name = "mcp-dadosbr-aredes-staging"
+
+[env.staging.vars]
+MCP_TRANSPORT = "http"
+MCP_HTTP_PORT = "8787"
+MCP_CACHE_SIZE = "256"
+MCP_CACHE_TTL = "60000"
+
+[[env.staging.kv_namespaces]]
+binding = "MCP_CACHE"
+id = "69470c08bd184c7ba625f09690c8a1e9"
+
+[env.production.vars]
+MCP_TRANSPORT = "http"
+MCP_HTTP_PORT = "8787"
+MCP_CACHE_SIZE = "256"
+MCP_CACHE_TTL = "60000"
+
+[[env.production.kv_namespaces]]
+binding = "MCP_CACHE"
+id = "9e3f2b99610b4c67abb1080b5f927efa"
+
+# Environment variables for configuration (default)
+[vars]
+MCP_TRANSPORT = "http"
+MCP_HTTP_PORT = "8787"
+MCP_CACHE_SIZE = "256"
+MCP_CACHE_TTL = "60000"
+
+# Build configuration
+[build]
+command = "npm run build:worker"
+cwd = "."
+watch_dir = "workers"
+
+# KV namespace for caching (default)
+[[kv_namespaces]]
+binding = "MCP_CACHE"
+id = "9e3f2b99610b4c67abb1080b5f927efa"
+preview_id = "69470c08bd184c7ba625f09690c8a1e9"
