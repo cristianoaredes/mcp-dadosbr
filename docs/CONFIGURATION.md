@@ -21,11 +21,17 @@ CEP API: https://opencep.com/v1/
 
 # Default Cache
 Size: 256 entries
-TTL: 60 seconds
+TTL: 60 seconds (60000ms)
 
 # Default Transport
 Mode: stdio
-Timeout: 8 seconds
+HTTP Port: 3000
+Timeout: 8 seconds (8000ms)
+
+# Performance Features
+Request Deduplication: Enabled
+Circuit Breaker: Enabled (5 failures, 30s recovery)
+LRU Cache Eviction: Enabled
 ```
 
 ## 🌍 Environment Variables
@@ -72,27 +78,33 @@ Create a `.mcprc.json` file in your project root:
 ```json
 {
   "apiUrls": {
-    "cnpj": "https://your-cnpj-api.com/",
-    "cep": "https://your-cep-api.com/v1/"
+    "cnpj": "https://your-cnpj-api.com/api/v1/",
+    "cep": "https://your-cep-api.com/api/v1/"
   },
   "auth": {
     "headers": {
       "X-API-Key": "your-secret-key",
-      "Authorization": "Bearer your-token"
+      "Authorization": "Bearer your-token",
+      "User-Agent": "MyApp/1.0"
     }
-  },
-  "cache": {
-    "size": 512,
-    "ttl": 120000
-  },
-  "timeout": 10000
+  }
 }
 ```
+
+**Note**: Cache and timeout settings are now controlled via environment variables for better deployment flexibility.
 
 ### Configuration Priority
 1. **Environment Variables** (highest priority)
 2. **Configuration File** (.mcprc.json)
 3. **Default Values** (lowest priority)
+
+### Architecture Overview
+The configuration system uses a hierarchical approach:
+- `lib/config/index.ts` - Central configuration management
+- Environment variable parsing and validation
+- URL normalization and validation
+- Authentication header merging
+- Type-safe configuration with TypeScript interfaces
 
 ## 🚀 Transport Options
 

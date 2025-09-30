@@ -1,6 +1,8 @@
 import { CnpjSchema, CepSchema } from "./validation.js";
 import { httpJson } from "./http-client.js";
 import { Cache, LookupResult, Metrics, ApiConfig } from "../types/index.js";
+import { SEARCH_TOOL, executeSearch } from "./search.js";
+import { SEQUENTIAL_THINKING_TOOL, SequentialThinkingProcessor } from "./sequential-thinking.js";
 
 let metrics: Metrics = {
   requests: 0,
@@ -87,6 +89,9 @@ export async function lookup(
   });
 }
 
+// Sequential Thinking processor instance
+const thinkingProcessor = new SequentialThinkingProcessor();
+
 // Tool definitions for MCP
 export const TOOL_DEFINITIONS = [
   {
@@ -117,6 +122,8 @@ export const TOOL_DEFINITIONS = [
       required: ["cep"],
     },
   },
+  SEARCH_TOOL,
+  SEQUENTIAL_THINKING_TOOL,
 ];
 
 // Tool execution logic
@@ -132,6 +139,12 @@ export async function executeTool(
   } else if (name === "cep_lookup") {
     const parsed = CepSchema.parse(args);
     return await lookup("cep", parsed.cep, apiConfig, cache);
+  } else if (name === "cnpj_search") {
+    const { query, max_results = 5 } = args;
+    return await executeSearch(query, max_results, cache);
+  } else if (name === "sequentialthinking") {
+    const result = thinkingProcessor.processThought(args);
+    return result;
   } else {
     throw new Error(`Unknown tool: ${name}`);
   }

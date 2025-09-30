@@ -8,7 +8,7 @@
 
 > **🤖 Model Context Protocol (MCP) server for Brazilian public data lookup - Company (CNPJ) and postal code (CEP) information directly in Claude Desktop, Cursor, Windsurf, Continue.dev, and other AI assistants**
 
-🚀 **Multi-platform deployment: NPM package, Cloudflare Workers, and Smithery support!**
+🚀 **Multi-platform deployment: NPM package, Cloudflare Workers, Smithery, and configurable API endpoints!**
 
 _[English](#english) | [Português](#português)_
 
@@ -82,13 +82,28 @@ npm install -g @aredes.me/mcp-dadosbr
 
 ### 🏢 `cnpj_lookup` - Consulta de Empresas  
 - **Entrada**: CNPJ (formatado ou não)
-- **Saída**: Nome, endereço, situação cadastral
-- **Exemplo**: `11.222.333/0001-81`
+- **Saída**: Nome, endereço, situação cadastral, CNAE, capital social
+- **Exemplo**: `00.000.000/0001-91`
+- **APIs**: OpenCNPJ (padrão) ou customizada via configuração
 
 ### 📮 `cep_lookup` - Consulta de CEP
 - **Entrada**: CEP (formatado ou não)
-- **Saída**: Logradouro, bairro, cidade, estado  
+- **Saída**: Logradouro, bairro, cidade, estado, DDD
 - **Exemplo**: `01310-100`
+- **APIs**: OpenCEP (padrão) ou customizada via configuração
+
+### 🔍 `cnpj_search` - Busca Inteligente na Web 🆕
+- **Entrada**: Query de busca com operadores avançados
+- **Saída**: Resultados do DuckDuckGo (título, URL, snippet)
+- **Exemplo**: `00000000000191 site:gov.br`
+- **Operadores**: `site:`, `intext:`, `intitle:`, `filetype:`, etc.
+- **Uso**: Encontrar processos, documentos, notícias sobre empresas
+
+### 🧠 `sequentialthinking` - Pensamento Sequencial 🆕
+- **Entrada**: Pensamento atual + progresso
+- **Saída**: Status do raciocínio estruturado
+- **Uso**: Análise complexa, planejamento iterativo, investigações
+- **Recursos**: Revisões, ramificações, ajuste dinâmico de plano
 
 ## 🌐 Deploy Web (Opcional)
 
@@ -164,13 +179,28 @@ npm install -g @aredes.me/mcp-dadosbr
 
 ### 🏢 `cnpj_lookup` - Company Lookup
 - **Input**: CNPJ (formatted or not)
-- **Output**: Name, address, registration status
+- **Output**: Name, address, registration status, CNAE, share capital
 - **Example**: `11.222.333/0001-81`
+- **APIs**: OpenCNPJ (default) or custom via configuration
 
 ### 📮 `cep_lookup` - Postal Code Lookup  
 - **Input**: CEP (formatted or not)
-- **Output**: Street, neighborhood, city, state
+- **Output**: Street, neighborhood, city, state, area code
 - **Example**: `01310-100`
+- **APIs**: OpenCEP (default) or custom via configuration
+
+### 🔍 `cnpj_search` - Intelligent Web Search 🆕
+- **Input**: Search query with advanced operators
+- **Output**: DuckDuckGo results (title, URL, snippet)
+- **Example**: `28526270000150 site:gov.br`
+- **Operators**: `site:`, `intext:`, `intitle:`, `filetype:`, etc.
+- **Usage**: Find lawsuits, documents, news about companies
+
+### 🧠 `sequentialthinking` - Sequential Thinking 🆕
+- **Input**: Current thought + progress
+- **Output**: Structured reasoning status
+- **Usage**: Complex analysis, iterative planning, investigations
+- **Features**: Revisions, branches, dynamic plan adjustment
 
 ## 🌐 Web Deploy (Optional)
 
@@ -185,10 +215,27 @@ npm install -g @aredes.me/mcp-dadosbr
 
 ## 📚 Documentation
 
-- 📖 **[Configuration Guide](docs/CONFIGURATION.md)** - Advanced setup options
-- 💡 **[Usage Examples](docs/USAGE_EXAMPLES.md)** - Real-world patterns  
-- 🔧 **[MCP Client Integration](docs/MCP_CLIENT_INTEGRATION.md)** - Detailed IDE setup
-- ☁️ **[Cloudflare Deployment](docs/CLOUDFLARE_DEPLOYMENT.md)** - Web deployment
+- 📖 **[Configuration Guide](docs/CONFIGURATION.md)** - Environment variables, custom APIs, authentication
+- 💡 **[Usage Examples](docs/USAGE_EXAMPLES.md)** - Real-world integration patterns  
+- 🔧 **[MCP Client Integration](docs/MCP_CLIENT_INTEGRATION.md)** - Detailed IDE setup guides
+- ☁️ **[Cloudflare Deployment](docs/CLOUDFLARE_DEPLOYMENT.md)** - Serverless deployment guide
+
+## 🏗️ Architecture
+
+**Modular Design**: The server is built with a clean, modular architecture:
+
+- **Core Engine**: `lib/core/` - MCP server, tools, caching, HTTP client, validation
+- **Adapters**: `lib/adapters/` - CLI (stdio), Cloudflare Workers, Smithery deployment
+- **Configuration**: `lib/config/` - Environment-based config with `.mcprc.json` support
+- **Types**: `lib/types/` - TypeScript interfaces and type definitions
+
+**Key Features**:
+- 🔄 **Request Deduplication**: Prevents concurrent identical API calls
+- ⚡ **Circuit Breaker**: Automatic failure protection with 30s recovery
+- 💾 **Smart Caching**: LRU cache with TTL and automatic cleanup
+- 📊 **Built-in Metrics**: Request tracking, cache hits, error rates
+- 🔧 **Configurable APIs**: Support for custom CNPJ/CEP endpoints
+- 🔐 **Authentication**: Flexible header-based auth for custom APIs
 
 ## 🙏 Credits
 
