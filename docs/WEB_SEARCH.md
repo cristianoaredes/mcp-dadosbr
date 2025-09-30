@@ -18,7 +18,7 @@ The `cnpj_search` tool provides intelligent web search capabilities using DuckDu
 
 ```bash
 # Exact phrase
-"CRISTIANO AREDES COSTA SOLUCOES"
+"BANCO DO BRASIL SA"
 
 # Exclude term
 CNPJ -youtube
@@ -31,7 +31,7 @@ CNPJ -youtube
 
 ```bash
 # Search within specific domain
-28526270000150 site:gov.br
+00000000000191 site:gov.br
 
 # Search within TLD
 CNPJ site:.gov.br
@@ -44,10 +44,10 @@ empresa -site:youtube.com
 
 ```bash
 # Text in page body
-intext:"28526270000150"
+intext:"00000000000191"
 
 # Text in page title
-intitle:"AC SOLUCOES"
+intitle:"BANCO DO BRASIL"
 
 # Text in URL
 inurl:cnpj
@@ -57,10 +57,10 @@ inurl:cnpj
 
 ```bash
 # PDF documents
-"28526270000150" filetype:pdf
+"00000000000191" filetype:pdf
 
 # Excel spreadsheets
-"CRISTIANO AREDES" filetype:xls
+"BANCO DO BRASIL" filetype:xls
 
 # Word documents
 empresa filetype:doc
@@ -73,13 +73,13 @@ empresa filetype:doc
 ```typescript
 // Search for company in government websites
 cnpj_search({
-  query: "28526270000150 site:gov.br",
+  query: "00000000000191 site:gov.br",
   max_results: 10
 })
 
 // Search in transparency portals
 cnpj_search({
-  query: "28526270000150 site:transparencia.gov.br"
+  query: "00000000000191 site:transparencia.gov.br"
 })
 ```
 
@@ -87,49 +87,49 @@ cnpj_search({
 
 ```bash
 # Search lawsuits
-"CRISTIANO AREDES COSTA SOLUCOES" site:jusbrasil.com.br
+"BANCO DO BRASIL SA" site:jusbrasil.com.br
 
 # Search in courts
-"28526270000150" site:*.jus.br
+"00000000000191" site:*.jus.br
 
 # Search legal documents
-"AC SOLUCOES" filetype:pdf site:jusbrasil.com.br
+"BANCO DO BRASIL" filetype:pdf site:jusbrasil.com.br
 ```
 
 ### 3. Find Documents
 
 ```bash
 # PDFs mentioning the company
-"28526270000150" filetype:pdf "SAO PAULO"
+"00000000000191" filetype:pdf "BRASILIA"
 
 # Excel files with company data
-"CRISTIANO AREDES" filetype:xls
+"BANCO DO BRASIL" filetype:xls
 
 # Any document type
-"28526270000150" (filetype:pdf OR filetype:doc OR filetype:xls)
+"00000000000191" (filetype:pdf OR filetype:doc OR filetype:xls)
 ```
 
 ### 4. Social Media & Online Presence
 
 ```bash
 # LinkedIn
-"AC SOLUCOES EM TECNOLOGIA" site:linkedin.com
+"BANCO DO BRASIL" site:linkedin.com
 
 # GitHub repositories
-cristianoaredes site:github.com
+"Banco do Brasil" site:github.com
 
 # Facebook pages
-"CRISTIANO AREDES" site:facebook.com
+"BANCO DO BRASIL" site:facebook.com
 ```
 
 ### 5. News & Articles
 
 ```bash
 # Recent news
-"28526270000150" intext:noticia
+"00000000000191" intext:noticia
 
 # Press releases
-"AC SOLUCOES" intext:"press release"
+"BANCO DO BRASIL" intext:"press release"
 ```
 
 ## 📖 API Reference
@@ -170,7 +170,7 @@ cristianoaredes site:github.com
 **Query**:
 ```typescript
 cnpj_search({
-  query: "28526270000150",
+  query: "00000000000191",
   max_results: 5
 })
 ```
@@ -182,12 +182,12 @@ cnpj_search({
   "data": {
     "results": [
       {
-        "title": "CRISTIANO AREDES COSTA SOLUCOES EM TECNOLOGIA - ReceitaWS",
-        "url": "https://www.receitaws.com.br/cnpj/28526270000150",
+        "title": "BANCO DO BRASIL SA - ReceitaWS",
+        "url": "https://www.receitaws.com.br/cnpj/00000000000191",
         "snippet": "Consulta CNPJ grátis..."
       }
     ],
-    "query": "28526270000150",
+    "query": "00000000000191",
     "count": 5,
     "source": "duckduckgo",
     "fetchedAt": "2025-09-30T02:00:00.000Z"
@@ -200,7 +200,7 @@ cnpj_search({
 **Query**:
 ```typescript
 cnpj_search({
-  query: "28526270000150 site:gov.br",
+  query: "00000000000191 site:gov.br",
   max_results: 10
 })
 ```
@@ -210,7 +210,7 @@ cnpj_search({
 **Query**:
 ```typescript
 cnpj_search({
-  query: '"CRISTIANO AREDES COSTA SOLUCOES" site:jusbrasil.com.br',
+  query: '"BANCO DO BRASIL SA" site:jusbrasil.com.br',
   max_results: 5
 })
 ```
@@ -220,7 +220,7 @@ cnpj_search({
 **Query**:
 ```typescript
 cnpj_search({
-  query: "28526270000150 filetype:pdf",
+  query: "00000000000191 filetype:pdf",
   max_results: 10
 })
 ```

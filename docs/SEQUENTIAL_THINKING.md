@@ -73,7 +73,7 @@ The `sequentialthinking` tool provides structured and iterative reasoning capabi
 ```typescript
 // Thought 1
 sequentialthinking({
-  thought: "Need to investigate CNPJ 28526270000150. First, get basic data.",
+  thought: "Need to investigate CNPJ 00000000000191. First, get basic data.",
   thoughtNumber: 1,
   totalThoughts: 5,
   nextThoughtNeeded: true
@@ -81,7 +81,7 @@ sequentialthinking({
 
 // Thought 2
 sequentialthinking({
-  thought: "Basic data obtained. Company is 'Inapta'. Need to check why.",
+  thought: "Basic data obtained. Company is BANCO DO BRASIL SA. Need to check financial status.",
   thoughtNumber: 2,
   totalThoughts: 5,
   nextThoughtNeeded: true
@@ -89,7 +89,7 @@ sequentialthinking({
 
 // Thought 3
 sequentialthinking({
-  thought: "Will search for recent activity and legal issues.",
+  thought: "Will search for recent news and regulatory filings.",
   thoughtNumber: 3,
   totalThoughts: 5,
   nextThoughtNeeded: true
@@ -97,7 +97,7 @@ sequentialthinking({
 
 // Thought 4
 sequentialthinking({
-  thought: "Found legal case. Company stopped operations in 2022.",
+  thought: "Found regulatory reports. Bank is active and well-regulated.",
   thoughtNumber: 4,
   totalThoughts: 5,
   nextThoughtNeeded: true
@@ -105,7 +105,7 @@ sequentialthinking({
 
 // Thought 5 (Final)
 sequentialthinking({
-  thought: "Investigation complete. Company is inactive since 2022 due to legal issues.",
+  thought: "Investigation complete. BANCO DO BRASIL SA is a major active financial institution.",
   thoughtNumber: 5,
   totalThoughts: 5,
   nextThoughtNeeded: false  // Done!
@@ -239,11 +239,11 @@ sequentialthinking({
 })
 
 // Step 2: Execute
-const data = await cnpj_lookup({ cnpj: "28526270000150" })
+const data = await cnpj_lookup({ cnpj: "00000000000191" })
 
 // Step 3: Analyze
 sequentialthinking({
-  thought: "Company status: Inapta. Need to investigate further.",
+  thought: "Company status: Active. BANCO DO BRASIL SA is a major financial institution.",
   thoughtNumber: 2,
   totalThoughts: 3,
   nextThoughtNeeded: true
@@ -263,7 +263,7 @@ sequentialthinking({
 
 // Step 2: Execute first search
 const govResults = await cnpj_search({
-  query: "28526270000150 site:gov.br"
+  query: "00000000000191 site:gov.br"
 })
 
 // Step 3: Evaluate results
@@ -348,17 +348,17 @@ sequentialthinking({
 ```typescript
 // Thought 1: Initialize
 sequentialthinking({
-  thought: "Starting investigation of CNPJ 28526270000150. Plan: 1) Basic data, 2) Legal status, 3) Online presence",
+  thought: "Starting investigation of CNPJ 00000000000191. Plan: 1) Basic data, 2) Financial status, 3) Regulatory compliance",
   thoughtNumber: 1,
   totalThoughts: 7,
   nextThoughtNeeded: true
 })
 
 // Thought 2: Get basic data
-const basicData = await cnpj_lookup({ cnpj: "28526270000150" })
+const basicData = await cnpj_lookup({ cnpj: "00000000000191" })
 
 sequentialthinking({
-  thought: "Retrieved basic data. Company: CRISTIANO AREDES COSTA SOLUCOES EM TECNOLOGIA. Status: Inapta since 2022-06-09. This is concerning.",
+  thought: "Retrieved basic data. Company: BANCO DO BRASIL SA. Status: Active since 1966. Major financial institution.",
   thoughtNumber: 2,
   totalThoughts: 7,
   nextThoughtNeeded: true
@@ -366,7 +366,7 @@ sequentialthinking({
 
 // Thought 3: Plan deeper search
 sequentialthinking({
-  thought: "Company is 'Inapta' (inactive). Need to find out why. Will search government records and legal cases.",
+  thought: "Bank is active. Need to check regulatory reports and recent news.",
   thoughtNumber: 3,
   totalThoughts: 7,
   nextThoughtNeeded: true
@@ -374,11 +374,11 @@ sequentialthinking({
 
 // Thought 4: Search government
 const govResults = await cnpj_search({
-  query: "28526270000150 site:gov.br"
+  query: "00000000000191 site:gov.br"
 })
 
 sequentialthinking({
-  thought: `Found ${govResults.count} government records. No red flags in official sources.`,
+  thought: `Found ${govResults.count} government records. Official regulatory filings found.`,
   thoughtNumber: 4,
   totalThoughts: 7,
   nextThoughtNeeded: true
@@ -386,11 +386,11 @@ sequentialthinking({
 
 // Thought 5: Search legal
 const legalResults = await cnpj_search({
-  query: '"CRISTIANO AREDES COSTA SOLUCOES" site:jusbrasil.com.br'
+  query: '"BANCO DO BRASIL SA" site:jusbrasil.com.br'
 })
 
 sequentialthinking({
-  thought: `Found ${legalResults.count} legal cases. No major lawsuits found.`,
+  thought: `Found ${legalResults.count} legal cases. Typical litigation for large institution.`,
   thoughtNumber: 5,
   totalThoughts: 7,
   nextThoughtNeeded: true
@@ -398,11 +398,11 @@ sequentialthinking({
 
 // Thought 6: Search online presence
 const onlineResults = await cnpj_search({
-  query: "cristianoaredes site:linkedin.com OR site:github.com"
+  query: '"BANCO DO BRASIL" site:linkedin.com OR site:gov.br'
 })
 
 sequentialthinking({
-  thought: `Found owner's GitHub and LinkedIn. Active developer. Likely voluntary closure.`,
+  thought: `Found extensive online presence. Strong institutional profile.`,
   thoughtNumber: 6,
   totalThoughts: 7,
   nextThoughtNeeded: true
@@ -410,7 +410,7 @@ sequentialthinking({
 
 // Thought 7: Conclude
 sequentialthinking({
-  thought: "CONCLUSION: Company was voluntarily closed in 2022. No legal issues. Owner remains active as developer. Status 'Inapta' is administrative, not problematic.",
+  thought: "CONCLUSION: BANCO DO BRASIL SA is a major, well-regulated, active financial institution with 120 billion in capital. State-owned bank operating since 1966.",
   thoughtNumber: 7,
   totalThoughts: 7,
   nextThoughtNeeded: false
