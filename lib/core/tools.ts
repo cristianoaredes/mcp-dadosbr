@@ -3,6 +3,7 @@ import { httpJson } from "./http-client.js";
 import { Cache, LookupResult, Metrics, ApiConfig } from "../types/index.js";
 import { SEARCH_TOOL, executeSearch } from "./search.js";
 import { SEQUENTIAL_THINKING_TOOL, SequentialThinkingProcessor } from "./sequential-thinking.js";
+import { CNPJ_INTELLIGENCE_TOOL, executeIntelligence } from "./intelligence.js";
 
 let metrics: Metrics = {
   requests: 0,
@@ -124,6 +125,7 @@ export const TOOL_DEFINITIONS = [
   },
   SEARCH_TOOL,
   SEQUENTIAL_THINKING_TOOL,
+  CNPJ_INTELLIGENCE_TOOL,
 ];
 
 // Tool execution logic
@@ -145,6 +147,8 @@ export async function executeTool(
   } else if (name === "sequentialthinking") {
     const result = thinkingProcessor.processThought(args);
     return result;
+  } else if (name === "cnpj_intelligence") {
+    return await executeIntelligence(args, apiConfig, cache);
   } else {
     throw new Error(`Unknown tool: ${name}`);
   }
