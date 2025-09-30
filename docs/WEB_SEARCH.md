@@ -252,8 +252,12 @@ Built-in rate limiting prevents DuckDuckGo from blocking requests:
 
 1. **Operator Support**: Not all operators work 100% reliably (official DuckDuckGo documentation acknowledges this)
 2. **Result Quality**: Lower quality than Google (but free)
-3. **Rate Limiting**: Aggressive rate limiting if too many requests
+3. **Rate Limiting**: **VERY AGGRESSIVE** rate limiting - may block even first request
+   - Built-in 3-second delay between requests
+   - May still get blocked temporarily
+   - **Recomendação**: Use cache agressivamente ou considere Tavily API (pago)
 4. **No Pagination**: Limited to max 20 results per query
+5. **IP Blocking**: DuckDuckGo may temporarily block your IP if it detects automated requests
 
 ### Tool Limitations
 

@@ -1,5 +1,4 @@
-// @ts-ignore - duckduckgo-search doesn't have type definitions
-import { search } from 'duckduckgo-search';
+import { search as duckSearch } from 'duck-duck-scrape';
 import { Cache, LookupResult } from '../types/index.js';
 
 export interface SearchResult {
@@ -16,7 +15,7 @@ export interface SearchResponse extends LookupResult {
 
 // Rate limiting: track last request time
 let lastRequestTime = 0;
-const MIN_REQUEST_INTERVAL = 1000; // 1 second between requests
+const MIN_REQUEST_INTERVAL = 3000; // 3 seconds between requests (DuckDuckGo is strict)
 
 async function rateLimit(): Promise<void> {
   const now = Date.now();
@@ -55,14 +54,16 @@ export async function executeSearch(
   await rateLimit();
 
   try {
-    const results = await search(query, {
-      locale: 'br-pt',
-      safeSearch: 'off',
-      maxResults: maxResults,
-      region: 'br-pt'
+    // Perform search with duck-duck-scrape
+    const searchResults = await duckSearch(query, {
+      safeSearch: 0, // 0 = off, 1 = moderate, 2 = strict
+      locale: 'br-br'
     });
 
-    const formattedResults: SearchResult[] = results.map((r: any) => ({
+    // Limit results
+    const limitedResults = searchResults.results.slice(0, maxResults);
+
+    const formattedResults: SearchResult[] = limitedResults.map((r: any) => ({
       title: r.title || '',
       url: r.url || '',
       snippet: r.description || ''
