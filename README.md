@@ -215,6 +215,7 @@ npm install -g @aredes.me/mcp-dadosbr
 ## 📚 Documentation
 
 - 📖 **[Configuration Guide](docs/CONFIGURATION.md)** - Environment variables, custom APIs, authentication
+- 🔍 **[Search Providers](docs/PROVIDERS.md)** - DuckDuckGo, Tavily, SerpAPI setup and comparison
 - 💡 **[Usage Examples](docs/USAGE_EXAMPLES.md)** - Real-world integration patterns  
 - 🔧 **[MCP Client Integration](docs/MCP_CLIENT_INTEGRATION.md)** - Detailed IDE setup guides
 - ☁️ **[Cloudflare Deployment](docs/CLOUDFLARE_DEPLOYMENT.md)** - Serverless deployment guide
