@@ -65,12 +65,18 @@ export class DuckDuckGoProvider implements SearchProvider {
 }
 
 // Tavily Provider (Paid, reliable)
+import { TavilyClient } from 'tavily';
+
 export class TavilyProvider implements SearchProvider {
   name = 'tavily';
   private apiKey?: string;
+  private client?: TavilyClient;
 
   constructor(apiKey?: string) {
     this.apiKey = apiKey || process.env.TAVILY_API_KEY;
+    if (this.apiKey) {
+      this.client = new TavilyClient({ apiKey: this.apiKey });
+    }
   }
 
   async isAvailable(): Promise<boolean> {
@@ -78,14 +84,33 @@ export class TavilyProvider implements SearchProvider {
   }
 
   async search(query: string, maxResults: number = 5): Promise<SearchResult[]> {
-    if (!this.apiKey) {
-      throw new Error('Tavily API key not configured');
+    if (!this.apiKey || !this.client) {
+      throw new Error('Tavily API key not configured. Set TAVILY_API_KEY environment variable.');
     }
 
-    // TODO: Implement Tavily API integration
-    // For now, return empty to avoid breaking
-    console.warn('[Tavily] Not yet implemented');
-    return [];
+    try {
+      const response = await this.client.search({
+        query: query,
+        max_results: maxResults,
+        search_depth: 'basic', // 'basic' or 'advanced'
+        include_answer: false,
+        include_raw_content: false,
+        include_images: false
+      });
+
+      if (!response || !response.results) {
+        return [];
+      }
+
+      return response.results.map((r: any) => ({
+        title: r.title || '',
+        url: r.url || '',
+        snippet: r.content || ''
+      }));
+    } catch (error: any) {
+      console.error(`[Tavily] Search failed: ${error.message}`);
+      throw error;
+    }
   }
 }
 
