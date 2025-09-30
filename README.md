@@ -76,7 +76,7 @@ npm install -g @aredes.me/mcp-dadosbr
 }
 ```
 
-**✅ Teste:** `Pode consultar o CNPJ 11.222.333/0001-81?`
+**✅ Teste:** `Pode consultar o CNPJ 00.000.000/0001-91?`
 
 ## 🛠️ Ferramentas Disponíveis
 
@@ -174,13 +174,12 @@ npm install -g @aredes.me/mcp-dadosbr
   ]
 }
 ```
-
 ## 🛠️ Available Tools
 
 ### 🏢 `cnpj_lookup` - Company Lookup
 - **Input**: CNPJ (formatted or not)
 - **Output**: Name, address, registration status, CNAE, share capital
-- **Example**: `11.222.333/0001-81`
+- **Example**: `00.000.000/0001-91`
 - **APIs**: OpenCNPJ (default) or custom via configuration
 
 ### 📮 `cep_lookup` - Postal Code Lookup  
@@ -192,7 +191,7 @@ npm install -g @aredes.me/mcp-dadosbr
 ### 🔍 `cnpj_search` - Intelligent Web Search 🆕
 - **Input**: Search query with advanced operators
 - **Output**: DuckDuckGo results (title, URL, snippet)
-- **Example**: `28526270000150 site:gov.br`
+- **Example**: `00000000000191 site:gov.br`
 - **Operators**: `site:`, `intext:`, `intitle:`, `filetype:`, etc.
 - **Usage**: Find lawsuits, documents, news about companies
 
@@ -209,7 +208,7 @@ npm install -g @aredes.me/mcp-dadosbr
 - 🤖 ChatGPT: `/openapi.json`
 - 📊 Health: `/health`
 
-**✅ Test:** `Can you look up CNPJ 11.222.333/0001-81?`
+**✅ Test:** `Can you look up CNPJ 00.000.000/0001-91?`
 
 ---
 
