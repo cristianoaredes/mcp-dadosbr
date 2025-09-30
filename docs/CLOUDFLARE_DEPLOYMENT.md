@@ -1,303 +1,358 @@
 # Cloudflare Workers Deployment Guide
 
-_[English](#english) | [Português](#português)_
+_Deploy MCP DadosBR as a serverless Cloudflare Worker for global edge performance_
+
+## Table of Contents
+
+- [Overview](#overview)
+- [Prerequisites](#prerequisites)
+- [Quick Deployment](#quick-deployment)
+- [Configuration](#configuration)
+- [Custom Domains](#custom-domains)
+- [KV Storage Setup](#kv-storage-setup)
+- [Environment Variables](#environment-variables)
+- [Monitoring & Logs](#monitoring--logs)
+- [Troubleshooting](#troubleshooting)
 
 ---
 
-## English
+## Overview
 
-This guide explains how to deploy MCP DadosBR to Cloudflare Workers for global, serverless execution with **ChatGPT integration support**.
+The Cloudflare Workers adapter (`lib/adapters/cloudflare.ts`) provides:
 
-### 🌟 Benefits of Cloudflare Workers
+- **Global Edge Deployment**: Deploy to 300+ locations worldwide
+- **Serverless Architecture**: No server management required
+- **KV Storage Caching**: Distributed caching with Cloudflare KV
+- **HTTP Transport**: JSON-RPC over HTTP with CORS support
+- **Health Monitoring**: Built-in health checks and metrics
+- **Custom APIs**: Support for private CNPJ/CEP endpoints
 
-- **Global Edge Network**: Deploy to 300+ locations worldwide
-- **Zero Cold Starts**: Instant response times
-- **Automatic Scaling**: Handle any traffic volume
-- **FREE Tier Available**: 100,000 requests/day at no cost
-- **Built-in Security**: DDoS protection and WAF
-- **High Availability**: 99.99% uptime SLA
-- **Server-Sent Events**: Real-time streaming support for MCP agents
+**Live Demo**: https://mcp-dadosbr.aredes.me
 
-### 💰 Free Tier Limits (Perfect for MCP Hosting)
+---
 
-- **Workers Free**: 100,000 requests/day per account
-- **KV Storage**: 100,000 reads/day, 1,000 writes/day, 1GB storage
-- **Pages**: 500 builds/month, unlimited sites and bandwidth
-- **Zero Trust**: Up to 50 users for authentication
-- **CDN & SSL**: Included with basic DDoS protection
+## Prerequisites
 
-_No credit card required for free tier! Perfect for hosting MCP remote servers._
+1. **Cloudflare Account**: Free tier is sufficient
+2. **Wrangler CLI**: Cloudflare's deployment tool
+3. **Node.js**: Version 18+ for local development
 
-### 📋 Prerequisites
-
-1. **Cloudflare Account**: [Sign up for free](https://dash.cloudflare.com/sign-up)
-2. **Node.js 18+**: Required for build process
-3. **Wrangler CLI**: Cloudflare's deployment tool
-
-### 🚀 Quick Deployment
-
-#### 1. Install Dependencies
+### Install Wrangler
 
 ```bash
-# Install project dependencies
-npm install
-
-# Install Wrangler CLI globally (if not already installed)
 npm install -g wrangler
-```
 
-#### 2. Login to Cloudflare
-
-```bash
+# Login to Cloudflare
 wrangler login
 ```
 
-#### 3. Configure Deployment
+---
 
-Edit `wrangler.toml` with your settings:
+## Quick Deployment
+
+### 1. Clone and Setup
+
+```bash
+git clone https://github.com/cristianoaredes/mcp-dadosbr.git
+cd mcp-dadosbr
+npm install
+```
+
+### 2. Configure Wrangler
+
+The `wrangler.toml` is already configured:
 
 ```toml
 name = "mcp-dadosbr"
 main = "build/lib/workers/worker.js"
-compatibility_date = "2024-01-15"
-
-[env.production]
-name = "mcp-dadosbr"
-routes = [
-  { pattern = "mcp-dadosbr.your-domain.com/*", zone_name = "your-domain.com" }
-]
+compatibility_date = "2024-09-23"
+compatibility_flags = ["nodejs_compat"]
 
 [vars]
 MCP_TRANSPORT = "http"
+MCP_HTTP_PORT = "8787"
 MCP_CACHE_SIZE = "256"
 MCP_CACHE_TTL = "60000"
-```
 
-#### 4. Deploy
-
-```bash
-# Deploy to staging
-npm run deploy:staging
-
-# Deploy to production
-npm run deploy:production
-
-# Or use the deployment script
-./scripts/deploy-cloudflare.sh production
-```
-
-### 🔧 Configuration Options
-
-#### Environment Variables
-
-Configure in `wrangler.toml` under `[vars]`:
-
-| Variable         | Default   | Description                              |
-| ---------------- | --------- | ---------------------------------------- |
-| `MCP_TRANSPORT`  | `"http"`  | Transport mode (always http for Workers) |
-| `MCP_CACHE_SIZE` | `"256"`   | Maximum cache entries                    |
-| `MCP_CACHE_TTL`  | `"60000"` | Cache TTL in milliseconds                |
-
-#### Custom Domain
-
-1. Add your domain to Cloudflare
-2. Configure routes in `wrangler.toml`:
-
-```toml
-[env.production]
-routes = [
-  { pattern = "api.yourdomain.com/mcp/*", zone_name = "yourdomain.com" }
-]
-```
-
-#### KV Storage (Optional)
-
-For persistent caching across requests:
-
-```bash
-# Create KV namespace
-npm run cf:kv:create
-
-# Add to wrangler.toml
 [[kv_namespaces]]
 binding = "MCP_CACHE"
 id = "your-kv-namespace-id"
+preview_id = "your-preview-kv-namespace-id"
 ```
 
-### 🧪 Testing Deployment
-
-#### Health Check
+### 3. Create KV Namespace
 
 ```bash
-curl https://your-worker.your-subdomain.workers.dev/health
+# Create production KV namespace
+wrangler kv:namespace create MCP_CACHE
+
+# Create preview KV namespace
+wrangler kv:namespace create MCP_CACHE --preview
+
+# Update wrangler.toml with the returned IDs
 ```
 
-Expected response:
+### 4. Build and Deploy
 
+```bash
+# Build the worker
+npm run build:worker
+
+# Deploy to Cloudflare
+npm run deploy
+
+# Deploy to staging
+npm run deploy:staging
+```
+
+---
+
+## Configuration
+
+### Environment Variables
+
+Set via `wrangler.toml` or Wrangler CLI:
+
+```toml
+[vars]
+MCP_TRANSPORT = "http"
+MCP_HTTP_PORT = "8787"
+MCP_CACHE_SIZE = "512"
+MCP_CACHE_TTL = "300000"
+CNPJ_API_BASE_URL = "https://api.opencnpj.org/"
+CEP_API_BASE_URL = "https://opencep.com/v1/"
+```
+
+### Secrets (Sensitive Data)
+
+```bash
+# Set API keys via CLI
+wrangler secret put API_KEY_VALUE
+wrangler secret put CUSTOM_API_TOKEN
+wrangler secret put CNPJ_API_KEY
+wrangler secret put CEP_API_KEY
+```
+
+### Custom API Configuration
+
+For private APIs, configure authentication:
+
+```bash
+# Set custom API URLs
+wrangler secret put CNPJ_API_BASE_URL
+wrangler secret put CEP_API_BASE_URL
+
+# Set authentication headers
+wrangler secret put API_KEY_HEADER
+wrangler secret put API_KEY_VALUE
+```
+
+---
+
+## Custom Domains
+
+### 1. Add Custom Domain
+
+```bash
+# Add your domain to Cloudflare Workers
+wrangler custom-domains add your-domain.com
+```
+
+### 2. Update DNS
+
+Point your domain to the Worker:
+
+```
+Type: CNAME
+Name: your-subdomain (or @)
+Target: your-worker.your-subdomain.workers.dev
+```
+
+### 3. SSL Configuration
+
+Cloudflare automatically provides SSL certificates for custom domains.
+
+---
+
+## KV Storage Setup
+
+### Create Namespaces
+
+```bash
+# Production namespace
+wrangler kv:namespace create MCP_CACHE
+# Returns: id = "abc123..."
+
+# Preview namespace (for testing)
+wrangler kv:namespace create MCP_CACHE --preview
+# Returns: preview_id = "def456..."
+```
+
+### Update wrangler.toml
+
+```toml
+[[kv_namespaces]]
+binding = "MCP_CACHE"
+id = "abc123..."
+preview_id = "def456..."
+```
+
+### KV Operations
+
+```bash
+# List keys
+wrangler kv:key list --binding MCP_CACHE
+
+# Get value
+wrangler kv:key get "cnpj:11222333000181" --binding MCP_CACHE
+
+# Delete key
+wrangler kv:key delete "cnpj:11222333000181" --binding MCP_CACHE
+
+# Bulk delete (clear cache)
+wrangler kv:key list --binding MCP_CACHE | jq -r '.[].name' | xargs -I {} wrangler kv:key delete {} --binding MCP_CACHE
+```
+
+---
+
+## Environment Variables
+
+### Required Variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `MCP_TRANSPORT` | Transport mode | `"http"` |
+| `MCP_HTTP_PORT` | HTTP port | `"8787"` |
+| `MCP_CACHE_SIZE` | Cache size limit | `"256"` |
+| `MCP_CACHE_TTL` | Cache TTL (ms) | `"60000"` |
+
+### Optional Variables
+
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `CNPJ_API_BASE_URL` | Custom CNPJ API | `"https://api.example.com/"` |
+| `CEP_API_BASE_URL` | Custom CEP API | `"https://cep.example.com/v1/"` |
+| `API_KEY_HEADER` | Auth header name | `"X-API-Key"` |
+| `API_KEY_VALUE` | Auth header value | `"secret123"` |
+
+### Setting Variables
+
+**Via wrangler.toml:**
+```toml
+[vars]
+CNPJ_API_BASE_URL = "https://api.example.com/"
+CEP_API_BASE_URL = "https://cep.example.com/v1/"
+```
+
+**Via CLI (for secrets):**
+```bash
+wrangler secret put API_KEY_VALUE
+```
+
+---
+
+## Monitoring & Logs
+
+### Real-time Logs
+
+```bash
+# Tail logs
+wrangler tail
+
+# Tail with filtering
+wrangler tail --format pretty --status error
+```
+
+### Analytics
+
+View analytics in Cloudflare Dashboard:
+- **Workers & Pages** → **Your Worker** → **Analytics**
+- Request volume, error rates, response times
+- Geographic distribution of requests
+
+### Health Check
+
+The worker includes a health endpoint:
+
+```bash
+curl https://your-worker.workers.dev/health
+```
+
+Response:
 ```json
 {
   "status": "healthy",
   "service": "mcp-dadosbr",
   "version": "1.0.0",
+  "timestamp": "2024-09-27T20:30:45.123Z",
   "runtime": "cloudflare-workers"
 }
 ```
 
-#### HTTP JSON-RPC Test
+### Custom Metrics
 
-```bash
-curl -X POST https://your-worker.your-subdomain.workers.dev/mcp \\
-  -H "Content-Type: application/json" \\
-  -d '{
-    "jsonrpc": "2.0",
-    "id": 1,
-    "method": "tools/call",
-    "params": {
-      "name": "cnpj_lookup",
-      "arguments": {
-        "cnpj": "11.222.333/0001-81"
-      }
-    }
-  }'
+The worker automatically logs requests:
+
+```
+[2024-09-27T20:30:45.123Z] [cnpj_lookup] [11222333000181] [success] [245ms] [http] [https://api.opencnpj.org/]
 ```
 
-#### Server-Sent Events (SSE) Test
+---
 
-```bash
-# Test SSE endpoint
-curl -N -H "Accept: text/event-stream" \\
-  https://your-worker.your-subdomain.workers.dev/sse
+## API Endpoints
 
-# Expected SSE stream:
-# event: connection
-# data: {"type":"connection","status":"connected","server":"mcp-dadosbr"}
-#
-# event: message
-# data: {"jsonrpc":"2.0","id":"init","result":{"protocolVersion":"2024-11-05"}}
+Once deployed, your worker provides these endpoints:
+
+### MCP JSON-RPC
+```
+POST /mcp
+Content-Type: application/json
+
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "tools/call",
+  "params": {
+    "name": "cnpj_lookup",
+    "arguments": {"cnpj": "11.222.333/0001-81"}
+  }
+}
 ```
 
-### 🔄 MCP Transport Options
-
-#### 1. HTTP JSON-RPC (Standard)
-
-- **Endpoint**: `/mcp`
-- **Method**: POST
-- **Content-Type**: application/json
-- **Use Case**: Traditional request/response MCP clients
-
-#### 2. Server-Sent Events (Streaming)
-
-- **Endpoint**: `/sse`
-- **Method**: GET/POST
-- **Accept**: text/event-stream
-- **Use Case**: Real-time streaming MCP agents
-- **Benefits**: Lower latency, persistent connection, real-time updates
-
-#### 3. REST API (ChatGPT Integration)
-
-- **Endpoints**: `/cnpj/{cnpj}`, `/cep/{cep}`
-- **Method**: GET
-- **Content-Type**: application/json
-- **Use Case**: Direct HTTP access, ChatGPT actions
-- **OpenAPI Schema**: `/openapi.json`
-
-#### 4. OAuth Endpoints (MCP Connectors)
-
-- **Discovery**: `/.well-known/oauth-authorization-server`
-- **Authorization**: `/oauth/authorize`
-- **Token**: `/oauth/token`
-- **User Info**: `/oauth/userinfo`
-- **JWKS**: `/.well-known/jwks.json`
-
-````
-
-### 📊 Monitoring and Logs
-
-#### View Logs
-
-```bash
-# Real-time logs
-npm run cf:tail
-
-# Or with wrangler directly
-wrangler tail
-````
-
-#### Analytics
-
-Access analytics in Cloudflare Dashboard:
-
-1. Go to Workers & Pages
-2. Select your worker
-3. View metrics, requests, and errors
-
-### 🔒 Security Configuration
-
-#### CORS Settings
-
-CORS is automatically configured for:
-
-- Origins: `*` (configure as needed)
-- Methods: `GET, POST, OPTIONS`
-- Headers: `Content-Type, Accept`
-
-#### Rate Limiting
-
-Configure in Cloudflare Dashboard:
-
-1. Go to Security > WAF
-2. Create rate limiting rules
-3. Set limits per IP/endpoint
-
-### 🚀 Advanced Configuration
-
-#### Multiple Environments
-
-```toml
-[env.staging]
-name = "mcp-dadosbr-staging"
-vars = { MCP_CACHE_SIZE = "128" }
-
-[env.production]
-name = "mcp-dadosbr"
-vars = { MCP_CACHE_SIZE = "512" }
-routes = [
-  { pattern = "api.yourdomain.com/*", zone_name = "yourdomain.com" }
-]
+### Health Check
+```
+GET /health
 ```
 
-#### Custom Build Process
+### CORS Support
+All endpoints include CORS headers for browser compatibility.
 
+---
+
+## Troubleshooting
+
+### Common Issues
+
+**1. KV Namespace Not Found**
 ```bash
-# Build for Workers
+# Verify namespace exists
+wrangler kv:namespace list
+
+# Recreate if missing
+wrangler kv:namespace create MCP_CACHE
+```
+
+**2. Build Errors**
+```bash
+# Clean build
+rm -rf build/
 npm run build:worker
 
-# Deploy specific environment
-wrangler deploy --env production
+# Check TypeScript config
+cat tsconfig.worker.json
 ```
 
-### 🔧 Troubleshooting
-
-#### Common Issues
-
-**Build Errors**
-
-```bash
-# Clear dist and rebuild
-rm -rf dist
-npm run build:worker
-```
-
-**Authentication Issues**
-
-```bash
-# Re-login to Cloudflare
-wrangler logout
-wrangler login
-```
-
-**Deployment Failures**
-
+**3. Deployment Failures**
 ```bash
 # Check wrangler.toml syntax
 wrangler validate
@@ -306,230 +361,137 @@ wrangler validate
 wrangler deploy --verbose
 ```
 
-#### Performance Optimization
+**4. Runtime Errors**
+```bash
+# Check logs
+wrangler tail --format pretty
 
-1. **Enable KV Caching**: Reduces API calls
-2. **Configure Cache TTL**: Balance freshness vs performance
-3. **Use Custom Domain**: Better performance than workers.dev
-4. **Monitor Metrics**: Track response times and error rates
+# Test locally
+wrangler dev
+```
 
-### 📚 Integration with MCP Clients
+### Performance Optimization
 
-#### Claude Desktop (Remote MCP Bridge)
+**1. Cache Configuration**
+```toml
+[vars]
+MCP_CACHE_SIZE = "512"      # Increase cache size
+MCP_CACHE_TTL = "300000"    # 5-minute cache TTL
+```
 
-Use the included bridge for remote MCP connections:
+**2. KV Optimization**
+- Use consistent key naming
+- Implement cache warming for popular queries
+- Monitor KV usage in dashboard
 
-```json
-{
-  "mcpServers": {
-    "dadosbr": {
-      "command": "npx",
-      "args": ["@aredes.me/mcp-dadosbr"]
-    }
-  }
+**3. Request Optimization**
+- Enable request deduplication (built-in)
+- Use circuit breaker for API protection (built-in)
+- Implement proper error handling
+
+### Debugging
+
+**Local Development:**
+```bash
+# Start local dev server
+wrangler dev
+
+# Test endpoints
+curl http://localhost:8787/health
+curl -X POST http://localhost:8787/mcp -H "Content-Type: application/json" -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
+```
+
+**Production Debugging:**
+```bash
+# View recent logs
+wrangler tail --format pretty
+
+# Check worker status
+wrangler status
+```
+
+---
+
+## Advanced Configuration
+
+### Multiple Environments
+
+Create separate workers for different environments:
+
+```toml
+# wrangler.toml
+name = "mcp-dadosbr"
+
+[env.staging]
+name = "mcp-dadosbr-staging"
+vars = { CNPJ_API_BASE_URL = "https://staging-api.example.com/" }
+
+[env.production]
+name = "mcp-dadosbr-prod"
+vars = { CNPJ_API_BASE_URL = "https://api.example.com/" }
+```
+
+Deploy to specific environments:
+```bash
+wrangler deploy --env staging
+wrangler deploy --env production
+```
+
+### Custom Routes
+
+Add custom routing in `lib/workers/worker.ts`:
+
+```typescript
+// Add custom endpoints
+if (url.pathname === '/api/cnpj') {
+  // Direct CNPJ API endpoint
+}
+
+if (url.pathname === '/api/cep') {
+  // Direct CEP API endpoint
 }
 ```
 
-#### ChatGPT Integration
+### Rate Limiting
 
-1. **Deploy to Cloudflare Workers**
-2. **Add to ChatGPT** as custom GPT action
-3. **Import OpenAPI schema** from `/openapi.json`
-4. **Test with REST endpoints**:
-   - `/cnpj/11222333000181`
-   - `/cep/01310100`
+Implement rate limiting with Cloudflare KV:
 
-#### HTTP Client
+```typescript
+// Check rate limit
+const rateLimitKey = `rate_limit:${clientIP}`;
+const requests = await env.MCP_CACHE.get(rateLimitKey);
 
-```javascript
-const response = await fetch(
-  "https://your-worker.your-subdomain.workers.dev/mcp",
-  {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      jsonrpc: "2.0",
-      id: 1,
-      method: "tools/call",
-      params: {
-        name: "cnpj_lookup",
-        arguments: { cnpj: "11.222.333/0001-81" },
-      },
-    }),
-  }
-);
+if (requests && parseInt(requests) > 100) {
+  return new Response('Rate limit exceeded', { status: 429 });
+}
 ```
 
 ---
 
-## Português
+## Cost Optimization
 
-Este guia explica como fazer deploy do MCP DadosBR no Cloudflare Workers para execução serverless global.
+### Free Tier Limits
+- **100,000 requests/day**
+- **10ms CPU time per request**
+- **1GB KV storage**
+- **1,000 KV operations/day**
 
-### 🌟 Benefícios do Cloudflare Workers
+### Optimization Strategies
+1. **Efficient Caching**: Reduce API calls with longer TTL
+2. **Request Deduplication**: Built-in feature reduces redundant calls
+3. **Circuit Breaker**: Prevents cascading failures and costs
+4. **KV Optimization**: Use efficient key structures
 
-- **Rede Global Edge**: Deploy em 300+ localizações mundialmente
-- **Zero Cold Starts**: Tempos de resposta instantâneos
-- **Escalonamento Automático**: Lida com qualquer volume de tráfego
-- **Custo Efetivo**: Pague apenas pelas requisições
-- **Segurança Integrada**: Proteção DDoS e WAF
-- **Alta Disponibilidade**: SLA de 99.99% uptime
-
-### 📋 Pré-requisitos
-
-1. **Conta Cloudflare**: [Cadastre-se gratuitamente](https://dash.cloudflare.com/sign-up)
-2. **Node.js 18+**: Necessário para o processo de build
-3. **Wrangler CLI**: Ferramenta de deploy da Cloudflare
-
-### 🚀 Deploy Rápido
-
-#### 1. Instalar Dependências
-
-```bash
-# Instalar dependências do projeto
-npm install
-
-# Instalar Wrangler CLI globalmente (se ainda não instalado)
-npm install -g wrangler
-```
-
-#### 2. Login na Cloudflare
-
-```bash
-wrangler login
-```
-
-#### 3. Configurar Deploy
-
-Edite `wrangler.toml` com suas configurações:
-
-```toml
-name = "mcp-dadosbr"
-main = "build/lib/workers/worker.js"
-compatibility_date = "2024-01-15"
-
-[env.production]
-name = "mcp-dadosbr"
-routes = [
-  { pattern = "mcp-dadosbr.seudominio.com/*", zone_name = "seudominio.com" }
-]
-
-[vars]
-MCP_TRANSPORT = "http"
-MCP_CACHE_SIZE = "256"
-MCP_CACHE_TTL = "60000"
-```
-
-#### 4. Fazer Deploy
-
-```bash
-# Deploy para staging
-npm run deploy:staging
-
-# Deploy para produção
-npm run deploy:production
-
-# Ou usar o script de deploy
-./scripts/deploy-cloudflare.sh production
-```
-
-### 🔧 Opções de Configuração
-
-#### Variáveis de Ambiente
-
-Configure em `wrangler.toml` sob `[vars]`:
-
-| Variável         | Padrão    | Descrição                                     |
-| ---------------- | --------- | --------------------------------------------- |
-| `MCP_TRANSPORT`  | `"http"`  | Modo de transporte (sempre http para Workers) |
-| `MCP_CACHE_SIZE` | `"256"`   | Máximo de entradas no cache                   |
-| `MCP_CACHE_TTL`  | `"60000"` | TTL do cache em milissegundos                 |
-
-#### Domínio Personalizado
-
-1. Adicione seu domínio à Cloudflare
-2. Configure rotas em `wrangler.toml`:
-
-```toml
-[env.production]
-routes = [
-  { pattern = "api.seudominio.com/mcp/*", zone_name = "seudominio.com" }
-]
-```
-
-### 🧪 Testando o Deploy
-
-#### Health Check
-
-```bash
-curl https://seu-worker.seu-subdominio.workers.dev/health
-```
-
-#### Teste de Ferramenta MCP
-
-```bash
-curl -X POST https://seu-worker.seu-subdominio.workers.dev/mcp \\
-  -H "Content-Type: application/json" \\
-  -d '{
-    "jsonrpc": "2.0",
-    "id": 1,
-    "method": "tools/call",
-    "params": {
-      "name": "cnpj_lookup",
-      "arguments": {
-        "cnpj": "11.222.333/0001-81"
-      }
-    }
-  }'
-```
-
-### 📊 Monitoramento e Logs
-
-#### Visualizar Logs
-
-```bash
-# Logs em tempo real
-npm run cf:tail
-
-# Ou com wrangler diretamente
-wrangler tail
-```
-
-### 🔒 Configuração de Segurança
-
-#### Configurações CORS
-
-CORS é automaticamente configurado para:
-
-- Origens: `*` (configure conforme necessário)
-- Métodos: `GET, POST, OPTIONS`
-- Headers: `Content-Type, Accept`
-
-### 🚀 Configuração Avançada
-
-#### Múltiplos Ambientes
-
-```toml
-[env.staging]
-name = "mcp-dadosbr-staging"
-vars = { MCP_CACHE_SIZE = "128" }
-
-[env.production]
-name = "mcp-dadosbr"
-vars = { MCP_CACHE_SIZE = "512" }
-routes = [
-  { pattern = "api.seudominio.com/*", zone_name = "seudominio.com" }
-]
-```
+### Monitoring Costs
+- Check Cloudflare Dashboard for usage metrics
+- Set up billing alerts for overages
+- Monitor KV operations and storage usage
 
 ---
 
-## 🔗 Links Úteis
+## Support
 
-- [Cloudflare Workers Documentation](https://developers.cloudflare.com/workers/)
-- [Wrangler CLI Reference](https://developers.cloudflare.com/workers/wrangler/)
-- [MCP DadosBR Repository](https://github.com/cristianoaredes/mcp-dadosbr)
-- [Project Structure](./PROJECT_STRUCTURE.md)
-- [Git Workflow](./GIT_WORKFLOW.md)
+- **Cloudflare Docs**: [Workers Documentation](https://developers.cloudflare.com/workers/)
+- **Wrangler CLI**: [Wrangler Documentation](https://developers.cloudflare.com/workers/wrangler/)
+- **GitHub Issues**: [Report deployment issues](https://github.com/cristianoaredes/mcp-dadosbr/issues)
+- **Live Demo**: [Test the deployment](https://mcp-dadosbr.aredes.me/health)
