@@ -1,5 +1,5 @@
 import { Cache, LookupResult } from '../types/index.js';
-import { getAvailableProvider, SearchResult, searchWithFallback } from './search-providers.js';
+import { getAvailableProvider, SearchResult } from './search-providers.js';
 
 export interface SearchResponse extends LookupResult {
   results?: SearchResult[];
@@ -30,8 +30,8 @@ export async function executeSearch(
   }
 
   try {
-    // Execute search with automatic fallback between providers
-    const searchResult = await searchWithFallback(query, maxResults);
+    const provider = await getAvailableProvider();
+    const searchResult = await provider.search(query, maxResults);
 
     if (!searchResult.ok) {
       // All providers failed, return error
@@ -46,8 +46,7 @@ export async function executeSearch(
       };
     }
 
-    // Determine which provider was used (we'll enhance this later)
-    const providerName = 'auto-fallback';
+    const providerName = provider.name;
 
     const responseData = {
       results: searchResult.value,
