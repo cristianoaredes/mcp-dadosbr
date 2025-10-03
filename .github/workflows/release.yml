@@ -177,25 +177,31 @@ jobs:
 
       - name: Create GitHub Release
         id: create_release
-        uses: actions/create-release@v1
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tag_name: ${{ github.ref_name }}
-          release_name: Release ${{ needs.validate.outputs.version }}
-          body_path: RELEASE_NOTES.md
-          draft: false
-          prerelease: ${{ needs.validate.outputs.is_prerelease == 'true' }}
-
-      - name: Upload CHANGELOG.md as release asset
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./CHANGELOG.md
-          asset_name: CHANGELOG.md
-          asset_content_type: text/markdown
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Check if release already exists and delete if needed
+          if gh release view ${{ github.ref_name }} > /dev/null 2>&1; then
+            echo "⚠️  Release ${{ github.ref_name }} already exists, deleting..."
+            gh release delete ${{ github.ref_name }} --yes
+          fi
+          
+          # Create the release with gh CLI
+          PRERELEASE_FLAG=""
+          if [[ "${{ needs.validate.outputs.is_prerelease }}" == "true" ]]; then
+            PRERELEASE_FLAG="--prerelease"
+          fi
+          
+          gh release create ${{ github.ref_name }} \
+            --title "Release ${{ needs.validate.outputs.version }}" \
+            --notes-file RELEASE_NOTES.md \
+            $PRERELEASE_FLAG \
+            CHANGELOG.md
+          
+          echo "✅ GitHub Release created successfully"
+          
+          # Set upload_url output for compatibility (even though we don't use it anymore)
+          echo "upload_url=https://uploads.github.com/repos/${{ github.repository }}/releases/$(gh release view ${{ github.ref_name }} --json id -q .id)/assets" >> $GITHUB_OUTPUT
 
   # Publish to npm registry
   publish:
