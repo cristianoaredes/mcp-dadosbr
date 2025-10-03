@@ -1,0 +1,366 @@
+name: Release & Publish
+
+# Trigger on version tags (v1.0.0, v2.1.3, etc.)
+on:
+  push:
+    tags:
+      - 'v*'
+
+# Permissions for creating releases and publishing
+permissions:
+  contents: write
+  packages: write
+  id-token: write
+
+jobs:
+  # Validate the release tag format
+  validate:
+    name: Validate Release Tag
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.get_version.outputs.version }}
+      is_prerelease: ${{ steps.check_prerelease.outputs.is_prerelease }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history for changelog generation
+
+      - name: Extract version from tag
+        id: get_version
+        run: |
+          # Remove 'v' prefix from tag (v1.0.0 -> 1.0.0)
+          VERSION=${GITHUB_REF#refs/tags/v}
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "📦 Release version: $VERSION"
+
+      - name: Check if prerelease
+        id: check_prerelease
+        run: |
+          VERSION=${{ steps.get_version.outputs.version }}
+          if [[ "$VERSION" =~ (alpha|beta|rc|preview) ]]; then
+            echo "is_prerelease=true" >> $GITHUB_OUTPUT
+            echo "🚧 This is a pre-release version"
+          else
+            echo "is_prerelease=false" >> $GITHUB_OUTPUT
+            echo "✅ This is a stable release"
+          fi
+
+      - name: Validate version in package.json
+        run: |
+          PACKAGE_VERSION=$(node -p "require('./package.json').version")
+          TAG_VERSION=${{ steps.get_version.outputs.version }}
+          
+          if [ "$PACKAGE_VERSION" != "$TAG_VERSION" ]; then
+            echo "❌ Version mismatch!"
+            echo "   package.json: $PACKAGE_VERSION"
+            echo "   Git tag:      $TAG_VERSION"
+            echo ""
+            echo "Please update package.json version to match the tag."
+            exit 1
+          fi
+          
+          echo "✅ Version validation passed: $PACKAGE_VERSION"
+
+  # Run full test suite before release
+  test:
+    name: Test Suite
+    runs-on: ubuntu-latest
+    needs: validate
+    
+    strategy:
+      matrix:
+        node-version: [18.x, 20.x]
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run unit tests
+        run: npm test
+
+      - name: Build Node.js target
+        run: npm run build
+
+      - name: Build Cloudflare Workers target
+        run: npm run build:worker
+
+      - name: Run integration tests
+        run: npm run test:integration
+
+  # Generate changelog and create GitHub Release
+  release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    needs: [validate, test]
+    outputs:
+      upload_url: ${{ steps.create_release.outputs.upload_url }}
+      changelog: ${{ steps.changelog.outputs.changelog }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history for changelog
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          # Install conventional-changelog-cli
+          npm install -g conventional-changelog-cli
+          
+          # Generate changelog for this version
+          CHANGELOG=$(conventional-changelog -p angular -r 2)
+          
+          # Save to file for release notes
+          echo "$CHANGELOG" > RELEASE_NOTES.md
+          
+          # Set output (escape for GitHub Actions)
+          echo "changelog<<EOF" >> $GITHUB_OUTPUT
+          echo "$CHANGELOG" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+          
+          echo "📝 Changelog generated successfully"
+
+      - name: Update CHANGELOG.md
+        run: |
+          # Install conventional-changelog-cli if not already installed
+          npm install -g conventional-changelog-cli
+          
+          # Update CHANGELOG.md with new version
+          conventional-changelog -p angular -i CHANGELOG.md -s
+          
+          echo "✅ CHANGELOG.md updated"
+
+      - name: Update smithery.yaml version
+        run: |
+          VERSION=${{ needs.validate.outputs.version }}
+          
+          # Update version in smithery.yaml
+          sed -i.bak "s/^version: .*/version: \"$VERSION\"/" smithery.yaml
+          rm -f smithery.yaml.bak
+          
+          echo "✅ smithery.yaml updated to version $VERSION"
+
+      - name: Commit updated files
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          
+          # Check if there are changes to commit
+          if git diff --quiet CHANGELOG.md smithery.yaml; then
+            echo "ℹ️  No changes to commit"
+          else
+            git add CHANGELOG.md smithery.yaml
+            git commit -m "docs: update CHANGELOG.md and smithery.yaml for v${{ needs.validate.outputs.version }}"
+            git push origin HEAD:master || echo "⚠️  Could not push updates (this is non-critical)"
+          fi
+
+      - name: Create GitHub Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref_name }}
+          release_name: Release ${{ needs.validate.outputs.version }}
+          body_path: RELEASE_NOTES.md
+          draft: false
+          prerelease: ${{ needs.validate.outputs.is_prerelease == 'true' }}
+
+      - name: Upload CHANGELOG.md as release asset
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./CHANGELOG.md
+          asset_name: CHANGELOG.md
+          asset_content_type: text/markdown
+
+  # Publish to npm registry
+  publish:
+    name: Publish to NPM
+    runs-on: ubuntu-latest
+    needs: [validate, test, release]
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+          registry-url: 'https://registry.npmjs.org'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build project
+        run: npm run build
+
+      - name: Publish to NPM
+        run: |
+          if [[ "${{ needs.validate.outputs.is_prerelease }}" == "true" ]]; then
+            echo "📦 Publishing pre-release version with --tag next"
+            npm publish --access public --tag next
+          else
+            echo "📦 Publishing stable version"
+            npm publish --access public
+          fi
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Verify publication
+        run: |
+          VERSION=${{ needs.validate.outputs.version }}
+          PACKAGE_NAME="@aredes.me/mcp-dadosbr"
+          
+          echo "⏳ Waiting for NPM registry to update..."
+          sleep 10
+          
+          # Try to fetch the package info
+          if npm view $PACKAGE_NAME@$VERSION version > /dev/null 2>&1; then
+            echo "✅ Package successfully published to NPM"
+            echo "📦 View at: https://www.npmjs.com/package/$PACKAGE_NAME/v/$VERSION"
+          else
+            echo "⚠️  Package may still be processing on NPM"
+            echo "   Check manually: https://www.npmjs.com/package/$PACKAGE_NAME"
+          fi
+
+  # Deploy to Cloudflare Workers (production)
+  deploy-cloudflare:
+    name: Deploy to Cloudflare Workers
+    runs-on: ubuntu-latest
+    needs: [validate, test, release, publish]
+    if: needs.validate.outputs.is_prerelease == 'false'  # Only stable releases
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build worker
+        run: npm run build:worker
+
+      - name: Deploy to Cloudflare Workers
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          environment: 'production'
+          workingDirectory: '.'
+
+      - name: Verify deployment
+        run: |
+          echo "⏳ Waiting for deployment to propagate..."
+          sleep 30
+          
+          WORKER_URL="https://mcp-dadosbr.aredes.me"
+          
+          # Health check
+          if curl -f "$WORKER_URL/health" > /dev/null 2>&1; then
+            echo "✅ Cloudflare Workers deployment verified"
+            echo "🌐 Live at: $WORKER_URL"
+          else
+            echo "⚠️  Deployment verification failed - manual check required"
+          fi
+
+  # Create release summary
+  summary:
+    name: Release Summary
+    runs-on: ubuntu-latest
+    needs: [validate, test, release, publish, deploy-cloudflare]
+    if: always()
+    
+    steps:
+      - name: Generate summary
+        run: |
+          echo "## 🚀 Release v${{ needs.validate.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Validation
+          if [[ "${{ needs.validate.result }}" == "success" ]]; then
+            echo "✅ **Validation**: Passed" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ **Validation**: Failed" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          # Tests
+          if [[ "${{ needs.test.result }}" == "success" ]]; then
+            echo "✅ **Tests**: All passed" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ **Tests**: Failed" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          # GitHub Release
+          if [[ "${{ needs.release.result }}" == "success" ]]; then
+            echo "✅ **GitHub Release**: Created" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ **GitHub Release**: Failed" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          # NPM Publication
+          if [[ "${{ needs.publish.result }}" == "success" ]]; then
+            echo "✅ **NPM**: Published" >> $GITHUB_STEP_SUMMARY
+            echo "   - Package: [@aredes.me/mcp-dadosbr](https://www.npmjs.com/package/@aredes.me/mcp-dadosbr)" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ **NPM**: Failed" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          # Cloudflare Deployment
+          if [[ "${{ needs.deploy-cloudflare.result }}" == "success" ]]; then
+            echo "✅ **Cloudflare Workers**: Deployed" >> $GITHUB_STEP_SUMMARY
+            echo "   - Live: [mcp-dadosbr.aredes.me](https://mcp-dadosbr.aredes.me)" >> $GITHUB_STEP_SUMMARY
+          elif [[ "${{ needs.deploy-cloudflare.result }}" == "skipped" ]]; then
+            echo "⏭️  **Cloudflare Workers**: Skipped (pre-release)" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ **Cloudflare Workers**: Failed" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "---" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Next Steps:**" >> $GITHUB_STEP_SUMMARY
+          echo "1. Verify the package on [NPM](https://www.npmjs.com/package/@aredes.me/mcp-dadosbr)" >> $GITHUB_STEP_SUMMARY
+          echo "2. Test installation: \`npm install -g @aredes.me/mcp-dadosbr@${{ needs.validate.outputs.version }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "3. Check deployment: [https://mcp-dadosbr.aredes.me](https://mcp-dadosbr.aredes.me)" >> $GITHUB_STEP_SUMMARY
+          echo "4. Update documentation if needed" >> $GITHUB_STEP_SUMMARY
+          
+      - name: Notify on failure
+        if: |
+          needs.validate.result == 'failure' ||
+          needs.test.result == 'failure' ||
+          needs.release.result == 'failure' ||
+          needs.publish.result == 'failure'
+        run: |
+          echo "❌ Release failed! Check the logs above for details."
+          exit 1
