@@ -1,5 +1,6 @@
 # MCP DadosBR 🇧🇷
 
+[![smithery badge](https://smithery.ai/badge/@cristianoaredes/mcp-dadosbr)](https://smithery.ai/server/@cristianoaredes/mcp-dadosbr)
 [![npm version](https://badge.fury.io/js/@aredes.me%2Fmcp-dadosbr.svg)](https://www.npmjs.com/package/@aredes.me/mcp-dadosbr)
 [![TypeScript](https://img.shields.io/badge/TypeScript-007ACC?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Cloudflare Workers](https://img.shields.io/badge/Cloudflare-Workers-F38020?logo=cloudflare&logoColor=white)](https://mcp-dadosbr.aredes.me/)
@@ -24,6 +25,16 @@ Access Brazilian government data directly in AI assistants like Claude Desktop, 
 ## ⚡ Quick Start
 
 Install globally via NPM:
+
+### Installing via Smithery
+
+To install mcp-dadosbr automatically via [Smithery](https://smithery.ai/server/@cristianoaredes/mcp-dadosbr):
+
+```bash
+npx -y @smithery/cli install @cristianoaredes/mcp-dadosbr --client claude
+```
+
+### Manual Installation
 
 ```bash
 npm install -g @aredes.me/mcp-dadosbr
@@ -159,7 +170,33 @@ MIT License - see [LICENSE](LICENSE) file for details.
 - [OpenCNPJ](https://opencnpj.org/) - Free Brazilian company registry data
 - [OpenCEP](https://opencep.com/) - Free Brazilian postal code database
 
-**Maintainer**: [Cristiano Aredes](https://github.com/cristianoaredes)
+## 👨‍💻 Author
+
+<table>
+  <tr>
+    <td align="center">
+      <a href="https://github.com/cristianoaredes">
+        <img src="https://github.com/cristianoaredes.png" width="100px;" alt="Cristiano Aredes"/><br />
+        <sub><b>Cristiano Aredes</b></sub>
+      </a><br />
+      <a href="https://www.linkedin.com/in/cristianoaredes/" title="LinkedIn">💼</a>
+      <a href="https://github.com/cristianoaredes" title="Code">💻</a>
+      <a href="mailto:cristiano@aredes.me" title="Email">📧</a>
+    </td>
+  </tr>
+</table>
+
+### Installing via Smithery
+
+Para instalar automaticamente via [Smithery](https://smithery.ai/server/@cristianoaredes/mcp-dadosbr):
+
+```bash
+npx -y @smithery/cli install @cristianoaredes/mcp-dadosbr --client claude
+```
+
+### Instalação Manual
+
+**Maintainer**: [Cristiano Aredes](https://github.com/cristianoaredes) | [LinkedIn](https://www.linkedin.com/in/cristianoaredes/) | cristiano@aredes.me
 
 ---
 
