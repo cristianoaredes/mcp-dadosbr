@@ -2,31 +2,23 @@
 
 This file provides guidance to agents when working with code in this repository.
 
-## Multi-Runtime Architecture
+## Adapter Implementations
 
-- **Dual runtime**: Same code runs in Node.js AND Cloudflare Workers with different entry points
-- **Multi-protocol**: Worker serves MCP protocol (JSON-RPC + SSE) AND REST API in [`lib/workers/worker.ts`](lib/workers/worker.ts:201-487)
-- **Dual build configs**: [`tsconfig.json`](tsconfig.json) for Node.js vs [`tsconfig.worker.json`](tsconfig.worker.json) for Workers
+- **Cloudflare adapter**: Bypasses MCP SDK entirely in [`lib/adapters/cloudflare.ts`](lib/adapters/cloudflare.ts:62-153) - implements manual JSON-RPC protocol handling
+- **Three different adapters**: CLI, Cloudflare, and Smithery in [`lib/adapters/`](lib/adapters/) have significantly different implementations despite shared core
 
-## Configuration System
+## Testing Framework Mix
 
-- **Configuration hierarchy**: Defined in [`lib/config/index.ts`](lib/config/index.ts:28-82) - environment variables always override `.mcprc.json` which overrides defaults
-- **Location sensitivity**: `.mcprc.json` must be in current working directory, not necessarily project root
-- **URL normalization**: Config automatically adds trailing slash to URLs - don't add manually
+- **Unit tests**: Use Vitest framework
+- **Integration tests**: Plain Node.js scripts (NOT Vitest) in [`test/integration/`](test/integration/)
+- **Reason**: Integration tests need to test built artifacts, not source files
 
-## Testing & Coverage
+## Intelligence Search Behavior
 
-- **Cloudflare exclusion**: Worker files excluded from test coverage in [`vitest.config.ts`](vitest.config.ts:17)
-- **Integration tests**: Plain Node.js scripts, not Vitest framework - run with `npm run test:integration`
+- **Post-filtering**: Intelligence operations filter results by CNPJ presence AFTER search completes in [`lib/core/intelligence.ts`](lib/core/intelligence.ts:147) - not during search
+- **Dork generation**: Has hardcoded heuristics in [`lib/core/dork-templates.ts`](lib/core/dork-templates.ts:151-159) (e.g., checks for "tecnologia" to add GitHub search)
+- **Partner limit**: Restricts to first 3 partners in [`lib/core/dork-templates.ts`](lib/core/dork-templates.ts:165) to avoid excessive queries
 
-## Worker Endpoints
+## Terminal Output
 
-- **MCP endpoints**: `/mcp` (JSON-RPC), `/sse` (Server-Sent Events), `/health`
-- **OAuth endpoints**: `/oauth/*` for authentication flows
-- **REST API**: `/cnpj/{cnpj}` and `/cep/{cep}` for direct data access
-- **Documentation**: `/openapi.json` for API specification
-
-## Module System
-
-- **ESM requirement**: All imports must use `.js` extensions even for `.ts` source files
-- **TypeScript moduleResolution**: "node" for Node.js builds, "bundler" for Worker builds
+- **Sequential thinking**: Uses chalk library in [`lib/core/sequential-thinking.ts`](lib/core/sequential-thinking.ts:1) without environment checks - assumes terminal supports colors

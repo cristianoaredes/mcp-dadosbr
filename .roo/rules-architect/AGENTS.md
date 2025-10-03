@@ -2,31 +2,19 @@
 
 This file provides guidance to agents when working with code in this repository.
 
-## Architectural Patterns
+## Deployment Architecture
 
-- **Adapter pattern**: Located in [`lib/adapters/`](lib/adapters/) - same core logic, three deployment targets (CLI, Cloudflare Workers, Smithery)
-- **Circuit breaker**: GLOBAL SINGLETON pattern - all HTTP requests share same state, not per-endpoint or per-request
-- **Request deduplication**: Implemented at tool level - identical concurrent requests share same promise to prevent duplicate API calls
+- **Cloudflare adapter divergence**: Completely different implementation in [`lib/adapters/cloudflare.ts`](lib/adapters/cloudflare.ts) - no MCP SDK usage, manual JSON-RPC protocol handling
+- **New server per SSE**: Each SSE connection creates new MCP server instance - no state sharing between connections
 
-## Search Architecture
+## Global State Patterns
 
-- **Provider fallback chain**: Defined in [`lib/core/search-providers.ts`](lib/core/search-providers.ts:229-269) - automatic fallback from Tavily to DuckDuckGo
-- **Rate limiting**: DuckDuckGo has 3-second minimum delay between requests, enforced at provider level
+- **Circuit breaker scope**: Global singleton in [`lib/infrastructure/http/circuit-breaker.ts`](lib/infrastructure/http/circuit-breaker.ts:6-10) affects ALL HTTP requests system-wide, not per-endpoint or per-service
+- **Request deduplication**: Implemented at tool execution level in [`lib/core/tools.ts`](lib/core/tools.ts:47-52) - concurrent identical calls share same promise across entire system
 
-## Cache Abstraction
+## Cache Implementations
 
-- **Dual implementation**: [`lib/core/cache.ts`](lib/core/cache.ts) provides unified async interface for:
-  - `MemoryCache`: Synchronous in-memory storage (Node.js)
-  - `KVCache`: Asynchronous Cloudflare KV storage (Workers)
-- Both expose same async API despite different underlying mechanisms
-
-## Module System
-
-- **ESM structure**: All imports must use `.js` extensions even for `.ts` source files
-- **TypeScript moduleResolution**: Differs by target - "node" for Node.js builds, "bundler" for Cloudflare Workers
-
-## Multi-Platform Support
-
-- **Build targets**: Separate TypeScript configs for Node.js ([`tsconfig.json`](tsconfig.json)) and Workers ([`tsconfig.worker.json`](tsconfig.worker.json))
-- **Entry points**: Different adapters in [`lib/adapters/`](lib/adapters/) handle platform-specific initialization
-- **Shared core**: Business logic in [`lib/core/`](lib/core/) remains platform-agnostic
+- **Dual cache system**: 
+  - `MemoryCache` in [`lib/core/cache.ts`](lib/core/cache.ts:4-113) - synchronous methods despite async interface
+  - `KVCache` in [`lib/core/cache.ts`](lib/core/cache.ts:116-144) - truly asynchronous
+- Both implement same `Cache` interface with union return types `Promise<T> | T` in [`lib/types/index.ts`](lib/types/index.ts:58-60)
