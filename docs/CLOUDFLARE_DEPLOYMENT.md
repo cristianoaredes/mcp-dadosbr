@@ -105,6 +105,168 @@ npm run deploy
 npm run deploy:staging
 ```
 
+
+---
+
+## CI/CD with GitHub Actions
+
+### Prerequisites for Automated Deployment
+
+To enable automated deployments via GitHub Actions, you need to configure your Cloudflare API Token as a GitHub Secret.
+
+### Step 1: Get Your Cloudflare API Token
+
+**Option A: Create a New Token (Recommended)**
+
+1. Go to [Cloudflare API Tokens](https://dash.cloudflare.com/profile/api-tokens)
+2. Click **"Create Token"**
+3. Use the **"Edit Cloudflare Workers"** template or create custom with these permissions:
+   - `Account Settings: Read`
+   - `Workers Scripts: Edit`
+   - `Workers KV Storage: Edit`
+   - `Workers Routes: Edit` (if using custom domains)
+4. Set **Account Resources** to your specific account
+5. Set **Zone Resources** to your domain (if applicable)
+6. Click **"Continue to summary"** → **"Create Token"**
+7. **⚠️ IMPORTANT**: Copy the token immediately - it will only be shown once!
+
+**Option B: Use Existing Token**
+
+If you already have a token with appropriate permissions, you can use it. Verify permissions with:
+```bash
+# Check current token permissions
+curl -X GET "https://api.cloudflare.com/client/v4/user/tokens/verify" \
+  -H "Authorization: Bearer YOUR_TOKEN_HERE" \
+  -H "Content-Type: application/json"
+```
+
+### Step 2: Configure GitHub Secret
+
+1. Go to your GitHub repository
+2. Navigate to **Settings** → **Secrets and variables** → **Actions**
+3. Click **"New repository secret"**
+4. Configure:
+   - **Name**: `CLOUDFLARE_API_TOKEN`
+   - **Value**: Your Cloudflare API token (paste the full token)
+5. Click **"Add secret"**
+
+### Step 3: Verify Workflow Configuration
+
+The repository already includes a GitHub Actions workflow at [`.github/workflows/cloudflare-deploy.yml`](.github/workflows/cloudflare-deploy.yml) that automatically:
+
+- ✅ Builds the Worker when you push to `master` branch
+- ✅ Deploys to staging or production based on configuration
+- ✅ Runs health checks after deployment
+- ✅ Creates deployment summaries
+
+**Key workflow features:**
+```yaml
+# Automatic deployment on push to master
+on:
+  push:
+    branches: [master]
+    paths:
+      - "workers/**"
+      - "wrangler.toml"
+      - "package.json"
+
+# Manual deployment with environment selection
+workflow_dispatch:
+  inputs:
+    environment:
+      type: choice
+      options:
+        - staging
+        - production
+```
+
+### Step 4: Test Your Setup
+
+**Manual Deploy via GitHub Actions:**
+
+1. Go to **Actions** tab in your repository
+2. Select **"Deploy to Cloudflare Workers"**
+3. Click **"Run workflow"**
+4. Choose environment (staging or production)
+5. Click **"Run workflow"**
+
+**Automatic Deploy:**
+
+Push changes to master branch that affect:
+- `workers/**`
+- `wrangler.toml`
+- `package.json`
+- `tsconfig.worker.json`
+
+### Step 5: Monitor Deployment
+
+After triggering a deployment, you can:
+
+1. **View logs**: Go to Actions → Your workflow run
+2. **Check deployment summary**: See endpoints and status at the bottom of the workflow run
+3. **Test endpoints**:
+   ```bash
+   # Health check
+   curl https://mcp-dadosbr-staging.aredes.me/health
+   
+   # MCP test
+   curl -X POST https://mcp-dadosbr-staging.aredes.me/mcp \
+     -H "Content-Type: application/json" \
+     -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
+   ```
+
+### Security Best Practices
+
+✅ **DO:**
+- Store tokens in GitHub Secrets
+- Use tokens with minimal required permissions
+- Rotate tokens periodically
+- Use separate tokens for different environments
+- Enable token expiration dates
+
+❌ **DON'T:**
+- Hard-code tokens in code or config files
+- Commit tokens to version control
+- Share tokens via insecure channels
+- Use overly permissive tokens
+- Reuse tokens across multiple projects
+
+### Troubleshooting CI/CD
+
+**Issue: "Error: Authentication error (10000)"**
+- Your `CLOUDFLARE_API_TOKEN` secret is missing or invalid
+- Verify token in GitHub Settings → Secrets
+- Create a new token if expired
+
+**Issue: "Error: KV namespace not found"**
+- KV namespace IDs in `wrangler.toml` are incorrect
+- Create namespaces: `wrangler kv:namespace create MCP_CACHE`
+- Update IDs in `wrangler.toml`
+
+**Issue: "Error: Account ID not found"**
+- Run `wrangler whoami` to get your Account ID
+- Ensure account is properly configured in Cloudflare
+
+**Issue: Workflow not triggering**
+- Check if changes affect watched paths
+- Verify branch name matches `master`
+- Check workflow file syntax
+
+### Local Testing Before CI/CD
+
+Before pushing to trigger CI/CD, test locally:
+
+```bash
+# Set token locally (don't commit .env)
+echo "CLOUDFLARE_API_TOKEN=your-token-here" > .env
+
+# Test build
+npm run build:worker
+
+# Deploy from local machine
+npx wrangler deploy --env staging
+```
+
 ---
 
 ## Configuration

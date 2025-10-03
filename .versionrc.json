@@ -1,0 +1,64 @@
+{
+  "header": "# Changelog\n\nAll notable changes to MCP DadosBR will be documented in this file.\n\nThe format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),\nand this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).\n",
+  "types": [
+    {
+      "type": "feat",
+      "section": "✨ Features"
+    },
+    {
+      "type": "fix",
+      "section": "🐛 Bug Fixes"
+    },
+    {
+      "type": "perf",
+      "section": "⚡ Performance Improvements"
+    },
+    {
+      "type": "docs",
+      "section": "📚 Documentation"
+    },
+    {
+      "type": "style",
+      "section": "💎 Code Style",
+      "hidden": false
+    },
+    {
+      "type": "refactor",
+      "section": "♻️ Code Refactoring"
+    },
+    {
+      "type": "test",
+      "section": "✅ Tests",
+      "hidden": false
+    },
+    {
+      "type": "build",
+      "section": "📦 Build System"
+    },
+    {
+      "type": "ci",
+      "section": "👷 CI/CD"
+    },
+    {
+      "type": "chore",
+      "section": "🔧 Chores",
+      "hidden": true
+    },
+    {
+      "type": "revert",
+      "section": "⏪ Reverts"
+    }
+  ],
+  "releaseCommitMessageFormat": "chore(release): {{currentTag}}",
+  "skip": {
+    "bump": true,
+    "commit": true,
+    "tag": true
+  },
+  "bumpFiles": [],
+  "packageFiles": [],
+  "scripts": {
+    "prerelease": "echo 'Preparing release...'",
+    "postchangelog": "echo 'Changelog updated successfully'"
+  }
+}
