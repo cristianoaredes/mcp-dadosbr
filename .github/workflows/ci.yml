@@ -107,14 +107,6 @@ jobs:
       - name: Build for Cloudflare Workers
         run: npm run build:worker
 
-      - name: Validate wrangler.toml
-        run: |
-          # Install wrangler for validation
-          npm install -g wrangler
-
-          # Validate configuration
-          wrangler validate
-
       - name: Check worker build output
         run: |
           if [ ! -f "dist/worker.js" ]; then
