@@ -81,41 +81,32 @@ async function runTests() {
 
     // Test 1: List tools
     console.log('🧪 Test 1: List tools');
-    const tools = await client.request({ method: 'tools/list' });
+    const tools = await client.listTools();
     console.log(`✅ Found ${tools.tools.length} tools:`);
     tools.tools.forEach(tool => console.log(`   - ${tool.name}`));
 
     // Test 2: Call CNPJ lookup
     console.log('\n🧪 Test 2: CNPJ lookup (formatted)');
-    const cnpjResult = await client.request({
-      method: 'tools/call',
-      params: {
-        name: 'cnpj_lookup',
-        arguments: { cnpj: '11.222.333/0001-81' }
-      }
+    const cnpjResult = await client.callTool({
+      name: 'cnpj_lookup',
+      arguments: { cnpj: '11.222.333/0001-81' }
     });
     console.log('✅ CNPJ lookup result:', JSON.stringify(cnpjResult, null, 2).substring(0, 200) + '...');
 
     // Test 3: Call CEP lookup
     console.log('\n🧪 Test 3: CEP lookup (formatted)');
-    const cepResult = await client.request({
-      method: 'tools/call',
-      params: {
-        name: 'cep_lookup',
-        arguments: { cep: '01310-100' }
-      }
+    const cepResult = await client.callTool({
+      name: 'cep_lookup',
+      arguments: { cep: '01310-100' }
     });
     console.log('✅ CEP lookup result:', JSON.stringify(cepResult, null, 2).substring(0, 200) + '...');
 
     // Test 4: Invalid CNPJ
     console.log('\n🧪 Test 4: Invalid CNPJ (too short)');
     try {
-      await client.request({
-        method: 'tools/call',
-        params: {
-          name: 'cnpj_lookup',
-          arguments: { cnpj: '123456' }
-        }
+      await client.callTool({
+        name: 'cnpj_lookup',
+        arguments: { cnpj: '123456' }
       });
     } catch (error) {
       console.log('✅ Correctly rejected invalid CNPJ:', error.message);
