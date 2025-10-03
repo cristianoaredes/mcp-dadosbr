@@ -1,4 +1,5 @@
 import { CacheEntry, Cache } from "../types/index.js";
+import { CACHE } from "../shared/utils/constants.js";
 
 export class MemoryCache implements Cache {
   private cache = new Map<string, CacheEntry>();
@@ -6,31 +7,63 @@ export class MemoryCache implements Cache {
   private accessCounter = 0;
   private maxSize: number;
   private ttl: number;
+  private cleanupInterval?: NodeJS.Timeout;
 
-  constructor(maxSize = 256, ttl = 60000) {
+  constructor(
+    maxSize: number = CACHE.DEFAULT_SIZE,
+    ttl: number = CACHE.DEFAULT_TTL_MS
+  ) {
     this.maxSize = maxSize;
     this.ttl = ttl;
+
+    // Optional: Start background cleanup
+    if (process.env.MCP_CACHE_BACKGROUND_CLEANUP === "true") {
+      this.startBackgroundCleanup();
+    }
   }
 
-  get(key: string): any | null {
-    this.cleanup();
+  get<T = unknown>(key: string): T | null {
+    // Lazy expiration - only check when accessed
     const entry = this.cache.get(key);
-    if (!entry || Date.now() > entry.expires) {
+    if (!entry) return null;
+
+    // Check expiration
+    if (Date.now() > entry.expires) {
       this.cache.delete(key);
       this.accessOrder.delete(key);
       return null;
     }
+
+    // Update access order
     this.accessOrder.set(key, ++this.accessCounter);
-    return entry.data;
+    return entry.data as T;
   }
 
-  set(key: string, data: any): void {
-    this.cleanup();
+  set<T = unknown>(key: string, data: T): void {
+    // Evict if at capacity and key doesn't exist
     if (this.cache.size >= this.maxSize && !this.cache.has(key)) {
       this.evictLRU();
     }
-    this.cache.set(key, { data, expires: Date.now() + this.ttl });
+
+    // Set entry
+    this.cache.set(key, {
+      data,
+      expires: Date.now() + this.ttl,
+    });
+
+    // Update access order
     this.accessOrder.set(key, ++this.accessCounter);
+  }
+
+  private startBackgroundCleanup(): void {
+    this.cleanupInterval = setInterval(() => {
+      this.cleanup();
+    }, CACHE.CLEANUP_INTERVAL_MS);
+
+    // Prevent interval from keeping process alive
+    if (this.cleanupInterval.unref) {
+      this.cleanupInterval.unref();
+    }
   }
 
   private cleanup(): void {
@@ -59,12 +92,18 @@ export class MemoryCache implements Cache {
   }
 
   clear(): void {
+    // Stop background cleanup if running
+    if (this.cleanupInterval) {
+      clearInterval(this.cleanupInterval);
+      this.cleanupInterval = undefined;
+    }
+
     this.cache.clear();
     this.accessOrder.clear();
     this.accessCounter = 0;
   }
 
-  entries(): [string, any][] {
+  entries(): [string, unknown][] {
     this.cleanup();
     return Array.from(this.cache.entries()).map(([key, entry]) => [
       key,
@@ -73,12 +112,11 @@ export class MemoryCache implements Cache {
   }
 }
 
-
 // KV Cache adapter for Cloudflare Workers
 export class KVCache implements Cache {
-  constructor(private kv: any, private ttl = 60000) {}
+  constructor(private kv: any, private ttl: number = CACHE.DEFAULT_TTL_MS) {}
 
-  async get(key: string): Promise<any> {
+  async get<T = unknown>(key: string): Promise<T | null> {
     const cached = await this.kv.get(key);
     if (cached) {
       const parsed = JSON.parse(cached);
@@ -89,7 +127,7 @@ export class KVCache implements Cache {
     return null;
   }
 
-  async set(key: string, data: any): Promise<void> {
+  async set<T = unknown>(key: string, data: T): Promise<void> {
     await this.kv.put(
       key,
       JSON.stringify({

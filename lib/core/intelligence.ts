@@ -4,8 +4,10 @@
 
 import { lookup } from './tools.js';
 import { ApiConfig, Cache, LookupResult } from '../types/index.js';
-import { createProvider, getAvailableProvider, SearchProvider, SearchResult, ProviderType } from './search-providers.js';
+import { createProvider, getAvailableProvider, SearchProvider, SearchResult, ProviderType, searchWithFallback } from './search-providers.js';
 import { buildDorks, DorkCategory, DorkTemplate } from './dork-templates.js';
+import { TimeoutError } from '../shared/types/result.js';
+import { TIMEOUTS, SEARCH } from '../shared/utils/constants.js';
 
 export interface IntelligenceOptions {
   cnpj: string;
@@ -16,7 +18,7 @@ export interface IntelligenceOptions {
 }
 
 export interface IntelligenceResult {
-  company_data: any;
+  company_data: unknown;
   search_results: Record<DorkCategory, SearchResultWithMeta[]>;
   provider_used: string;
   queries_executed: number;
@@ -29,6 +31,30 @@ export interface SearchResultWithMeta extends SearchResult {
 }
 
 export async function executeIntelligence(
+  options: IntelligenceOptions,
+  apiConfig: ApiConfig,
+  cache?: Cache
+): Promise<LookupResult> {
+  const TOTAL_TIMEOUT_MS = TIMEOUTS.INTELLIGENCE_TOTAL_MS;
+  
+  // Create timeout promise
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    setTimeout(() => {
+      reject(new TimeoutError(
+        'Intelligence search timed out',
+        TOTAL_TIMEOUT_MS
+      ));
+    }, TOTAL_TIMEOUT_MS);
+  });
+
+  // Create main execution promise
+  const executionPromise = executeIntelligenceInternal(options, apiConfig, cache);
+
+  // Race between timeout and execution
+  return Promise.race([executionPromise, timeoutPromise]);
+}
+
+async function executeIntelligenceInternal(
   options: IntelligenceOptions,
   apiConfig: ApiConfig,
   cache?: Cache
@@ -50,31 +76,17 @@ export async function executeIntelligence(
     }
 
     const companyData = cnpjResult.data;
-    console.error(`[intelligence] [${options.cnpj}] Company: ${companyData.razao_social}`);
+    const company = companyData as { razao_social?: string };
+    console.error(`[intelligence] [${options.cnpj}] Company: ${company.razao_social || 'Unknown'}`);
 
     // Step 2: Build dorks based on company data
     const dorks = buildDorks(companyData, options.categories);
-    const maxQueries = options.maxQueries || 10;
+    const maxQueries = options.maxQueries || SEARCH.DEFAULT_MAX_QUERIES;
     const selectedDorks = dorks.slice(0, maxQueries);
     
     console.error(`[intelligence] [${options.cnpj}] Generated ${dorks.length} dorks, using ${selectedDorks.length}`);
 
-    // Step 3: Get search provider
-    const provider = options.provider 
-      ? createProvider(options.provider)
-      : await getAvailableProvider();
-
-    const isAvailable = await provider.isAvailable();
-    if (!isAvailable) {
-      return {
-        ok: false,
-        error: `Provider ${provider.name} is not available (missing API key?)`
-      };
-    }
-
-    console.error(`[intelligence] [${options.cnpj}] Using provider: ${provider.name}`);
-
-    // Step 4: Execute searches
+    // Step 3: Execute searches with automatic fallback
     const searchResults: Record<DorkCategory, SearchResultWithMeta[]> = {
       government: [],
       legal: [],
@@ -85,26 +97,40 @@ export async function executeIntelligence(
     };
 
     let queriesExecuted = 0;
-    const maxResultsPerQuery = options.maxResultsPerQuery || 5;
+    let providerUsed = 'auto-fallback';
+    const maxResultsPerQuery = options.maxResultsPerQuery || SEARCH.DEFAULT_MAX_RESULTS;
+
+    console.error(`[intelligence] [${options.cnpj}] Using automatic provider fallback`);
 
     for (const dork of selectedDorks) {
       try {
         console.error(`[intelligence] [${dork.category}] Searching: ${dork.query}`);
         
-        const results = await provider.search(dork.query, maxResultsPerQuery);
+        // Use searchWithFallback for automatic provider switching
+        const searchResult = await searchWithFallback(
+          dork.query, 
+          maxResultsPerQuery, 
+          options.provider
+        );
         
-        const resultsWithMeta: SearchResultWithMeta[] = results.map(r => ({
-          ...r,
-          query: dork.query,
-          category: dork.category
-        }));
+        if (searchResult.ok) {
+          const resultsWithMeta: SearchResultWithMeta[] = searchResult.value.map(r => ({
+            ...r,
+            query: dork.query,
+            category: dork.category
+          }));
 
-        searchResults[dork.category].push(...resultsWithMeta);
-        queriesExecuted++;
+          searchResults[dork.category].push(...resultsWithMeta);
+          queriesExecuted++;
 
-        console.error(`[intelligence] [${dork.category}] Found ${results.length} results`);
-      } catch (error: any) {
-        console.error(`[intelligence] [${dork.category}] Search failed: ${error.message}`);
+          console.error(`[intelligence] [${dork.category}] Found ${searchResult.value.length} results`);
+        } else {
+          // Log error but continue with other searches
+          console.error(`[intelligence] [${dork.category}] Search failed: ${searchResult.error.message}`);
+        }
+      } catch (error: unknown) {
+        const err = error as Error;
+        console.error(`[intelligence] [${dork.category}] Unexpected error: ${err.message}`);
       }
     }
 
@@ -114,13 +140,13 @@ export async function executeIntelligence(
     const intelligence: IntelligenceResult = {
       company_data: companyData,
       search_results: searchResults,
-      provider_used: provider.name,
+      provider_used: providerUsed,
       queries_executed: queriesExecuted,
       timestamp: new Date().toISOString()
     };
 
     console.error(
-      `[intelligence] [${options.cnpj}] Complete [${elapsed}ms] [${queriesExecuted} queries] [${provider.name}]`
+      `[intelligence] [${options.cnpj}] Complete [${elapsed}ms] [${queriesExecuted} queries] [${providerUsed}]`
     );
 
     return {
@@ -128,15 +154,28 @@ export async function executeIntelligence(
       data: intelligence
     };
 
-  } catch (error: any) {
+  } catch (error: unknown) {
     const elapsed = Date.now() - startTime;
+    
+    // Handle timeout errors specifically
+    if (error instanceof TimeoutError) {
+      console.error(
+        `[intelligence] [${options.cnpj}] Timeout after ${elapsed}ms (limit: ${error.timeoutMs}ms)`
+      );
+      return {
+        ok: false,
+        error: `Intelligence search timed out after ${elapsed}ms. Try reducing max_queries or using a faster provider.`
+      };
+    }
+
+    const err = error as Error;
     console.error(
-      `[intelligence] [${options.cnpj}] Error: ${error.message} [${elapsed}ms]`
+      `[intelligence] [${options.cnpj}] Error: ${err.message} [${elapsed}ms]`
     );
 
     return {
       ok: false,
-      error: error.message || 'Intelligence search failed'
+      error: err.message || 'Intelligence search failed'
     };
   }
 }
@@ -158,7 +197,8 @@ Perfect for: Due diligence, company research, background checks, investigations.
 Provider options:
 - duckduckgo (default, free, may be rate-limited)
 - tavily (paid, reliable, requires TAVILY_API_KEY env var)
-- serpapi (paid, most expensive, requires SERPAPI_KEY env var)`,
+
+Note: Automatic fallback will try Tavily if DuckDuckGo is rate-limited.`,
   inputSchema: {
     type: "object",
     properties: {
@@ -176,8 +216,8 @@ Provider options:
       },
       provider: {
         type: "string",
-        enum: ["duckduckgo", "tavily", "serpapi"],
-        description: "Search provider to use (default: duckduckgo)",
+        enum: ["duckduckgo", "tavily"],
+        description: "Search provider to use (default: duckduckgo with automatic fallback)",
         default: "duckduckgo"
       },
       max_results_per_query: {

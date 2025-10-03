@@ -72,7 +72,7 @@ export async function handleMCPRequest(
   };
 
   const apiConfig = resolveApiConfig();
-  const cache = env.MCP_CACHE ? new KVCache(env.MCP_CACHE, serverConfig.cacheTTL) : undefined;
+  const cache = env.MCP_CACHE ? new KVCache(env.MCP_CACHE, serverConfig.cacheTTL as number) : undefined;
 
   try {
     switch (request.method) {
@@ -86,7 +86,8 @@ export async function handleMCPRequest(
         };
 
       case "tools/call":
-        const { name, arguments: args } = request.params;
+        const params = request.params as { name: string; arguments: unknown };
+        const { name, arguments: args } = params;
         
         try {
           const result = await executeTool(name, args, apiConfig, cache);
