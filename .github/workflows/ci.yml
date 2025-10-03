@@ -109,26 +109,26 @@ jobs:
 
       - name: Check worker build output
         run: |
-          if [ ! -f "dist/worker.js" ]; then
-            echo "❌ Worker build failed - dist/worker.js not found"
+          if [ ! -f "build/lib/workers/worker.js" ]; then
+            echo "❌ Worker build failed - build/lib/workers/worker.js not found"
             exit 1
           fi
 
           # Check if the worker file is not empty
-          if [ ! -s "dist/worker.js" ]; then
-            echo "❌ Worker build failed - dist/worker.js is empty"
+          if [ ! -s "build/lib/workers/worker.js" ]; then
+            echo "❌ Worker build failed - build/lib/workers/worker.js is empty"
             exit 1
           fi
 
           echo "✅ Cloudflare Worker build successful"
 
           # Show build size
-          WORKER_SIZE=$(wc -c < dist/worker.js)
+          WORKER_SIZE=$(wc -c < build/lib/workers/worker.js)
           echo "Worker bundle size: ${WORKER_SIZE} bytes"
 
       - name: Check worker bundle size
         run: |
-          WORKER_FILE="dist/worker.js"
+          WORKER_FILE="build/lib/workers/worker.js"
           if [ ! -f "$WORKER_FILE" ]; then
             echo "⚠️ Worker file not found at $WORKER_FILE"
             exit 0
