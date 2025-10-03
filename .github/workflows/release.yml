@@ -222,6 +222,9 @@ jobs:
 
       - name: Publish to NPM
         run: |
+          # Configure npm authentication
+          echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > ~/.npmrc
+          
           if [[ "${{ needs.validate.outputs.is_prerelease }}" == "true" ]]; then
             echo "📦 Publishing pre-release version with --tag next"
             npm publish --access public --tag next
@@ -230,7 +233,7 @@ jobs:
             npm publish --access public
           fi
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Verify publication
         run: |
