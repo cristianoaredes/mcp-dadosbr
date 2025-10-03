@@ -1,107 +1,122 @@
-# 📚 MCP DadosBR Documentation
+# MCP DadosBR Documentation
 
-Welcome to the MCP DadosBR documentation! This directory contains comprehensive guides and technical documentation for the Brazilian public data MCP server.
+> **Multi-language documentation for Brazilian public data MCP server**
 
-## 🚀 Quick Start
+## 📚 Available Languages
 
-1. **Install globally:**
-   ```bash
-   npm install -g @aredes.me/mcp-dadosbr
-   ```
+### 🇧🇷 Português Brasileiro
+**Documentação completa em português brasileiro para desenvolvedores brasileiros**
 
-2. **Configure your AI tool:**
-   ```json
-   {
-     "mcpServers": {
-       "dadosbr": {
-         "command": "npx",
-         "args": ["@aredes.me/mcp-dadosbr"]
-       }
-     }
-   }
-   ```
+- **[📖 Documentação Principal PT-BR](pt-br/README.md)** - Índice completo da documentação
+- **[🏗️ Arquitetura](pt-br/arquitetura/)** - Visão arquitetural detalhada
+- **[💻 Desenvolvimento](pt-br/desenvolvimento/)** - Guias de desenvolvimento
+- **[📚 Exemplos](pt-br/exemplos/)** - Exemplos práticos e casos de uso
+- **[📝 Glossário](pt-br/glossario/)** - Terminologia técnica em PT-BR
 
-3. **Test with examples:**
-   - CNPJ: `11.222.333/0001-81`
-   - CEP: `01310-100`
+### 🇺🇸 English
+**Technical documentation in English**
 
-## 📖 Complete Documentation
+- **[⚙️ Configuration Guide](CONFIGURATION.md)** - Environment variables, custom APIs, authentication
+- **[🔍 Search Providers](PROVIDERS.md)** - DuckDuckGo, Tavily, SerpAPI setup and comparison
+- **[💡 Usage Examples](USAGE_EXAMPLES.md)** - Real-world integration patterns  
+- **[🔧 MCP Client Integration](MCP_CLIENT_INTEGRATION.md)** - Detailed IDE setup guides
+- **[☁️ Cloudflare Deployment](CLOUDFLARE_DEPLOYMENT.md)** - Serverless deployment guide
+- **[🧠 Sequential Thinking](SEQUENTIAL_THINKING.md)** - Structured reasoning documentation
+- **[🔍 Web Search](WEB_SEARCH.md)** - Intelligent web search capabilities
 
-### **Core Guides**
-- **[Configuration Guide](CONFIGURATION.md)** - Environment variables, caching, API customization
-- **[Usage Examples](USAGE_EXAMPLES.md)** - Real-world usage patterns and code examples
-- **[MCP Client Integration](MCP_CLIENT_INTEGRATION.md)** - Integration with Claude Desktop, Continue.dev, Cline, and more
+## 🎯 Quick Start by Language
 
-### **Deployment**
-- **[Cloudflare Workers](CLOUDFLARE_DEPLOYMENT.md)** - Deploy to Cloudflare Workers with ChatGPT integration
+### Para Desenvolvedores Brasileiros 🇧🇷
 
-## 🔧 IDE Quick Setup
-
-### **Claude Desktop**
-**File**: `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS)
-```json
-{
-  "mcpServers": {
-    "dadosbr": {
-      "command": "npx",
-      "args": ["@aredes.me/mcp-dadosbr"]
-    }
-  }
-}
-```
-
-### **Continue.dev / Cline**
-**File**: `~/.continue/config.json`
-```json
-{
-  "mcpServers": [
-    {
-      "name": "dadosbr",
-      "command": "npx",
-      "args": ["@aredes.me/mcp-dadosbr"]
-    }
-  ]
-}
-```
-
-### **Windsurf IDE**
-**File**: Settings → MCP Servers
-```json
-{
-  "mcpServers": {
-    "dadosbr": {
-      "command": "npx",
-      "args": ["@aredes.me/mcp-dadosbr"]
-    }
-  }
-}
-```
-
-## 🧪 Testing
-
-**Debug mode:**
 ```bash
-DEBUG=1 npx @aredes.me/mcp-dadosbr
+# Instalação rápida
+npm install -g @aredes.me/mcp-dadosbr
+
+# Primeira consulta
+echo '{"method": "tools/call", "params": {"name": "cnpj_lookup", "arguments": {"cnpj": "33.000.167/0001-01"}}}' | mcp-dadosbr
 ```
 
-**HTTP mode:**
+**Continue em**: [Documentação PT-BR](pt-br/README.md)
+
+### For International Developers 🇺🇸
+
 ```bash
-MCP_TRANSPORT=http MCP_HTTP_PORT=3000 npx @aredes.me/mcp-dadosbr
+# Quick install
+npm install -g @aredes.me/mcp-dadosbr
+
+# First query
+echo '{"method": "tools/call", "params": {"name": "cnpj_lookup", "arguments": {"cnpj": "33000167000101"}}}' | mcp-dadosbr
 ```
+
+**Continue at**: [Configuration Guide](CONFIGURATION.md)
+
+## 📋 Documentation Structure
+
+### Core Documentation
+- **Configuration** - Setup and environment variables
+- **Usage Examples** - Integration patterns and real-world use cases
+- **MCP Client Integration** - IDE setup (Claude Desktop, Cursor, Windsurf)
+- **Deployment** - Cloudflare Workers and production deployment
+
+### Advanced Features
+- **Search Providers** - Web search integration (DuckDuckGo, Tavily)
+- **Sequential Thinking** - Structured reasoning capabilities
+- **Web Search** - Google Dorks and intelligent search
+
+### Development
+- **[Development Docs](development/)** - Internal development documentation
+- **Code Review** - Architecture analysis and code quality
+- **Testing** - Test suite and quality assurance
+- **Feature Planning** - Roadmap and future development
+
+## 🌐 Multi-Platform Support
+
+### NPM Package
+```bash
+npm install -g @aredes.me/mcp-dadosbr
+```
+
+### Cloudflare Workers
+- **Production**: https://mcp-dadosbr.aredes.me
+- **REST API**: `/cnpj/{cnpj}`, `/cep/{cep}`
+- **Health Check**: `/health`
+
+### Smithery Platform
+- **Marketplace**: smithery.ai/server/dadosbr
+- **Auto-deployment**: Via Smithery CLI
 
 ## 🛠️ Available Tools
 
-### `cnpj_lookup`
-Look up Brazilian company information by CNPJ number.
-- **Input**: CNPJ string (with or without formatting)
-- **Output**: Company data from OpenCNPJ API
+| Tool | Description | Input | Output |
+|------|-------------|-------|--------|
+| `cnpj_lookup` | Brazilian company data | CNPJ | Company details, address, status |
+| `cep_lookup` | Brazilian postal code | CEP | Address, neighborhood, city, state |
+| `cnpj_search` | Intelligent web search | Search query | Web results with Google Dorks |
+| `sequentialthinking` | Structured reasoning | Thought + progress | Reasoning status |
 
-### `cep_lookup`
-Look up Brazilian postal code information by CEP.
-- **Input**: CEP string (with or without formatting)
-- **Output**: Address data from OpenCEP API
+## 📊 Quality Metrics
+
+- **Test Coverage**: ~60%
+- **Tests Passing**: 88/88 (100%)
+- **TypeScript**: Strict mode ✅
+- **Thread-Safe**: 100% ✅
+- **LGPD Compliant**: ✅
+- **Production Ready**: ✅
+
+## 🤝 Contributing
+
+### For Brazilian Contributors 🇧🇷
+Veja o [Guia de Contribuição PT-BR](pt-br/desenvolvimento/boas-praticas.md)
+
+### For International Contributors 🇺🇸
+See the [Contributing Guide](../CONTRIBUTING.md)
 
 ## 📞 Support
 
-- **GitHub**: [Issues](https://github.com/cristianoaredes/mcp-dadosbr/issues)
-- **NPM**: [@aredes.me/mcp-dadosbr](https://www.npmjs.com/package/@aredes.me/mcp-dadosbr)
+- **Issues**: [GitHub Issues](https://github.com/cristianoaredes/mcp-dadosbr/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/cristianoaredes/mcp-dadosbr/discussions)
+- **Email**: cristiano@aredes.me
+
+---
+
+**Made with ❤️ for the Brazilian developer community and international users**

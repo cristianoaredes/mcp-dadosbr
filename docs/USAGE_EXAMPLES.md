@@ -390,6 +390,12 @@ return await deduplicate(cacheKey, async () => {
 
 This means multiple concurrent requests for the same CNPJ/CEP will automatically share a single API call and result.
 
+**Key Benefits**:
+- Reduces API load and costs
+- Improves response times for concurrent requests
+- Prevents rate limiting issues
+- Works across all transport modes (stdio, HTTP)
+
 ````
 
 ### 3. Parallel Processing
@@ -577,10 +583,12 @@ async function withCircuitBreaker<T>(fn: () => Promise<T>): Promise<T> {
 
 The circuit breaker automatically:
 
-- Tracks consecutive failures (threshold: 5)
-- Opens circuit for 30 seconds after threshold
-- Automatically attempts recovery
-- Protects both CNPJ and CEP API calls
+- **Failure Tracking**: Monitors consecutive API failures
+- **Threshold Protection**: Opens after 5 consecutive failures
+- **Recovery Window**: 30-second cooldown period
+- **Automatic Recovery**: Attempts to close circuit after cooldown
+- **Global Protection**: Protects all API endpoints (CNPJ, CEP, custom)
+- **Graceful Degradation**: Returns meaningful error messages during outages
 
 ---
 

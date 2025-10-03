@@ -19,11 +19,10 @@ _Complete guide for integrating MCP DadosBR with popular MCP clients_
 
 ### Installation Steps
 
-1. **Build the MCP server:**
+1. **Install via NPM (Recommended):**
 
    ```bash
-   cd mcp-dadosbr
-   npm run build
+   npm install -g @aredes.me/mcp-dadosbr
    ```
 
 2. **Find your Claude Desktop config file:**
@@ -38,16 +37,30 @@ _Complete guide for integrating MCP DadosBR with popular MCP clients_
    {
      "mcpServers": {
        "dadosbr": {
-         "command": "node",
-         "args": ["/absolute/path/to/mcp-dadosbr/build/lib/adapters/cli.js"],
+         "command": "npx",
+         "args": ["@aredes.me/mcp-dadosbr"],
          "env": {
            "MCP_TRANSPORT": "stdio",
            "MCP_CACHE_SIZE": "512",
-           "MCP_CACHE_TTL": "60000",
-           "MCP_API_TIMEOUT": "8000",
-           "CNPJ_API_BASE_URL": "https://your-custom-cnpj-api.com/api/cnpj/",
-           "CEP_API_BASE_URL": "https://your-custom-cep-api.com/api/cep/"
+           "MCP_CACHE_TTL": "120000",
+           "MCP_API_TIMEOUT": "10000",
+           "CNPJ_API_BASE_URL": "https://your-custom-cnpj-api.com/api/v1/",
+           "CEP_API_BASE_URL": "https://your-custom-cep-api.com/api/v1/",
+           "API_KEY_HEADER": "X-API-Key",
+           "API_KEY_VALUE": "your-secret-key"
          }
+       }
+     }
+   }
+   ```
+
+   **Alternative (Local Build):**
+   ```json
+   {
+     "mcpServers": {
+       "dadosbr": {
+         "command": "node",
+         "args": ["/absolute/path/to/mcp-dadosbr/build/lib/adapters/cli.js"]
        }
      }
    }
@@ -98,12 +111,14 @@ Claude will automatically use the MCP DadosBR tools to fetch the information.
      "mcpServers": [
        {
          "name": "dadosbr",
-         "command": "node",
-         "args": ["/absolute/path/to/mcp-dadosbr/build/lib/adapters/cli.js"],
+         "command": "npx",
+         "args": ["@aredes.me/mcp-dadosbr"],
          "env": {
            "MCP_TRANSPORT": "stdio",
-           "CNPJ_API_BASE_URL": "https://your-custom-cnpj-api.com/api/cnpj/",
-           "CEP_API_BASE_URL": "https://your-custom-cep-api.com/api/cep/"
+           "MCP_CACHE_SIZE": "256",
+           "MCP_CACHE_TTL": "60000",
+           "CNPJ_API_BASE_URL": "https://your-custom-cnpj-api.com/api/v1/",
+           "CEP_API_BASE_URL": "https://your-custom-cep-api.com/api/v1/"
          }
        }
      ]

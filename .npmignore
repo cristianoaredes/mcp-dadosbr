@@ -8,6 +8,9 @@ tsconfig.worker.json
 test/
 docs/
 .github/
+# Manual test scripts (not for NPM package)
+test-*.js
+
 
 # Build artifacts
 node_modules/
