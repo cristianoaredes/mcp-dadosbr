@@ -13,11 +13,29 @@ let metrics: Metrics = {
   startTime: Date.now(),
 };
 
+// Simple performance monitoring
+function logPerformanceMetrics(): void {
+  const uptime = Date.now() - metrics.startTime;
+  const avgResponseTime = metrics.requests > 0 ? metrics.totalTime / metrics.requests : 0;
+  const cacheHitRate = metrics.requests > 0 ? (metrics.cacheHits / metrics.requests) * 100 : 0;
+  
+  console.error(`[metrics] Uptime: ${Math.round(uptime/1000)}s | Requests: ${metrics.requests} | Cache Hit Rate: ${cacheHitRate.toFixed(1)}% | Avg Response: ${avgResponseTime.toFixed(0)}ms | Errors: ${metrics.errors}`);
+}
+
+// Log metrics every 100 requests
+let lastMetricsLog = 0;
+
 function recordMetrics(elapsed: number, fromCache: boolean, error: boolean) {
   metrics.requests++;
   metrics.totalTime += elapsed;
   if (fromCache) metrics.cacheHits++;
   if (error) metrics.errors++;
+  
+  // Log metrics every 10 requests (simple monitoring)
+  if (metrics.requests - lastMetricsLog >= 10) {
+    logPerformanceMetrics();
+    lastMetricsLog = metrics.requests;
+  }
 }
 
 // Request deduplication to prevent concurrent identical API calls

@@ -27,7 +27,7 @@ export interface ConfigFile {
 // HTTP Response interface
 export interface HttpResponse {
   ok: boolean;
-  data?: any;
+  data?: unknown;
   error?: string;
   source: string;
 }
@@ -35,7 +35,7 @@ export interface HttpResponse {
 // Tool execution result
 export interface LookupResult {
   ok: boolean;
-  data?: any;
+  data?: unknown;
   error?: string;
 }
 
@@ -50,13 +50,13 @@ export interface Metrics {
 
 // Cache interfaces
 export interface CacheEntry {
-  data: any;
+  data: unknown;
   expires: number;
 }
 
 export interface Cache {
-  get(key: string): Promise<any> | any;
-  set(key: string, data: any): Promise<void> | void;
+  get<T = unknown>(key: string): Promise<T | null> | T | null;
+  set<T = unknown>(key: string, data: T): Promise<void> | void;
   clear?(): Promise<void> | void;
 }
 
@@ -65,16 +65,16 @@ export interface MCPRequest {
   jsonrpc: string;
   id: string | number | null;
   method: string;
-  params?: any;
+  params?: unknown;
 }
 
 export interface MCPResponse {
   jsonrpc: string;
   id: string | number | null;
-  result?: any;
+  result?: unknown;
   error?: {
     code: number;
     message: string;
-    data?: any;
+    data?: unknown;
   };
 }

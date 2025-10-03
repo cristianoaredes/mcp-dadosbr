@@ -2,6 +2,22 @@
 
 All notable changes to MCP DadosBR will be documented in this file.
 
+## [Unreleased]
+
+### Planned
+
+- **📱 Flutter/Dart Library**: Comprehensive Flutter library for mobile, web, and desktop applications
+  - Cross-platform CNPJ and CEP lookup with the same reliable data sources
+  - Smart caching with 60-second TTL and LRU eviction optimized for mobile
+  - Circuit breaker pattern with exponential backoff for mobile networks
+  - AI integration with LangChain Dart and LangGraph support
+  - MCP server mode with HTTP/SSE transport for AI agent connectivity
+  - Batch processing with Stream-based APIs for multiple document lookups
+  - Comprehensive utility functions for validation, formatting, and offline verification
+  - Platform-specific HTTP clients (dart:io for mobile/desktop, fetch for web)
+  - Type-safe Dart classes mirroring the TypeScript interfaces
+  - See [Flutter Library Documentation](docs/FLUTTER_LIBRARY.md) for details
+
 ## [0.2.0] - 2025-09-30
 
 ### Added

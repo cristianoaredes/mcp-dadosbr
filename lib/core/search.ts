@@ -1,32 +1,11 @@
-import { search as duckSearch } from 'duck-duck-scrape';
 import { Cache, LookupResult } from '../types/index.js';
-
-export interface SearchResult {
-  title: string;
-  url: string;
-  snippet: string;
-}
+import { getAvailableProvider, SearchResult, searchWithFallback } from './search-providers.js';
 
 export interface SearchResponse extends LookupResult {
   results?: SearchResult[];
   query?: string;
   count?: number;
-}
-
-// Rate limiting: track last request time
-let lastRequestTime = 0;
-const MIN_REQUEST_INTERVAL = 3000; // 3 seconds between requests (DuckDuckGo is strict)
-
-async function rateLimit(): Promise<void> {
-  const now = Date.now();
-  const timeSinceLastRequest = now - lastRequestTime;
-  
-  if (timeSinceLastRequest < MIN_REQUEST_INTERVAL) {
-    const waitTime = MIN_REQUEST_INTERVAL - timeSinceLastRequest;
-    await new Promise(resolve => setTimeout(resolve, waitTime));
-  }
-  
-  lastRequestTime = Date.now();
+  provider?: string;
 }
 
 export async function executeSearch(
@@ -50,30 +29,32 @@ export async function executeSearch(
     }
   }
 
-  // Rate limiting
-  await rateLimit();
-
   try {
-    // Perform search with duck-duck-scrape
-    const searchResults = await duckSearch(query, {
-      safeSearch: 0, // 0 = off, 1 = moderate, 2 = strict
-      locale: 'br-br'
-    });
+    // Execute search with automatic fallback between providers
+    const searchResult = await searchWithFallback(query, maxResults);
 
-    // Limit results
-    const limitedResults = searchResults.results.slice(0, maxResults);
+    if (!searchResult.ok) {
+      // All providers failed, return error
+      const elapsed = Date.now() - startTime;
+      console.error(
+        `[${new Date().toISOString()}] [search] [${query}] [error: ${searchResult.error.message}] [${elapsed}ms] [${transportMode}]`
+      );
 
-    const formattedResults: SearchResult[] = limitedResults.map((r: any) => ({
-      title: r.title || '',
-      url: r.url || '',
-      snippet: r.description || ''
-    }));
+      return {
+        ok: false,
+        error: searchResult.error.message
+      };
+    }
+
+    // Determine which provider was used (we'll enhance this later)
+    const providerName = 'auto-fallback';
 
     const responseData = {
-      results: formattedResults,
+      results: searchResult.value,
       query: query,
-      count: formattedResults.length,
-      source: 'duckduckgo',
+      count: searchResult.value.length,
+      provider: providerName,
+      source: providerName,
       fetchedAt: new Date().toISOString()
     };
 
@@ -84,7 +65,7 @@ export async function executeSearch(
 
     const elapsed = Date.now() - startTime;
     console.error(
-      `[${new Date().toISOString()}] [search] [${query}] [success] [${elapsed}ms] [${transportMode}] [results: ${formattedResults.length}]`
+      `[${new Date().toISOString()}] [search] [${query}] [success] [${elapsed}ms] [${transportMode}] [provider: ${providerName}] [results: ${searchResult.value.length}]`
     );
 
     return {

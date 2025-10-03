@@ -13,7 +13,7 @@ import { dirname, join } from 'path';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-const serverPath = join(__dirname, '..', 'server.ts');
+const serverPath = join(__dirname, '..', 'lib', 'bin', 'mcp-dadosbr.ts');
 
 // Test cases
 const testCases = [

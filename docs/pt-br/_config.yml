@@ -1,0 +1,121 @@
+# Configuração da Documentação MCP DadosBR PT-BR
+
+# Metadados do projeto
+title: "MCP DadosBR - Documentação PT-BR"
+description: "Documentação completa em português brasileiro para o servidor MCP DadosBR"
+version: "1.0.0"
+language: "pt-BR"
+author: "Comunidade MCP DadosBR"
+created_date: "${new Date().toISOString()}"
+last_updated: "${new Date().toISOString()}"
+
+# Configurações de qualidade
+quality_standards:
+  markdown_lint: true
+  spell_check: "pt-BR"
+  link_validation: true
+  code_validation: true
+  accessibility: "WCAG-2.1-AA"
+
+# Configurações de build
+build:
+  static_site_generator: "jekyll"
+  theme: "minima"
+  plugins:
+    - jekyll-feed
+    - jekyll-sitemap
+    - jekyll-seo-tag
+
+# Configurações de validação
+validation:
+  markdown:
+    line_length: 120
+    heading_style: "atx"
+    list_marker: "-"
+    emphasis_marker: "*"
+  
+  code:
+    typescript_strict: true
+    eslint_config: "@typescript-eslint/recommended"
+    prettier_config: true
+  
+  links:
+    check_external: true
+    timeout: 10000
+    retry_count: 3
+  
+  terminology:
+    consistency_check: true
+    glossary_validation: true
+    context_validation: true
+
+# Estrutura de navegação
+navigation:
+  - title: "Arquitetura"
+    path: "arquitetura/"
+    children:
+      - title: "Visão Geral"
+        path: "visao-geral.md"
+      - title: "Arquivo Único"
+        path: "arquivo-unico.md"
+      - title: "Transporte MCP"
+        path: "transporte-mcp.md"
+      - title: "Limitações e Benefícios"
+        path: "limitacoes-beneficios.md"
+      - title: "Fluxo de Dados"
+        path: "fluxo-dados.md"
+  
+  - title: "Desenvolvimento"
+    path: "desenvolvimento/"
+    children:
+      - title: "Convenções de Nomenclatura"
+        path: "convencoes-nomenclatura.md"
+      - title: "Padrões de Implementação"
+        path: "padroes-implementacao.md"
+      - title: "Configuração do Ambiente"
+        path: "configuracao-ambiente.md"
+      - title: "Boas Práticas"
+        path: "boas-praticas.md"
+      - title: "Troubleshooting"
+        path: "troubleshooting.md"
+  
+  - title: "Exemplos"
+    path: "exemplos/"
+    children:
+      - title: "Básicos"
+        path: "basicos/"
+      - title: "Avançados"
+        path: "avancados/"
+      - title: "Integração"
+        path: "integracao/"
+  
+  - title: "Glossário"
+    path: "glossario/"
+    children:
+      - title: "Termos Técnicos"
+        path: "termos-tecnicos.md"
+      - title: "Acrônimos e Siglas"
+        path: "acronimos-siglas.md"
+      - title: "Referências Externas"
+        path: "referencias-externas.md"
+
+# Configurações de SEO
+seo:
+  title_template: "%s | MCP DadosBR PT-BR"
+  description_template: "Documentação em português brasileiro: %s"
+  keywords: 
+    - "MCP"
+    - "Model Context Protocol"
+    - "DadosBR"
+    - "CNPJ"
+    - "CEP"
+    - "API brasileira"
+    - "documentação português"
+    - "desenvolvimento Brasil"
+
+# Configurações de analytics
+analytics:
+  google_analytics: null # Configurar se necessário
+  track_downloads: true
+  track_external_links: true
+  track_search: true
