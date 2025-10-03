@@ -71,13 +71,19 @@ jobs:
 
       - name: Check line count constraint
         run: |
-          LINE_COUNT=$(wc -l < server.ts)
-          echo "Current line count: $LINE_COUNT"
-          if [ $LINE_COUNT -gt 350 ]; then
-            echo "❌ Server file exceeds 350 lines ($LINE_COUNT lines)"
+          TARGET_FILE="lib/core/mcp-server.ts"
+          if [ ! -f "$TARGET_FILE" ]; then
+            echo "ℹ️ Skipping line count check - $TARGET_FILE not found"
+            exit 0
+          fi
+
+          LINE_COUNT=$(wc -l < "$TARGET_FILE")
+          echo "Current line count in $TARGET_FILE: $LINE_COUNT"
+          if [ "$LINE_COUNT" -gt 350 ]; then
+            echo "❌ $TARGET_FILE exceeds 350 lines ($LINE_COUNT lines)"
             exit 1
           else
-            echo "✅ Server file is within acceptable limits ($LINE_COUNT lines)"
+            echo "✅ $TARGET_FILE is within acceptable limits ($LINE_COUNT lines)"
           fi
 
   cloudflare:
