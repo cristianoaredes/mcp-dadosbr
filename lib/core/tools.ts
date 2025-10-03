@@ -2,8 +2,11 @@ import { CnpjSchema, CepSchema } from "./validation.js";
 import { httpJson } from "./http-client.js";
 import { Cache, LookupResult, Metrics, ApiConfig } from "../types/index.js";
 import { SEARCH_TOOL, executeSearch } from "./search.js";
-import { SEQUENTIAL_THINKING_TOOL, SequentialThinkingProcessor } from "./sequential-thinking.js";
-import { CNPJ_INTELLIGENCE_TOOL, executeIntelligence } from "./intelligence.js";
+import {
+  SEQUENTIAL_THINKING_TOOL,
+  SequentialThinkingProcessor,
+} from "./sequential-thinking.js";
+import type { IntelligenceOptions } from "./intelligence.js";
 
 let metrics: Metrics = {
   requests: 0,
@@ -143,7 +146,57 @@ export const TOOL_DEFINITIONS = [
   },
   SEARCH_TOOL,
   SEQUENTIAL_THINKING_TOOL,
-  CNPJ_INTELLIGENCE_TOOL,
+  {
+    name: "cnpj_intelligence",
+    description:
+      "Intelligent automatic search about a Brazilian company using CNPJ.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        cnpj: {
+          type: "string",
+          description: "Brazilian CNPJ number (with or without formatting)",
+        },
+        categories: {
+          type: "array",
+          items: {
+            type: "string",
+            enum: [
+              "government",
+              "legal",
+              "news",
+              "documents",
+              "social",
+              "partners",
+            ],
+          },
+          description: "Search categories to include (default: all)",
+        },
+        provider: {
+          type: "string",
+          enum: ["duckduckgo", "tavily"],
+          description:
+            "Search provider to use (default: duckduckgo with automatic fallback)",
+          default: "duckduckgo",
+        },
+        max_results_per_query: {
+          type: "number",
+          description: "Maximum results per search query (default: 5)",
+          minimum: 1,
+          maximum: 10,
+          default: 5,
+        },
+        max_queries: {
+          type: "number",
+          description: "Maximum number of search queries to execute (default: 10)",
+          minimum: 1,
+          maximum: 20,
+          default: 10,
+        },
+      },
+      required: ["cnpj"],
+    },
+  },
 ];
 
 // Tool execution logic
@@ -166,7 +219,12 @@ export async function executeTool(
     const result = thinkingProcessor.processThought(args);
     return result;
   } else if (name === "cnpj_intelligence") {
-    return await executeIntelligence(args, apiConfig, cache);
+    const { executeIntelligence } = await import("./intelligence.js");
+    return await executeIntelligence(
+      args as IntelligenceOptions,
+      apiConfig,
+      cache
+    );
   } else {
     throw new Error(`Unknown tool: ${name}`);
   }

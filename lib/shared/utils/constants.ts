@@ -4,8 +4,8 @@
  */
 
 export const RATE_LIMIT = {
-  /** DuckDuckGo rate limit interval in milliseconds */
-  DUCKDUCKGO_INTERVAL_MS: 3000,
+  /** DuckDuckGo rate limit interval in milliseconds (raised to minimize 429s) */
+  DUCKDUCKGO_INTERVAL_MS: 7000,
   
   /** Tavily rate limit interval (none, API handles it) */
   TAVILY_INTERVAL_MS: 0,
