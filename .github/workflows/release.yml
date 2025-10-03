@@ -92,11 +92,11 @@ jobs:
       - name: Build Node.js target
         run: npm run build
 
-      - name: Build Cloudflare Workers target
-        run: npm run build:worker
-
       - name: Run integration tests
         run: npm run test:integration
+
+      - name: Build Cloudflare Workers target
+        run: npm run build:worker
 
   # Generate changelog and create GitHub Release
   release:
