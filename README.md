@@ -190,6 +190,8 @@ Configure no Claude Desktop editando `claude_desktop_config.json`:
 }
 ```
 
+**Teste**: *"Pode consultar o CNPJ 00.000.000/0001-91?"*
+
 ### 📖 Documentação Completa
 
 Acesse a **[documentação completa em português](docs/pt-br/README.md)** para:
@@ -199,11 +201,16 @@ Acesse a **[documentação completa em português](docs/pt-br/README.md)** para:
 - Configuração avançada e personalização
 - Tutoriais passo a passo
 
-**Teste**: *"Pode consultar o CNPJ 00.000.000/0001-91?"*
-
 ### 📦 Lançamentos
 
-O projeto utiliza lançamentos automatizados com versionamento semântico e geração automática de changelog. Consulte o [Guia de Lançamento](RELEASING.md) para instruções detalhadas sobre como criar novos lançamentos.
+O projeto utiliza lançamentos automatizados com versionamento semântico e geração automática de changelog. Consulte o [Guia de Lançamento](RELEASING.md) para instruções detalhadas sobre:
+
+- Criação de novos lançamentos
+- Processo de versionamento
+- Fluxos de trabalho automatizados
+- Procedimentos de rollback
+
+**Lançamento Rápido**: Atualize a versão no [`package.json`](package.json), faça commit, crie uma tag git (`v*.*.*`) e envie para disparar o fluxo automatizado.
 
 ---
 
