@@ -2,25 +2,17 @@
 
 This file provides guidance to agents when working with code in this repository.
 
-## Logging Requirements
+## Debugging Environment
 
-- **Critical**: ALL logs MUST go to stderr (`console.error()`) - stdout is reserved for JSON-RPC protocol communication
-- **Thought logging**: Can be disabled with `DISABLE_THOUGHT_LOGGING=true` environment variable
-- **Metrics**: Logged every 10 requests in [`lib/core/tools.ts`](lib/core/tools.ts:35) - not continuously
+- **DISABLE_THOUGHT_LOGGING**: Environment variable to suppress sequential thinking output to stderr
+- **MCP_CACHE_BACKGROUND_CLEANUP**: Opt-in flag (set to "true") enables automatic cache cleanup in [`lib/core/cache.ts`](lib/core/cache.ts:20-22)
 
-## Resilience & Timeouts
+## State Management Issues
 
-- **Circuit breaker**: Located at [`lib/infrastructure/http/circuit-breaker.ts`](lib/infrastructure/http/circuit-breaker.ts) - 5 failures blocks ALL HTTP requests for 30 seconds
-- **Intelligence timeout**: 25 seconds total for intelligence operations in [`lib/core/intelligence.ts`](lib/core/intelligence.ts:39)
-- **DuckDuckGo rate limit**: 3 seconds between requests in [`lib/core/search-providers.ts`](lib/core/search-providers.ts:35)
+- **New server per SSE connection**: Each SSE connection creates new MCP server instance - metrics don't accumulate across connections
+- **Metrics reset**: Calling `resetMetrics()` in [`lib/core/tools.ts`](lib/core/tools.ts:237-244) wipes all performance data
+- **Global circuit breaker**: Single circuit breaker instance in [`lib/infrastructure/http/circuit-breaker.ts`](lib/infrastructure/http/circuit-breaker.ts:6-10) means one failing API blocks all others
 
-## Testing
+## Timeout Behavior
 
-- **Integration tests**: Run with node, NOT vitest - check [`package.json`](package.json:24) scripts
-- **Test execution**: Plain Node.js scripts in [`test/integration/`](test/integration/) directory
-
-## Common Debugging Points
-
-- **Request deduplication**: Second identical request waits for first in [`lib/core/tools.ts`](lib/core/tools.ts:41-49)
-- **Search fallback**: Automatic Tavily fallback when DuckDuckGo fails in [`lib/core/search-providers.ts`](lib/core/search-providers.ts:229-269)
-- **Global circuit breaker**: Single instance affects ALL HTTP requests, not per-endpoint
+- **Intelligence operations**: Use `Promise.race()` not `AbortController` in [`lib/core/intelligence.ts`](lib/core/intelligence.ts:81) - operations continue running after timeout expires
