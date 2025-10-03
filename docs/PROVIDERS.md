@@ -1,57 +1,21 @@
-# Search Providers Guide
+# Search Providers Guide (v0.3.2)
 
 ## Overview
 
-O MCP DadosBR suporta múltiplos providers de busca para a ferramenta `cnpj_intelligence`. Cada provider tem suas vantagens e limitações.
+A partir da versão `0.3.2`, o MCP DadosBR utiliza **exclusivamente a Tavily API** para buscas web na ferramenta `cnpj_intelligence`. O antigo fallback gratuito via DuckDuckGo foi removido para garantir resultados consistentes e 100% assertivos.
 
-## 📋 Providers Disponíveis
-
-| Provider | Custo | Qualidade | Rate Limiting | Status |
-|----------|-------|-----------|---------------|--------|
-| **DuckDuckGo** | Grátis | Baixa-Média | Muito Agressivo | ⚠️ Limitado |
-| **Tavily** | Pago | Alta | Nenhum | ✅ Recomendado |
-| **SerpAPI** | Pago | Muito Alta | Generoso | 🔜 Em breve |
+> ❗️ **Breaking change**: `TAVILY_API_KEY` agora é obrigatória para `cnpj_search` e `cnpj_intelligence`.
 
 ---
 
-## 🦆 DuckDuckGo (Free)
+## 🔍 Tavily (Pago) — Provider Único
 
 ### Características
-- ✅ **Grátis**: Sem custo
-- ⚠️ **Rate Limiting Agressivo**: Pode bloquear até primeira requisição
-- ⚠️ **Qualidade Baixa**: Resultados menos relevantes que Google
-- ⚠️ **IP Blocking**: Pode bloquear seu IP temporariamente
-
-### Configuração
-```bash
-# Nenhuma configuração necessária
-# É o provider padrão
-```
-
-### Uso
-```typescript
-cnpj_intelligence({
-  cnpj: "00000000000191",
-  provider: "duckduckgo"  // ou omitir (é o default)
-})
-```
-
-### Limitações Conhecidas
-1. **Bloqueio agressivo**: DuckDuckGo detecta buscas automatizadas e bloqueia
-2. **Delay de 3 segundos**: Entre cada busca (ainda assim pode bloquear)
-3. **Qualidade inferior**: Resultados menos relevantes
-4. **Não recomendado para produção**
-
----
-
-## 🔍 Tavily (Paid) ⭐ RECOMENDADO
-
-### Características
-- ✅ **Alta Qualidade**: Otimizado para LLMs e agents
-- ✅ **Sem Rate Limiting**: Sem bloqueios
+- ✅ **Alta qualidade**: Resultados otimizados para LLMs e agentes
+- ✅ **Sem rate limiting**: Sem bloqueios nem delays artificiais
 - ✅ **Rápido**: Respostas em milissegundos
-- ✅ **Confiável**: Desenhado para uso em produção
-- 💰 **Custo**: ~$1 USD por 1.000 buscas
+- ✅ **Confiável**: Ambiente desenhado para produção
+- 💰 **Custo**: ~US$ 1 por 1.000 buscas (1000 consultas grátis/mês)
 
 ### Configuração
 
@@ -107,52 +71,11 @@ cnpj_intelligence({
 - ✅ Produção
 - ✅ Due diligence importante
 - ✅ Investigações que precisam de qualidade
-- ✅ Quando DuckDuckGo está bloqueando
-
----
-
-## 🔧 SerpAPI (Coming Soon)
-
-### Características
-- ✅ **Qualidade Máxima**: Resultados do Google real
-- ✅ **Dados Estruturados**: JSON limpo e estruturado
-- 💰 **Mais Caro**: ~$50/mês por 5.000 buscas
-
-### Status
-🔜 **Em desenvolvimento**. A estrutura está pronta, implementação em breve.
-
----
-
-## 🎯 Seleção Automática de Provider
-
-O sistema pode selecionar automaticamente o melhor provider disponível:
-
-```typescript
-cnpj_intelligence({
-  cnpj: "00000000000191"
-  // provider não especificado
-})
-
-// Ordem de preferência:
-// 1. Se TAVILY_API_KEY configurada → Tavily
-// 2. Se SERPAPI_KEY configurada → SerpAPI  
-// 3. Fallback → DuckDuckGo (grátis mas limitado)
-```
+- ✅ Quando buscas precisam de precisão comprovada
 
 ---
 
 ## 💡 Recomendações
-
-### Para Desenvolvimento
-```typescript
-// Use DuckDuckGo com queries limitadas
-cnpj_intelligence({
-  cnpj: "00000000000191",
-  provider: "duckduckgo",
-  max_queries: 2,  // Limitar para evitar bloqueio
-  categories: ["government"]  // Apenas 1 categoria
-})
-```
 
 ### Para Produção
 ```typescript
@@ -185,7 +108,6 @@ cnpj_intelligence({
 ```bash
 # .env (NÃO commitar!)
 TAVILY_API_KEY=tvly-xxxxxxxxxxxxxxxxxxxxxxxx
-SERPAPI_KEY=xxxxxxxxxxxxxxxxxxxxx
 ```
 
 ### Gitignore
@@ -199,42 +121,15 @@ SERPAPI_KEY=xxxxxxxxxxxxxxxxxxxxx
 ---
 
 ## 📊 Comparação Detalhada
+### Monitoramento de Uso
 
-### Qualidade dos Resultados
-```
-SerpAPI     ████████████████████ 100%
-Tavily      ████████████████░░░░  80%
-DuckDuckGo  ████████░░░░░░░░░░░░  40%
-```
-
-### Velocidade
-```
-Tavily      ████████████████████ <500ms
-DuckDuckGo  ██████████░░░░░░░░░░ ~1000ms (+ delays)
-SerpAPI     ████████████░░░░░░░░ ~700ms
-```
-
-### Custo (1000 buscas)
-```
-DuckDuckGo  Grátis
-Tavily      $1 USD
-SerpAPI     $10 USD
-```
+- Configure alertas no painel da Tavily
+- Monitore o número de queries realizadas por investigação (`queries_executed` no resultado)
+- Ajuste `max_queries` conforme necessidade
 
 ---
 
-## 🆘 Troubleshooting
-
-### DuckDuckGo bloqueando?
-```bash
-# Erro: "DDG detected an anomaly in the request"
-
-Soluções:
-1. Aguarde alguns minutos
-2. Use Tavily
-3. Reduza max_queries
-4. Aumente intervalo entre requests
-```
+## 🆘 Troubleshooting Tavily
 
 ### Tavily não funciona?
 ```bash
@@ -258,8 +153,6 @@ curl -X POST "https://api.tavily.com/search" \
 
 - **Tavily**: https://tavily.com
 - **Tavily Docs**: https://docs.tavily.com
-- **SerpAPI**: https://serpapi.com
-- **DuckDuckGo**: https://duckduckgo.com
 
 ---
 
