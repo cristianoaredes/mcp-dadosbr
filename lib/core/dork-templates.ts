@@ -34,16 +34,17 @@ export function buildDorks(cnpjData: any, categories?: DorkCategory[]): DorkTemp
       });
     }
 
-    if (razaoSocial) {
+    // Combine CNPJ + razao social for precision
+    if (razaoSocial && cnpj) {
       allDorks.push({
         category: 'government',
-        query: `"${razaoSocial}" site:transparencia.gov.br`,
+        query: `"${cnpj}" "${razaoSocial}" site:transparencia.gov.br`,
         description: 'Transparency portal records'
       });
 
       allDorks.push({
         category: 'government',
-        query: `"${razaoSocial}" site:portaldatransparencia.gov.br`,
+        query: `"${cnpj}" site:portaldatransparencia.gov.br`,
         description: 'Federal transparency records'
       });
     }
@@ -59,16 +60,17 @@ export function buildDorks(cnpjData: any, categories?: DorkCategory[]): DorkTemp
 
   // LEGAL - Lawsuits and legal documents
   if (includeCategory('legal')) {
-    if (razaoSocial) {
+    // Always combine with CNPJ for precision
+    if (razaoSocial && cnpj) {
       allDorks.push({
         category: 'legal',
-        query: `"${razaoSocial}" site:jusbrasil.com.br`,
+        query: `"${cnpj}" "${razaoSocial}" site:jusbrasil.com.br`,
         description: 'Legal cases in JusBrasil'
       });
 
       allDorks.push({
         category: 'legal',
-        query: `"${razaoSocial}" site:*.jus.br`,
+        query: `"${cnpj}" site:*.jus.br`,
         description: 'Court records'
       });
     }
@@ -81,10 +83,10 @@ export function buildDorks(cnpjData: any, categories?: DorkCategory[]): DorkTemp
       });
     }
 
-    if (nomeFantasia && nomeFantasia !== razaoSocial) {
+    if (nomeFantasia && nomeFantasia !== razaoSocial && cnpj) {
       allDorks.push({
         category: 'legal',
-        query: `"${nomeFantasia}" site:jusbrasil.com.br`,
+        query: `"${cnpj}" "${nomeFantasia}" site:jusbrasil.com.br`,
         description: 'Legal cases by trade name'
       });
     }
@@ -92,16 +94,17 @@ export function buildDorks(cnpjData: any, categories?: DorkCategory[]): DorkTemp
 
   // NEWS - Recent news and articles
   if (includeCategory('news')) {
-    if (razaoSocial) {
+    // Use CNPJ for precision in news searches
+    if (razaoSocial && cnpj) {
       allDorks.push({
         category: 'news',
-        query: `"${razaoSocial}" intext:notícia`,
+        query: `"${cnpj}" "${razaoSocial}"`,
         description: 'News articles'
       });
 
       allDorks.push({
         category: 'news',
-        query: `"${razaoSocial}" (site:g1.globo.com OR site:folha.uol.com.br OR site:estadao.com.br)`,
+        query: `"${cnpj}" (site:g1.globo.com OR site:folha.uol.com.br OR site:estadao.com.br)`,
         description: 'Major news outlets'
       });
     }

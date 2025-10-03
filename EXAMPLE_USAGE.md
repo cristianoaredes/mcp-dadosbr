@@ -1,4 +1,4 @@
-# 🎯 Exemplos de Uso - MCP DadosBR v0.2.0
+# 🎯 Exemplos de Uso - MCP DadosBR v0.3.2
 
 ## 📋 Ferramentas Disponíveis
 
@@ -95,22 +95,19 @@ Faça uma investigação completa usando cnpj_intelligence sobre o CNPJ 00.000.0
 - 📊 Alta qualidade dos resultados
 - 💰 Custo baixo (~$0.01 por investigação)
 
-### Sem API Key (Grátis, Limitado)
+### ✨ Novidade v0.3.2: Filtros de Assertividade
 
-**Prompt:**
-```
-Use cnpj_intelligence para investigar o CNPJ 00.000.000/0001-91, mas limite a 3 queries na categoria government apenas
-```
+**O que mudou:**
+- 🎯 **100% de precisão**: Todos os resultados são validados automaticamente
+- 🔍 **Filtro CNPJ**: Remove resultados que não mencionam o CNPJ exato
+- 📊 **Dork otimizados**: Combina CNPJ + razão social nas buscas
+- ⚡ **Tavily exclusivo**: Provider pago obrigatório (DuckDuckGo removido)
 
-**Configuração no prompt:**
-- `categories: ["government"]` - Apenas 1 categoria
-- `max_queries: 3` - Limitar queries
-- `provider: "duckduckgo"` - Provider grátis
-
-**Limitações:**
-- ⚠️ Pode bloquear
-- ⚠️ Resultados de menor qualidade
-- ⚠️ Mais lento (delays de 3s)
+**Por que Tavily é obrigatório:**
+- ✅ **Qualidade garantida**: Resultados sempre relevantes
+- ✅ **Sem bloqueios**: Rate limits mais altos
+- ✅ **Mais rápido**: Sem delays artificiais
+- 💰 **Custo**: ~$0.01 por investigação (15-20 queries)
 
 ---
 

@@ -4,7 +4,7 @@
 
 import { lookup } from './tools.js';
 import { ApiConfig, Cache, LookupResult } from '../types/index.js';
-import { createProvider, getAvailableProvider, SearchProvider, SearchResult, ProviderType, searchWithFallback } from './search-providers.js';
+import { getAvailableProvider, SearchProvider, SearchResult, ProviderType } from './search-providers.js';
 import { buildDorks, DorkCategory, DorkTemplate } from './dork-templates.js';
 import { TimeoutError } from '../shared/types/result.js';
 import { TIMEOUTS, SEARCH } from '../shared/utils/constants.js';
@@ -28,6 +28,33 @@ export interface IntelligenceResult {
 export interface SearchResultWithMeta extends SearchResult {
   query: string;
   category: DorkCategory;
+}
+
+/**
+ * Normalize CNPJ to digits only for comparison
+ */
+function normalizeCnpj(cnpj: string): string {
+  return cnpj.replace(/\D/g, '');
+}
+
+/**
+ * Check if a text contains the CNPJ (with or without formatting)
+ */
+function containsCnpj(text: string, cnpj: string): boolean {
+  const normalizedCnpj = normalizeCnpj(cnpj);
+  const normalizedText = normalizeCnpj(text);
+  return normalizedText.includes(normalizedCnpj);
+}
+
+/**
+ * Filter search results to only include those that mention the CNPJ
+ */
+function filterResultsByCnpj(results: SearchResult[], cnpj: string): SearchResult[] {
+  return results.filter(result => {
+    // Check title, URL, and snippet for CNPJ
+    const searchText = `${result.title} ${result.url} ${result.snippet}`.toLowerCase();
+    return containsCnpj(searchText, cnpj);
+  });
 }
 
 export async function executeIntelligence(
@@ -86,7 +113,14 @@ async function executeIntelligenceInternal(
     
     console.error(`[intelligence] [${options.cnpj}] Generated ${dorks.length} dorks, using ${selectedDorks.length}`);
 
-    // Step 3: Execute searches with automatic fallback
+    // Step 3: Resolve provider (requires Tavily API key)
+    const provider: SearchProvider = await getAvailableProvider(options.provider);
+
+    console.error(
+      `[intelligence] [${options.cnpj}] Using provider: ${provider.name}`
+    );
+
+    // Step 4: Execute searches
     const searchResults: Record<DorkCategory, SearchResultWithMeta[]> = {
       government: [],
       legal: [],
@@ -96,34 +130,35 @@ async function executeIntelligenceInternal(
       partners: []
     };
 
-    let queriesExecuted = 0;
-    let providerUsed = 'auto-fallback';
+    const providerUsed = provider.name;
     const maxResultsPerQuery = options.maxResultsPerQuery || SEARCH.DEFAULT_MAX_RESULTS;
-
-    console.error(`[intelligence] [${options.cnpj}] Using automatic provider fallback`);
+    let queriesExecuted = 0;
 
     for (const dork of selectedDorks) {
       try {
         console.error(`[intelligence] [${dork.category}] Searching: ${dork.query}`);
-        
-        // Use searchWithFallback for automatic provider switching
-        const searchResult = await searchWithFallback(
-          dork.query, 
-          maxResultsPerQuery, 
-          options.provider
+        const searchResult = await provider.search(
+          dork.query,
+          maxResultsPerQuery
         );
-        
+
         if (searchResult.ok) {
-          const resultsWithMeta: SearchResultWithMeta[] = searchResult.value.map(r => ({
+          // Filter results to ensure they contain the CNPJ
+          const filteredResults = filterResultsByCnpj(searchResult.value, options.cnpj);
+          
+          const resultsWithMeta: SearchResultWithMeta[] = filteredResults.map(r => ({
             ...r,
             query: dork.query,
             category: dork.category
           }));
 
           searchResults[dork.category].push(...resultsWithMeta);
-          queriesExecuted++;
+          queriesExecuted += 1;
 
-          console.error(`[intelligence] [${dork.category}] Found ${searchResult.value.length} results`);
+          console.error(
+            `[intelligence] [${dork.category}] Found ${searchResult.value.length} results, ` +
+            `${filteredResults.length} after CNPJ filter`
+          );
         } else {
           // Log error but continue with other searches
           console.error(`[intelligence] [${dork.category}] Search failed: ${searchResult.error.message}`);
@@ -195,10 +230,9 @@ It automatically:
 Perfect for: Due diligence, company research, background checks, investigations.
 
 Provider options:
-- duckduckgo (default, free, may be rate-limited)
-- tavily (paid, reliable, requires TAVILY_API_KEY env var)
+- tavily (requires TAVILY_API_KEY env var)
 
-Note: Automatic fallback will try Tavily if DuckDuckGo is rate-limited.`,
+Note: You must set TAVILY_API_KEY to enable web search queries.`,
   inputSchema: {
     type: "object",
     properties: {
@@ -216,9 +250,9 @@ Note: Automatic fallback will try Tavily if DuckDuckGo is rate-limited.`,
       },
       provider: {
         type: "string",
-        enum: ["duckduckgo", "tavily"],
-        description: "Search provider to use (default: duckduckgo with automatic fallback)",
-        default: "duckduckgo"
+        enum: ["tavily"],
+        description: "Search provider to use (requires TAVILY_API_KEY)",
+        default: "tavily"
       },
       max_results_per_query: {
         type: "number",
