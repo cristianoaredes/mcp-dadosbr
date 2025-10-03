@@ -14,7 +14,7 @@ import { dirname, join } from 'path';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-const serverPath = join(__dirname, '..', 'server.ts');
+const serverPath = join(__dirname, '..', 'lib', 'bin', 'mcp-dadosbr.ts');
 
 const SERVER_URL = 'http://localhost:3000/mcp';
 
@@ -87,6 +87,7 @@ async function sendHttpRequest(testCase) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        'Accept': 'text/event-stream',
       },
       body: JSON.stringify(testCase.message)
     });

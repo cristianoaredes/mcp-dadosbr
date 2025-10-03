@@ -1,35 +1,20 @@
 import { SERVER_NAME, SERVER_VERSION } from "../config/index.js";
 import { HttpResponse } from "../types/index.js";
+import { CircuitBreaker } from "../infrastructure/http/circuit-breaker.js";
 
-// Circuit breaker state
-let failures = 0;
-let lastFailure = 0;
-let cbState: "CLOSED" | "OPEN" = "CLOSED";
-
-async function withCircuitBreaker<T>(fn: () => Promise<T>): Promise<T> {
-  if (cbState === "OPEN" && Date.now() - lastFailure < 30000) {
-    throw new Error("Circuit breaker is OPEN");
-  }
-  if (cbState === "OPEN") cbState = "CLOSED";
-  try {
-    const result = await fn();
-    failures = 0;
-    cbState = "CLOSED";
-    return result;
-  } catch (error) {
-    failures++;
-    lastFailure = Date.now();
-    if (failures >= 5) cbState = "OPEN";
-    throw error;
-  }
-}
+// Global circuit breaker instance for HTTP requests
+const circuitBreaker = new CircuitBreaker({
+  failureThreshold: 5,
+  resetTimeoutMs: 30000,
+  halfOpenMaxAttempts: 3,
+});
 
 export async function httpJson(
   url: string,
   authHeaders?: Record<string, string>,
   timeoutMs = 8000
 ): Promise<HttpResponse> {
-  return await withCircuitBreaker(async () => {
+  return await circuitBreaker.execute(async () => {
     const controller = new AbortController();
     setTimeout(() => controller.abort(), timeoutMs);
     try {

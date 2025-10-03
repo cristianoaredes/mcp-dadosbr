@@ -2,6 +2,52 @@
 
 All notable changes to MCP DadosBR will be documented in this file.
 
+## [Unreleased]
+
+### Planned
+
+- **📱 Flutter/Dart Library**: Comprehensive Flutter library for mobile, web, and desktop applications
+  - Cross-platform CNPJ and CEP lookup with the same reliable data sources
+  - Smart caching with 60-second TTL and LRU eviction optimized for mobile
+  - Circuit breaker pattern with exponential backoff for mobile networks
+  - AI integration with LangChain Dart and LangGraph support
+  - MCP server mode with HTTP/SSE transport for AI agent connectivity
+  - Batch processing with Stream-based APIs for multiple document lookups
+  - Comprehensive utility functions for validation, formatting, and offline verification
+  - Platform-specific HTTP clients (dart:io for mobile/desktop, fetch for web)
+  - Type-safe Dart classes mirroring the TypeScript interfaces
+  - See [Flutter Library Documentation](docs/FLUTTER_LIBRARY.md) for details
+
+## [0.2.0] - 2025-09-30
+
+### Added
+
+- **🔍 Web Search Tool (`cnpj_search`)**: Intelligent web search using DuckDuckGo
+  - Support for advanced search operators (site:, intext:, intitle:, filetype:, etc.)
+  - Rate limiting (1 second between requests)
+  - Automatic caching of search results
+  - Find lawsuits, documents, news, and online presence of companies
+  
+- **🧠 Sequential Thinking Tool (`sequentialthinking`)**: Structured and iterative reasoning
+  - Dynamic problem-solving with adaptable thinking process
+  - Support for revisions and branches in reasoning
+  - Colorized output for better visualization
+  - Context tracking across multiple thought steps
+  - Useful for complex analysis and investigations
+
+### Enhanced
+
+- **Tool System**: Extended to support 4 tools (cnpj_lookup, cep_lookup, cnpj_search, sequentialthinking)
+- **Documentation**: Updated README with new tools and examples
+- **Architecture**: KISS approach - LLM orchestrates independent tools
+
+### Technical
+
+- Added `duckduckgo-search` dependency for web search
+- Added `chalk` dependency for colorized thinking output
+- Zero cost for new features (DuckDuckGo is free)
+- Minimal changes to existing codebase
+
 ## [1.1.1] - 2025-09-28
 
 ### Fixed

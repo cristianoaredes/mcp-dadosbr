@@ -1,6 +1,9 @@
 import { CnpjSchema, CepSchema } from "./validation.js";
 import { httpJson } from "./http-client.js";
 import { Cache, LookupResult, Metrics, ApiConfig } from "../types/index.js";
+import { SEARCH_TOOL, executeSearch } from "./search.js";
+import { SEQUENTIAL_THINKING_TOOL, SequentialThinkingProcessor } from "./sequential-thinking.js";
+import { CNPJ_INTELLIGENCE_TOOL, executeIntelligence } from "./intelligence.js";
 
 let metrics: Metrics = {
   requests: 0,
@@ -10,11 +13,29 @@ let metrics: Metrics = {
   startTime: Date.now(),
 };
 
+// Simple performance monitoring
+function logPerformanceMetrics(): void {
+  const uptime = Date.now() - metrics.startTime;
+  const avgResponseTime = metrics.requests > 0 ? metrics.totalTime / metrics.requests : 0;
+  const cacheHitRate = metrics.requests > 0 ? (metrics.cacheHits / metrics.requests) * 100 : 0;
+  
+  console.error(`[metrics] Uptime: ${Math.round(uptime/1000)}s | Requests: ${metrics.requests} | Cache Hit Rate: ${cacheHitRate.toFixed(1)}% | Avg Response: ${avgResponseTime.toFixed(0)}ms | Errors: ${metrics.errors}`);
+}
+
+// Log metrics every 100 requests
+let lastMetricsLog = 0;
+
 function recordMetrics(elapsed: number, fromCache: boolean, error: boolean) {
   metrics.requests++;
   metrics.totalTime += elapsed;
   if (fromCache) metrics.cacheHits++;
   if (error) metrics.errors++;
+  
+  // Log metrics every 10 requests (simple monitoring)
+  if (metrics.requests - lastMetricsLog >= 10) {
+    logPerformanceMetrics();
+    lastMetricsLog = metrics.requests;
+  }
 }
 
 // Request deduplication to prevent concurrent identical API calls
@@ -87,6 +108,9 @@ export async function lookup(
   });
 }
 
+// Sequential Thinking processor instance
+const thinkingProcessor = new SequentialThinkingProcessor();
+
 // Tool definitions for MCP
 export const TOOL_DEFINITIONS = [
   {
@@ -117,6 +141,9 @@ export const TOOL_DEFINITIONS = [
       required: ["cep"],
     },
   },
+  SEARCH_TOOL,
+  SEQUENTIAL_THINKING_TOOL,
+  CNPJ_INTELLIGENCE_TOOL,
 ];
 
 // Tool execution logic
@@ -132,6 +159,14 @@ export async function executeTool(
   } else if (name === "cep_lookup") {
     const parsed = CepSchema.parse(args);
     return await lookup("cep", parsed.cep, apiConfig, cache);
+  } else if (name === "cnpj_search") {
+    const { query, max_results = 5 } = args;
+    return await executeSearch(query, max_results, cache);
+  } else if (name === "sequentialthinking") {
+    const result = thinkingProcessor.processThought(args);
+    return result;
+  } else if (name === "cnpj_intelligence") {
+    return await executeIntelligence(args, apiConfig, cache);
   } else {
     throw new Error(`Unknown tool: ${name}`);
   }
