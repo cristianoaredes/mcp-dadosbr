@@ -1,6 +1,6 @@
 name = "mcp-dadosbr-aredes"
 main = "build/lib/workers/worker.js"
-compatibility_date = "2025-09-27"
+compatibility_date = "2024-09-27"
 compatibility_flags = ["nodejs_compat"]
 
 # Custom domain configuration - Will be set up via Dashboard

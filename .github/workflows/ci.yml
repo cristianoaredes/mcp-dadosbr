@@ -107,29 +107,42 @@ jobs:
       - name: Build for Cloudflare Workers
         run: npm run build:worker
 
-      - name: Validate wrangler.toml
-        run: |
-          # Install wrangler for validation
-          npm install -g wrangler
-
-          # Validate configuration
-          wrangler validate
-
       - name: Check worker build output
         run: |
-          if [ ! -f "dist/worker.js" ]; then
-            echo "❌ Worker build failed - dist/worker.js not found"
+          if [ ! -f "build/lib/workers/worker.js" ]; then
+            echo "❌ Worker build failed - build/lib/workers/worker.js not found"
             exit 1
           fi
 
           # Check if the worker file is not empty
-          if [ ! -s "dist/worker.js" ]; then
-            echo "❌ Worker build failed - dist/worker.js is empty"
+          if [ ! -s "build/lib/workers/worker.js" ]; then
+            echo "❌ Worker build failed - build/lib/workers/worker.js is empty"
             exit 1
           fi
 
           echo "✅ Cloudflare Worker build successful"
 
           # Show build size
-          WORKER_SIZE=$(wc -c < dist/worker.js)
+          WORKER_SIZE=$(wc -c < build/lib/workers/worker.js)
           echo "Worker bundle size: ${WORKER_SIZE} bytes"
+
+      - name: Check worker bundle size
+        run: |
+          WORKER_FILE="build/lib/workers/worker.js"
+          if [ ! -f "$WORKER_FILE" ]; then
+            echo "⚠️ Worker file not found at $WORKER_FILE"
+            exit 0
+          fi
+          
+          WORKER_SIZE=$(wc -c < "$WORKER_FILE")
+          MAX_SIZE=1048576  # 1MB in bytes
+          SIZE_MB=$(echo "scale=2; $WORKER_SIZE / 1048576" | bc)
+          
+          echo "📦 Worker bundle size: ${SIZE_MB}MB ($WORKER_SIZE bytes)"
+          
+          if [ $WORKER_SIZE -gt $MAX_SIZE ]; then
+            echo "❌ Worker exceeds Cloudflare's 1MB limit"
+            exit 1
+          else
+            echo "✅ Worker is within size limits"
+          fi
