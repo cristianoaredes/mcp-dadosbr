@@ -6,49 +6,47 @@
 [![Cloudflare Workers](https://img.shields.io/badge/Cloudflare-Workers-F38020?logo=cloudflare&logoColor=white)](https://mcp-dadosbr.aredes.me/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-**Model Context Protocol Server for Brazilian Public Data**
+**Servidor MCP para consulta de dados públicos brasileiros**
 
-[English](#english) | [Português](#português)
+[Português](#português) | [English](#english)
 
-Access Brazilian government data directly in AI assistants like Claude Desktop, Cursor, and Windsurf. Query CNPJ company records, CEP postal codes, perform intelligent web searches, and analyze complex data using the Model Context Protocol (MCP).
+Acesse dados do governo brasileiro direto em assistentes de IA como Claude Desktop, Cursor e Windsurf. Consulte CNPJ de empresas, CEP, realize buscas inteligentes e análise de dados complexos usando o Model Context Protocol (MCP).
 
 ---
 
-## 🚀 Features
+## Português
 
-- 🏢 **CNPJ Lookup** - Brazilian company data (legal name, status, address, CNAE activity codes)
-- 📮 **CEP Lookup** - Postal code information (street, neighborhood, city, state)
-- 🔍 **Intelligent Search** - Web search with Google Dork operators for targeted research
-- 🤔 **Structured Reasoning** - Sequential thinking tool for complex analysis
-- 🎯 **Research Intelligence** - Orchestrated multi-query company investigations
+### 🚀 Recursos
 
-## ⚡ Quick Start
+- 🏢 **Consulta CNPJ** - Dados de empresas (razão social, situação cadastral, endereço, CNAE)
+- 📮 **Consulta CEP** - Informações de endereço (rua, bairro, cidade, estado)
+- 🔍 **Busca Inteligente** - Pesquisa web com operadores Google Dork para pesquisas direcionadas
+- 🤔 **Raciocínio Estruturado** - Ferramenta de pensamento sequencial para análises complexas
+- 🎯 **Inteligência de Pesquisa** - Orquestração de múltiplas consultas para investigações completas
 
-Install globally via NPM:
+### ⚡ Instalação Rápida
 
-### Installing via Smithery
-
-To install mcp-dadosbr automatically via [Smithery](https://smithery.ai/server/@cristianoaredes/mcp-dadosbr):
+#### Via Smithery (Recomendado)
 
 ```bash
 npx -y @smithery/cli install @cristianoaredes/mcp-dadosbr --client claude
 ```
 
-### Manual Installation
+#### Via NPM
 
 ```bash
 npm install -g @aredes.me/mcp-dadosbr
 ```
 
-Or use directly with NPX:
+Ou use diretamente com NPX:
 
 ```bash
 npx @aredes.me/mcp-dadosbr
 ```
 
-### Configure in Claude Desktop
+### 🔌 Configuração no Claude Desktop
 
-Add to your `claude_desktop_config.json`:
+Adicione ao seu `claude_desktop_config.json`:
 
 ```json
 {
@@ -61,116 +59,106 @@ Add to your `claude_desktop_config.json`:
 }
 ```
 
-**Config location**: `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS)
+**Localização do config**: `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS)
 
-Test with: *"Can you look up CNPJ 00.000.000/0001-91?"*
+**Teste**: *"Pode consultar o CNPJ 00.000.000/0001-91?"*
 
-## 💼 Use Cases
+### 💼 Casos de Uso
 
-**Company Due Diligence**: Verify legal entity status, registration details, and business activity codes for procurement and partnerships.
+- **Due Diligence**: Verifique status legal, detalhes de registro e códigos CNAE para parcerias
+- **E-commerce e Logística**: Valide endereços de entrega usando CEP para reduzir erros
+- **Pesquisa Jurídica**: Busque processos, contratos e editais usando operadores de busca avançados
+- **KYC e Compliance**: Automatize verificação de empresas para serviços financeiros
 
-**E-commerce & Logistics**: Validate shipping addresses using CEP lookup to reduce delivery errors and optimize routing.
+### 🔌 Plataformas Suportadas
 
-**Legal Research**: Search government databases for lawsuits, contracts, and procurement documents using intelligent web search with site operators.
+**Assistentes de IA**: Claude Desktop, Continue.dev, Cursor, Windsurf  
+**Deploy**: Node.js (stdio), Cloudflare Workers (HTTP), Plataforma Smithery  
+**Transporte**: stdio para aplicações desktop, HTTP/SSE para web e integrações API
 
-**KYC & Compliance**: Automate company verification for financial services, combining CNPJ data with web research for comprehensive due diligence.
+**Demo ao vivo**: [https://mcp-dadosbr.aredes.me](https://mcp-dadosbr.aredes.me)
 
-## 🔌 Supported Platforms
+### 📚 Documentação
 
-**AI Assistants**: Claude Desktop, Continue.dev, Cursor, Windsurf  
-**Deployment**: Node.js (stdio), Cloudflare Workers (HTTP), Smithery Platform  
-**Transport**: stdio for desktop applications, HTTP/SSE for web and API integrations
+#### 🚀 Primeiros Passos
+- **[Guia de Configuração](docs/CONFIGURATION.md)** - Variáveis de ambiente, endpoints personalizados
+- **[Exemplos de Uso](docs/USAGE_EXAMPLES.md)** - Padrões de integração e exemplos de código
+- **[Integração com Clientes MCP](docs/MCP_CLIENT_INTEGRATION.md)** - Setup para Claude, Cursor, Windsurf, Continue.dev
 
-**Live Demo**: [https://mcp-dadosbr.aredes.me](https://mcp-dadosbr.aredes.me)
+#### 🔧 Recursos Avançados
+- **[Operadores de Busca](docs/WEB_SEARCH.md)** - Sintaxe Google Dork para pesquisas direcionadas
+- **[Pensamento Sequencial](docs/SEQUENTIAL_THINKING.md)** - Raciocínio estruturado para análise de dados
+- **[Ferramenta de Inteligência](docs/USAGE_EXAMPLES.md#intelligence)** - Orquestração multi-query
 
-## 📚 Documentation
+#### 🌐 Deploy
+- **[Cloudflare Workers](docs/CLOUDFLARE_DEPLOYMENT.md)** - Deploy serverless com distribuição global
+- **[Plataforma Smithery](smithery.yaml)** - Configuração de deploy com um clique
+- **[Provedores de Busca](docs/PROVIDERS.md)** - Setup DuckDuckGo, Tavily, SerpAPI
 
-### 🚀 Getting Started
-- **[Configuration Guide](docs/CONFIGURATION.md)** - Environment variables, custom API endpoints, authentication
-- **[Usage Examples](docs/USAGE_EXAMPLES.md)** - Real-world integration patterns and code samples
-- **[MCP Client Integration](docs/MCP_CLIENT_INTEGRATION.md)** - Detailed setup for Claude, Cursor, Windsurf, Continue.dev
+#### 📚 Referência
+- **[Estrutura do Projeto](PROJECT_STRUCTURE.md)** - Organização do código e visão arquitetural
+- **[Guia de Navegação](NAVIGATION.md)** - Referência rápida para encontrar documentação
+- **[Documentação Completa PT-BR](docs/pt-br/README.md)** - Documentação técnica completa em português
+- **[Arquitetura](docs/pt-br/arquitetura/)** - Diagramas e decisões de design
+- **[Exemplos Práticos](docs/pt-br/exemplos/)** - Casos de uso brasileiros e tutoriais
 
-### 🔧 Advanced Features
-- **[Web Search Operators](docs/WEB_SEARCH.md)** - Google Dork syntax for targeted research queries
-- **[Sequential Thinking](docs/SEQUENTIAL_THINKING.md)** - Structured reasoning for complex data analysis
-- **[Intelligence Tool](docs/USAGE_EXAMPLES.md#intelligence)** - Multi-query orchestration for comprehensive research
+### 🛠️ Ferramentas Principais
 
-### 🌐 Deployment
-- **[Cloudflare Workers](docs/CLOUDFLARE_DEPLOYMENT.md)** - Serverless deployment with global edge distribution
-- **[Smithery Platform](smithery.yaml)** - One-click deployment configuration
-- **[Search Providers](docs/PROVIDERS.md)** - DuckDuckGo, Tavily, SerpAPI setup and comparison
+#### `cnpj_lookup`
+Consulta dados de empresas brasileiras por CNPJ.
 
-### 📚 Reference
-- **[Project Structure](PROJECT_STRUCTURE.md)** - Codebase organization and architecture overview
-- **[Navigation Guide](NAVIGATION.md)** - Quick reference for finding documentation
+**Entrada**: Número do CNPJ (formatado ou não)  
+**Saída**: Razão social, situação cadastral, endereço, códigos CNAE, data de abertura  
+**Fonte**: OpenCNPJ (API pública gratuita)
 
-### 🇧🇷 Português
-- **[Documentação Completa PT-BR](docs/pt-br/README.md)** - Complete technical documentation in Brazilian Portuguese
-- **[Arquitetura](docs/pt-br/arquitetura/)** - Detailed architectural diagrams and design decisions
-- **[Exemplos Práticos](docs/pt-br/exemplos/)** - Brazilian use cases and step-by-step tutorials
+#### `cep_lookup`
+Consulta códigos postais para informações de endereço.
 
-## 🛠️ Key Tools
+**Entrada**: Número do CEP (formatado ou não)  
+**Saída**: Logradouro, bairro, cidade, estado, DDD  
+**Fonte**: OpenCEP (API pública gratuita)
 
-### `cnpj_lookup`
-Query Brazilian company data by CNPJ (Cadastro Nacional da Pessoa Jurídica).
+#### `cnpj_search`
+Busca inteligente na web com operadores avançados para pesquisa de empresas.
 
-**Input**: CNPJ number (formatted or raw)  
-**Output**: Company name, legal status, address, CNAE codes, registration date  
-**Data Source**: OpenCNPJ (free public API)
+**Operadores**: `site:`, `intext:`, `intitle:`, `filetype:`, `-exclude`  
+**Casos de Uso**: Processos judiciais, contratos governamentais, notícias, relatórios financeiros
 
-### `cep_lookup`
-Query Brazilian postal codes for address information.
+#### `sequentialthinking`
+Ferramenta de raciocínio estruturado para análises complexas.
 
-**Input**: CEP number (formatted or raw)  
-**Output**: Street name, neighborhood, city, state, area code  
-**Data Source**: OpenCEP (free public API)
+**Recursos**: Pensamento iterativo, revisão de planos, exploração de ramificações  
+**Casos de Uso**: Investigações multi-etapas, validação de dados, processos decisórios
 
-### `cnpj_search`
-Perform intelligent web searches with advanced operators for company research.
+#### `intelligence`
+Orquestra múltiplas consultas em relatórios abrangentes de inteligência empresarial.
 
-**Operators**: `site:`, `intext:`, `intitle:`, `filetype:`, `-exclude`  
-**Use Cases**: Find lawsuits, government contracts, news articles, financial reports
+**Capacidades**: Geração automatizada de consultas, execução paralela, síntese de resultados  
+**Casos de Uso**: Due diligence, pesquisa de mercado, análise competitiva
 
-### `sequentialthinking`
-Structured reasoning tool for breaking down complex analysis into logical steps.
+### 🤝 Contribuindo
 
-**Features**: Iterative thinking, plan revision, branch exploration  
-**Use Cases**: Multi-step investigations, data validation, decision-making processes
+Contribuições são bem-vindas! Veja o [Guia de Contribuição](CONTRIBUTING.md) para setup de desenvolvimento, padrões de código e como submeter pull requests.
 
-### `intelligence`
-Orchestrate multiple research queries into comprehensive company intelligence reports.
+**Código de Conduta**: Este projeto segue o [Contributor Covenant](https://www.contributor-covenant.org/).
 
-**Capabilities**: Automated query generation, parallel search execution, result synthesis  
-**Use Cases**: Due diligence, market research, competitive analysis
+### 📦 Lançamentos
 
-## 🤝 Contributing
+Este projeto usa lançamentos automatizados com versionamento semântico e geração automática de changelog. Veja o [Guia de Lançamento](RELEASING.md) para instruções detalhadas.
 
-We welcome contributions from the community! See the [Contributing Guide](CONTRIBUTING.md) for development setup, coding standards, and how to submit pull requests.
+**Lançamento Rápido**: Atualize a versão no [`package.json`](package.json), faça commit, crie uma tag git (`v*.*.*`) e envie para disparar o workflow automatizado.
 
-**Code of Conduct**: This project follows the [Contributor Covenant](https://www.contributor-covenant.org/) code of conduct.
+### 📄 Licença
 
-## 📦 Releases
+Licença MIT - veja o arquivo [LICENSE](LICENSE) para detalhes.
 
-This project uses automated releases with semantic versioning and changelog generation. See the [Release Guide](RELEASING.md) for detailed instructions on:
+### 🙏 Créditos
 
-- Creating new releases
-- Version tagging process
-- Automated workflows
-- Rollback procedures
+**Fontes de Dados**:
+- [OpenCNPJ](https://opencnpj.org/) - Dados públicos de empresas brasileiras
+- [OpenCEP](https://opencep.com/) - Base de dados de CEP brasileiros
 
-**Quick Release**: Update [`package.json`](package.json) version, commit, create a git tag (`v*.*.*`), and push to trigger automated release workflow.
-
-## 📄 License
-
-MIT License - see [LICENSE](LICENSE) file for details.
-
-## 🙏 Credits
-
-**Data Sources**:
-- [OpenCNPJ](https://opencnpj.org/) - Free Brazilian company registry data
-- [OpenCEP](https://opencep.com/) - Free Brazilian postal code database
-
-## 👨‍💻 Author
+### 👨‍💻 Autor
 
 <table>
   <tr>
@@ -186,35 +174,51 @@ MIT License - see [LICENSE](LICENSE) file for details.
   </tr>
 </table>
 
-### Installing via Smithery
+**Mantenedor**: [Cristiano Aredes](https://github.com/cristianoaredes) | [LinkedIn](https://www.linkedin.com/in/cristianoaredes/) | cristiano@aredes.me
 
-Para instalar automaticamente via [Smithery](https://smithery.ai/server/@cristianoaredes/mcp-dadosbr):
+---
+
+**Feito com ❤️ para a comunidade brasileira de desenvolvedores 🇧🇷**
+
+---
+
+## English
+
+**Model Context Protocol Server for Brazilian Public Data**
+
+Access Brazilian government data directly in AI assistants like Claude Desktop, Cursor, and Windsurf. Query CNPJ company records, CEP postal codes, perform intelligent web searches, and analyze complex data using the Model Context Protocol (MCP).
+
+### 🚀 Features
+
+- 🏢 **CNPJ Lookup** - Brazilian company data (legal name, status, address, CNAE codes)
+- 📮 **CEP Lookup** - Postal code information (street, neighborhood, city, state)
+- 🔍 **Intelligent Search** - Web search with Google Dork operators
+- 🤔 **Structured Reasoning** - Sequential thinking for complex analysis
+- 🎯 **Research Intelligence** - Multi-query company investigations
+
+### ⚡ Quick Start
+
+#### Via Smithery (Recommended)
 
 ```bash
 npx -y @smithery/cli install @cristianoaredes/mcp-dadosbr --client claude
 ```
 
-### Instalação Manual
-
-**Maintainer**: [Cristiano Aredes](https://github.com/cristianoaredes) | [LinkedIn](https://www.linkedin.com/in/cristianoaredes/) | cristiano@aredes.me
-
----
-
-## Português
-
-🇧🇷 **Servidor MCP para consulta de dados públicos brasileiros.**
-
-Integre informações de CNPJ (empresas) e CEP (códigos postais) diretamente no Claude Desktop, Cursor, Windsurf, Continue.dev e outros assistentes de IA compatíveis com o Model Context Protocol.
-
-### ⚡ Instalação
+#### Via NPM
 
 ```bash
 npm install -g @aredes.me/mcp-dadosbr
 ```
 
-### 🔌 Configuração
+Or use with NPX:
 
-Configure no Claude Desktop editando `claude_desktop_config.json`:
+```bash
+npx @aredes.me/mcp-dadosbr
+```
+
+### 🔌 Configure in Claude Desktop
+
+Add to `claude_desktop_config.json`:
 
 ```json
 {
@@ -227,27 +231,32 @@ Configure no Claude Desktop editando `claude_desktop_config.json`:
 }
 ```
 
-**Teste**: *"Pode consultar o CNPJ 00.000.000/0001-91?"*
+**Config location**: `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS)
 
-### 📖 Documentação Completa
+**Test**: *"Can you look up CNPJ 00.000.000/0001-91?"*
 
-Acesse a **[documentação completa em português](docs/pt-br/README.md)** para:
-- Guias de instalação detalhados para cada IDE
-- Exemplos de uso com casos brasileiros
-- Arquitetura e design do sistema
-- Configuração avançada e personalização
-- Tutoriais passo a passo
+### 💼 Use Cases
 
-### 📦 Lançamentos
+- **Due Diligence**: Verify legal entity status and registration details
+- **E-commerce & Logistics**: Validate shipping addresses using CEP lookup
+- **Legal Research**: Search government databases for lawsuits and contracts
+- **KYC & Compliance**: Automate company verification for financial services
 
-O projeto utiliza lançamentos automatizados com versionamento semântico e geração automática de changelog. Consulte o [Guia de Lançamento](RELEASING.md) para instruções detalhadas sobre:
+### 📚 Documentation
 
-- Criação de novos lançamentos
-- Processo de versionamento
-- Fluxos de trabalho automatizados
-- Procedimentos de rollback
+- **[Configuration Guide](docs/CONFIGURATION.md)** - Environment variables and custom endpoints
+- **[Usage Examples](docs/USAGE_EXAMPLES.md)** - Integration patterns and code samples
+- **[MCP Client Integration](docs/MCP_CLIENT_INTEGRATION.md)** - Setup for Claude, Cursor, Windsurf
+- **[Cloudflare Workers](docs/CLOUDFLARE_DEPLOYMENT.md)** - Serverless deployment guide
+- **[Release Guide](RELEASING.md)** - Automated release process
 
-**Lançamento Rápido**: Atualize a versão no [`package.json`](package.json), faça commit, crie uma tag git (`v*.*.*`) e envie para disparar o fluxo automatizado.
+### 🤝 Contributing
+
+Contributions welcome! See [Contributing Guide](CONTRIBUTING.md) for development setup and coding standards.
+
+### 📄 License
+
+MIT License - see [LICENSE](LICENSE) file.
 
 ---
 
