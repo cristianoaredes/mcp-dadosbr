@@ -1,3 +1,5 @@
+[![MseeP.ai Security Assessment Badge](https://mseep.net/pr/cristianoaredes-mcp-dadosbr-badge.png)](https://mseep.ai/app/cristianoaredes-mcp-dadosbr)
+
 # MCP DadosBR 🇧🇷
 
 [![smithery badge](https://smithery.ai/badge/@cristianoaredes/mcp-dadosbr)](https://smithery.ai/server/@cristianoaredes/mcp-dadosbr)
