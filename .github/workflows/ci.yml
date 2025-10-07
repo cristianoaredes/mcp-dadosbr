@@ -189,7 +189,7 @@ jobs:
 
           if npm view "$PACKAGE_NAME@$PACKAGE_VERSION" version 2>/dev/null; then
             echo "ℹ️  Version $PACKAGE_VERSION already exists on NPM"
-            echo "published=false" >> $GITHUB_OUTPUT
+            echo "published=true" >> $GITHUB_OUTPUT
           else
             echo "✅ Version $PACKAGE_VERSION not found on NPM, will publish"
             echo "published=false" >> $GITHUB_OUTPUT
