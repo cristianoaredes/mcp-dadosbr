@@ -103,6 +103,25 @@ npx -y @smithery/cli install @cristianoaredes/mcp-dadosbr --client claude
 }
 ```
 
+### 🤖 ChatGPT MCP
+Para usar com ChatGPT, configure o servidor Cloudflare Workers como endpoint remoto:
+
+1. **Deploy no Cloudflare Workers**: `npm run deploy`
+2. **Configure no ChatGPT**:
+   - URL do servidor: `https://mcp-dadosbr.your-subdomain.workers.dev`
+   - O ChatGPT detectará automaticamente os endpoints OAuth e MCP
+3. **Configure API Key** (opcional, via environment variables no Workers):
+   ```bash
+   TAVILY_API_KEY="tvly-your-api-key-here"
+   ```
+
+**APIs REST disponíveis**:
+- `GET /cnpj/{cnpj}` - Consulta dados de empresa
+- `GET /cep/{cep}` - Consulta dados de endereço
+- `POST /search` - Busca web inteligente
+- `POST /intelligence` - Busca inteligente completa
+- `POST /thinking` - Raciocínio estruturado
+
 **✅ Teste rápido**
 ```
 Pode consultar o CNPJ 11.222.333/0001-81?
@@ -141,11 +160,23 @@ curl -i https://mcp-dadosbr.aredes.me/health
 ## 🌐 Deploy Web (Opcional)
 
 **Cloudflare Workers**: https://mcp-dadosbr.aredes.me
-- 🔗 REST API: `/cnpj/{cnpj}` · `/cep/{cep}`
+- 🔗 REST API: `/cnpj/{cnpj}` · `/cep/{cep}` · `/search` · `/intelligence` · `/thinking`
 - 🤖 OpenAPI: `/openapi.json`
 - 📊 Health: `/health`
+- 🔐 OAuth 2.0: Compatível com ChatGPT MCP
 
 **Smithery**: `smithery.yaml` para deploy single-click.
+
+### 🚀 Para ChatGPT MCP
+```bash
+# 1. Deploy no Cloudflare
+npm run build
+npm run deploy
+
+# 2. Configure no ChatGPT:
+# - Server URL: https://your-subdomain.workers.dev
+# - O ChatGPT detectará automaticamente OAuth + MCP endpoints
+```
 
 ## 📚 Documentação
 
@@ -176,8 +207,8 @@ curl -i https://mcp-dadosbr.aredes.me/health
 
 ## 👨‍💻 Mantenedor
 
-| [Cristiano Aredes](https://github.com/cristianoaredes) |
-| --- |
+| [Cristiano Aredes](https://github.com/cristianoaredes)                         |
+| ------------------------------------------------------------------------------ |
 | [LinkedIn](https://www.linkedin.com/in/cristianoaredes/) · cristiano@aredes.me |
 
 ---
