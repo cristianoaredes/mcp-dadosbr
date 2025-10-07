@@ -1,0 +1,495 @@
+<social_media_examples>
+  <complete_examples>
+    <example name="release_announcement_with_evolution" platform="linkedin" language="pt-br">
+      <scenario>
+        Announcing v0.3.2 release showing evolution from v0.1.0
+      </scenario>
+      <complete_post><![CDATA[
+🚀 Da consulta básica ao Intelligence: a evolução do MCP DadosBR
+
+Começamos simples: consultar CNPJ e CEP via MCP. Dois meses depois, temos um ecossistema completo de inteligência empresarial para IA.
+
+📈 A Jornada de Evolução:
+
+v0.1.0 → Fundação sólida
+• cnpj_lookup e cep_lookup básicos
+• Cache inteligente + circuit breaker
+• MCP protocol desde o início
+
+v0.2.0 → Expandindo horizontes
+• cnpj_search com Google dorks
+• sequentialthinking para raciocínio estruturado
+• De 2 para 4 ferramentas
+
+v0.3.2 → Intelligence em produção
+• cnpj_intelligence: orquestra múltiplas consultas automaticamente
+• Migração para Tavily: 100% de precisão com validação de CNPJ
+• Deploy multi-plataforma: CLI, HTTP/SSE, Cloudflare Workers
+• Smithery: instalação com 1 clique
+
+🎯 O que torna o Intelligence especial:
+
+✨ Automatiza todo o workflow de pesquisa
+🎯 Filtra apenas resultados com CNPJ confirmado
+🔍 Combina dados estruturados + web intelligence
+⚡ 25 segundos para relatório completo
+🌐 Roda no edge (Cloudflare) ou local
+
+💡 Use cases reais:
+• Due diligence automatizada
+• Compliance e KYC
+• Pesquisa de jurisprudência
+• Análise de fornecedores
+
+🔗 Experimente: npm install @aredes.me/mcp-dadosbr
+📚 Docs: github.com/cristianoaredes/mcp-dadosbr
+🚀 Demo: mcp-dadosbr.aredes.me
+
+#MCP #ModelContextProtocol #Claude #AI #Brasil #OpenSource #CNPJ #DataIntelligence #DevBR
+      ]]></complete_post>
+      <character_count>1285</character_count>
+      <analysis>
+        <hook>Strong opening with visual timeline metaphor</hook>
+        <structure>Evolution story format (before → middle → now)</structure>
+        <value_prop>Clear benefits for each version</value_prop>
+        <cta>Multiple entry points (npm, docs, demo)</cta>
+        <hashtags>Mix of technical, regional, and trending tags</hashtags>
+      </analysis>
+    </example>
+
+    <example name="feature_spotlight" platform="linkedin" language="en">
+      <scenario>
+        Deep dive into CNPJ Intelligence feature
+      </scenario>
+      <complete_post><![CDATA[
+💡 CNPJ Intelligence: How we built automated company research that actually works
+
+Researching Brazilian companies used to mean:
+→ Manual searches across multiple sites
+→ Sorting through irrelevant results
+→ Copy-pasting data between tools
+→ Hours of work for basic due diligence
+
+We built CNPJ Intelligence to solve this. One command, 25 seconds, complete dossier.
+
+🔧 How it works:
+
+1. **Orchestrated Queries**: Automatically generates optimized search queries for government records, legal documents, news, and social media
+
+2. **Smart Filtering**: Every result passes through CNPJ validation - if it doesn't contain the company's CNPJ, it's discarded
+
+3. **Multi-Source Aggregation**: Combines structured APIs (OpenCNPJ) with web intelligence (Tavily search)
+
+4. **Circuit Breaker Protection**: Fails fast and gracefully when APIs are down
+
+⚡ Results:
+• 100% relevant results (CNPJ validation)
+• <30 second turnaround time
+• Works offline or at the edge (Cloudflare Workers)
+• Zero configuration needed
+
+Perfect for: Compliance teams, due diligence, KYC processes, vendor research
+
+Try it: npm install @aredes.me/mcp-dadosbr
+Code: github.com/cristianoaredes/mcp-dadosbr
+
+#AI #Automation #DataIntelligence #Brazil #CNPJ #MCP
+      ]]></complete_post>
+      <character_count>1247</character_count>
+      <analysis>
+        <hook>Problem-solution format immediately shows value</hook>
+        <structure>Problem → Solution → Technical details → Results → CTA</structure>
+        <value_prop>Clear time savings and accuracy improvements</value_prop>
+        <technical_depth>Enough detail for developers without overwhelming</technical_depth>
+      </analysis>
+    </example>
+
+    <example name="twitter_thread_release" platform="xcom" language="en">
+      <scenario>
+        Release announcement as X.com thread
+      </scenario>
+      <thread>
+        <tweet number="1"><![CDATA[
+🚀 MCP DadosBR v0.3.2 is live
+
+From basic CNPJ lookups to intelligent company research in 2 months
+
+Here's what changed →
+        ]]></tweet>
+        
+        <tweet number="2"><![CDATA[
+v0.1.0: Started with essentials
+• CNPJ + CEP lookups
+• Basic caching
+• MCP protocol support
+
+Simple, reliable, foundational
+        ]]></tweet>
+        
+        <tweet number="3"><![CDATA[
+v0.2.0: Added intelligence
+• Web search with Google dorks
+• Sequential thinking for complex queries
+• 2 tools → 4 tools
+
+Started getting interesting 🤔
+        ]]></tweet>
+        
+        <tweet number="4"><![CDATA[
+v0.3.2: Production-grade intelligence
+• Automated company research (cnpj_intelligence)
+• 100% accuracy with CNPJ filtering
+• Tavily enterprise search
+• Edge deployment on Cloudflare
+
+Game-changer for compliance teams 🎯
+        ]]></tweet>
+        
+        <tweet number="5"><![CDATA[
+The intelligence tool is special:
+
+✅ Orchestrates multiple searches
+✅ Validates every result
+✅ Filters noise automatically
+✅ <25 seconds for full report
+
+Due diligence just got automated
+        ]]></tweet>
+        
+        <tweet number="6"><![CDATA[
+Try it now:
+
+📦 npm install @aredes.me/mcp-dadosbr
+🔗 mcp-dadosbr.aredes.me
+📚 github.com/cristianoaredes/mcp-dadosbr
+
+Open source, free, works with Claude and any MCP client
+
+#MCP #AI #OpenSource
+        ]]></tweet>
+      </thread>
+      <analysis>
+        <hook>First tweet promises value and creates curiosity</hook>
+        <structure>Timeline format makes evolution clear</structure>
+        <pacing>Each tweet builds on previous, creating momentum</pacing>
+        <cta>Final tweet with clear installation instructions</cta>
+      </analysis>
+    </example>
+
+    <example name="behind_the_scenes_instagram" platform="instagram" language="pt-br">
+      <scenario>
+        Behind-the-scenes of building CNPJ Intelligence
+      </scenario>
+      <complete_post><![CDATA[
+🔨 Bastidores: Como construímos o CNPJ Intelligence
+
+.
+.
+.
+
+Queria compartilhar o processo de desenvolver uma funcionalidade que parece simples por fora, mas tem muita engenharia por dentro 🧠
+
+**O Desafio:**
+Pesquisar informações sobre empresas brasileiras é frustrante. Dados espalhados, resultados irrelevantes, tempo desperdiçado. Nosso objetivo: automatizar isso mantendo 100% de precisão.
+
+**A Solução (não foi fácil):**
+
+1️⃣ Geramos queries otimizadas com Google dorks específicos para documentos governamentais, jurisprudência, notícias e redes sociais
+
+2️⃣ Criamos um filtro que valida cada resultado - se não tem CNPJ, descarta. Parece óbvio, mas isso eliminou 60% do ruído
+
+3️⃣ Implementamos circuit breaker para não sobrecarregar APIs - fail fast, recover gracefully
+
+4️⃣ Tudo roda em <25 segundos no edge (Cloudflare Workers)
+
+**Os Números:**
+→ 5 ferramentas em produção
+→ 100% dos resultados validados
+→ Deploy global em 330+ cidades
+→ Zero configuração necessária
+
+**Aprendizados:**
+• Precisão > Velocidade (sempre)
+• Edge computing é subestimado
+• Validação de dados é não-negociável
+• Open source força você a ter qualidade
+
+Código disponível → github.com/cristianoaredes/mcp-dadosbr
+
+O que vocês acham dessa abordagem? Já tiveram que resolver desafios parecidos? 👇
+
+.
+.
+.
+
+#DevBR #OpenSource #CNPJ #AI #CloudflareWorkers #TypeScript #MCP #Compliance #DadosAbertos #AutomaçãoInteligente #DevLife #BrazilianTech #SoftwareEngineering #APIDesign #EdgeComputing
+      ]]></complete_post>
+      <character_count>1489 (caption) + hashtags in first comment</character_count>
+      <analysis>
+        <hook>Behind-the-scenes angle creates authenticity</hook>
+        <structure>Challenge → Solution → Technical details → Metrics → Learning</structure>
+        <engagement>Ends with questions to invite discussion</engagement>
+        <hashtags>15 tags (can be in first comment for clean caption)</hashtags>
+        <tone>More personal and conversational than LinkedIn</tone>
+      </analysis>
+    </example>
+
+    <example name="quick_update_twitter" platform="xcom" language="en">
+      <scenario>
+        Quick update about CI/CD improvements
+      </scenario>
+      <complete_post><![CDATA[
+Just shipped CI/CD improvements for @mcp_dadosbr
+
+✅ Automatic bundle size validation (1MB limit for Workers)
+✅ Fixed branch name inconsistencies  
+✅ Worker build path corrections
+
+Small wins that prevent big headaches 🛠️
+
+Reliable deploys > fancy features
+      ]]></complete_post>
+      <character_count>267</character_count>
+      <analysis>
+        <hook>Action-oriented opening (shipped)</hook>
+        <format>Checkmark bullets create visual appeal</format>
+        <insight>Ends with philosophy/learning</insight>
+        <tone>Casual, developer-to-developer</tone>
+      </analysis>
+    </example>
+  </complete_examples>
+
+  <transformation_examples>
+    <transformation name="changelog_to_linkedin">
+      <input_type>CHANGELOG.md entry</input_type>
+      <input_example><![CDATA[
+## [0.3.2] - 2025-10-03
+
+### Added
+- CNPJ intelligence tool with multi-query orchestration
+- Tavily search provider integration
+- Cloudflare Workers deployment
+
+### Changed  
+- Migrated from DuckDuckGo to Tavily for improved accuracy
+- Updated CI/CD pipeline for better reliability
+
+### Fixed
+- Bundle size validation in CI
+- Worker build path configuration
+      ]]></input_example>
+      
+      <output_example><![CDATA[
+🚀 MCP DadosBR v0.3.2: Enterprise-Grade Intelligence for Brazilian Data
+
+We just shipped our biggest update yet - transforming basic data lookups into intelligent, automated company research.
+
+✨ What's New:
+
+📊 CNPJ Intelligence - Orchestrates multiple searches automatically, validates every result, delivers comprehensive company insights in seconds
+
+🔍 Tavily Integration - Upgraded from DuckDuckGo to enterprise search with 100% accuracy guarantee
+
+🌐 Global Edge Deployment - Now running on Cloudflare Workers in 330+ cities worldwide
+
+🔧 Bulletproof CI/CD - Added bundle size validation, fixed build configurations, ensured reliable deployments
+
+The intelligence tool is a game-changer: it doesn't just search, it researches. Every result is validated to contain actual CNPJ data - no noise, no false positives.
+
+Perfect for: Due diligence, compliance, KYC, vendor research
+
+Try it: `npm install @aredes.me/mcp-dadosbr@0.3.2`
+Docs: github.com/cristianoaredes/mcp-dadosbr
+
+#MCP #AI #BrazilianData #OpenSource #Intelligence
+      ]]></output_example>
+      
+      <transformation_techniques>
+        <technique>Convert bullet points into benefit statements</technique>
+        <technique>Add context (why each change matters)</technique>
+        <technique>Group related changes</technique>
+        <technique>Lead with user impact, not technical implementation</technique>
+        <technique>Add emojis for visual structure</technique>
+        <technique>Include specific metrics when available</technique>
+      </transformation_techniques>
+    </transformation>
+
+    <transformation name="commit_messages_to_story">
+      <input_type>Git commit history</input_type>
+      <input_example><![CDATA[
+docs: update AGENTS.md files and fix CI/CD configuration
+fix(ci): correct worker build output path
+fix(ci): remove invalid wrangler validate command  
+feat: v0.3.2 - Tavily exclusivo com filtros
+ci: guard line count check
+ci: run pipeline on main merges
+      ]]></input_example>
+      
+      <output_example><![CDATA[
+🔧 Reliability Sprint: How we hardened our CI/CD for production
+
+Last week we went deep on infrastructure reliability. The kind of work that doesn't add features but prevents 3 AM wake-up calls.
+
+What we fixed:
+• Branch name mismatches blocking deployments
+• Invalid wrangler commands failing builds
+• Bundle size creeping past Cloudflare's 1MB limit
+• Worker build paths causing deployment errors
+
+The unglamorous stuff that separates hobby projects from production systems.
+
+Result: 100% green CI pipeline, zero deployment failures, confidence in our releases.
+
+Sometimes the best features are the ones users never see 💚
+
+#DevOps #CI #CD #Infrastructure #SoftwareEngineering
+      ]]></output_example>
+      
+      <transformation_techniques>
+        <technique>Group technical fixes into narrative theme</technique>
+        <technique>Frame as "behind-the-scenes" reliability work</technique>
+        <technique>Show the "why" (prevents failures, builds confidence)</technique>
+        <technique>Acknowledge that it's unglamorous but necessary</technique>
+        <technique>End with insight or philosophy</technique>
+      </transformation_techniques>
+    </transformation>
+  </transformation_examples>
+
+  <platform_adaptation_examples>
+    <adaptation scenario="same_content_three_platforms">
+      <source_content>
+        Announcing support for Cloudflare Workers deployment with edge caching
+      </source_content>
+      
+      <linkedin_version><![CDATA[
+🌐 Going Global: MCP DadosBR now runs on Cloudflare's Edge Network
+
+We just added Cloudflare Workers support, and the performance gains are remarkable.
+
+**What this means:**
+• Your Brazilian data queries now run in 330+ cities worldwide
+• Sub-50ms latency from anywhere
+• Automatic scaling to handle any load
+• Zero infrastructure to manage
+
+**How it works:**
+We built a specialized adapter that runs the full MCP server at the edge. Your CNPJ and CEP lookups hit the nearest datacenter, with KV caching for instant repeated queries.
+
+**The impact:**
+International teams can access Brazilian company data without the traditional >500ms latency. Compliance checks that took seconds now feel instant.
+
+Try the edge deployment: mcp-dadosbr.aredes.me
+
+#CloudflareWorkers #EdgeComputing #API #Performance #GlobalScale
+      ]]></linkedin_version>
+      
+      <twitter_version><![CDATA[
+🌐 MCP DadosBR now runs on @Cloudflare Workers
+
+330+ global locations
+<50ms latency worldwide
+Automatic scaling
+Zero config
+
+Brazilian data, global speed ⚡
+
+Demo: mcp-dadosbr.aredes.me
+      ]]></twitter_version>
+      
+      <instagram_version><![CDATA[
+🌐 Levamos nossos dados brasileiros para o mundo todo!
+
+.
+.
+.
+
+Hoje estamos oficialmente rodando na rede edge da Cloudflare - isso significa que nossas APIs de CNPJ e CEP agora respondem de 330+ cidades ao redor do mundo 🌍
+
+**Por que isso importa:**
+
+Antes: consultar de fora do Brasil = 500ms+ de latência
+Agora: sub-50ms de qualquer lugar do planeta ⚡
+
+Times internacionais podem acessar dados brasileiros sem aquela demora chata. Sistemas de compliance que demoravam segundos agora parecem instantâneos.
+
+**A tech por trás:**
+Edge computing + KV caching + MCP protocol
+
+Simples de usar, complexo por dentro 🔧
+
+Experimenta: mcp-dadosbr.aredes.me
+
+.
+.
+.
+
+#DevBR #CloudflareWorkers #EdgeComputing #BrazilianData #API #Performance #TechBrasil #DadosAbertos #OpenSource #Developer #CNPJ #WebPerformance #GlobalTech
+      ]]></instagram_version>
+      
+      <adaptation_notes>
+        <note>LinkedIn: Professional, detailed technical explanation</note>
+        <note>Twitter: Concise, bullet format, quick value prop</note>
+        <note>Instagram: Casual tone, more emojis, personal voice</note>
+        <note>All three: Same core message, different packaging</note>
+      </adaptation_notes>
+    </adaptation>
+  </platform_adaptation_examples>
+
+  <hook_examples>
+    <category name="statistics_numbers">
+      <hook>From 2 tools to 5 tools to complete intelligence platform in 60 days</hook>
+      <hook>100% accuracy in company data searches (here's how)</hook>
+      <hook>25 seconds to research a company: automatic, validated, comprehensive</hook>
+    </category>
+
+    <category name="transformation_before_after">
+      <hook>We turned hours of manual research into one automated command</hook>
+      <hook>Remember when researching Brazilian companies meant 10+ browser tabs?</hook>
+      <hook>From "search Google for CNPJ" to "ask AI for full company intel"</hook>
+    </category>
+
+    <category name="controversial_bold">
+      <hook>Most company search tools give you garbage. Here's why ours doesn't.</hook>
+      <hook>Search APIs are broken. We fixed them with aggressive filtering.</hook>
+      <hook>Accuracy or speed? We chose accuracy. Here's what we learned.</hook>
+    </category>
+
+    <category name="question_hooks">
+      <hook>What if researching a company took 25 seconds instead of 25 minutes?</hook>
+      <hook>How do you validate that search results actually match what you're looking for?</hook>
+      <hook>Ever wondered why company search results are so hit-or-miss?</hook>
+    </category>
+
+    <category name="direct_announcement">
+      <hook>We just shipped intelligent automation for Brazilian company research</hook>
+      <hook>MCP DadosBR v0.3.2 brings enterprise-grade data intelligence to your AI</hook>
+      <hook>Built something I wish existed 6 months ago: automated CNPJ intelligence</hook>
+    </category>
+  </hook_examples>
+
+  <cta_examples>
+    <category name="try_it">
+      <cta>Try it: `npm install @aredes.me/mcp-dadosbr`</cta>
+      <cta>Test it live: mcp-dadosbr.aredes.me</cta>
+      <cta>Install in one click via Smithery: [link]</cta>
+    </category>
+
+    <category name="learn_more">
+      <cta>Full docs: github.com/user/repo</cta>
+      <cta>See examples: [docs link]/examples</cta>
+      <cta>Read the technical deep-dive: [blog link]</cta>
+    </category>
+
+    <category name="contribute">
+      <cta>We're open source - contributions welcome!</cta>
+      <cta>Found a bug? Open an issue: [repo]/issues</cta>
+      <cta>Star the repo if this helps: [repo link]</cta>
+    </category>
+
+    <category name="engage">
+      <cta>What would you use this for? Drop your use case 👇</cta>
+      <cta>Have you faced similar data quality challenges?</cta>
+      <cta>Questions? Ask away - I'll answer them all</cta>
+    </category>
+  </cta_examples>
+</social_media_examples>

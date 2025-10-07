@@ -163,7 +163,8 @@ curl -i https://mcp-dadosbr.aredes.me/health
 - 🔗 REST API: `/cnpj/{cnpj}` · `/cep/{cep}` · `/search` · `/intelligence` · `/thinking`
 - 🤖 OpenAPI: `/openapi.json`
 - 📊 Health: `/health`
-- 🔐 OAuth 2.0: Compatível com ChatGPT MCP
+- 🔐 OAuth 2.0 + API Key Authentication: Protegido contra abuso
+- ⚡ Rate Limiting: 30 req/min por IP (configurável)
 
 **Smithery**: `smithery.yaml` para deploy single-click.
 
@@ -177,6 +178,32 @@ npm run deploy
 # - Server URL: https://your-subdomain.workers.dev
 # - O ChatGPT detectará automaticamente OAuth + MCP endpoints
 ```
+
+### 🔒 Segurança (Cloudflare Workers)
+
+**API Key Authentication:**
+- **Protegidos**: Endpoints REST (`/cnpj/*`, `/cep/*`, `/search`, `/intelligence`, `/thinking`)
+- **Não protegidos**: Protocolo MCP (`/mcp`, `/sse`) - para compatibilidade com AI assistants
+
+```bash
+# Configure API key
+wrangler secret put MCP_API_KEY
+
+# Use via headers (apenas para endpoints REST):
+curl -H "X-API-Key: your-key" https://mcp-dadosbr.aredes.me/cnpj/11222333000181
+# ou
+curl -H "Authorization: Bearer your-key" https://mcp-dadosbr.aredes.me/cnpj/11222333000181
+
+# Endpoints MCP não precisam de autenticação:
+curl -X POST https://mcp-dadosbr.aredes.me/mcp \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc": "2.0", "id": 1, "method": "tools/list"}'
+```
+
+**Rate Limiting:**
+- Padrão: 30 requisições por minuto por IP
+- KV-based para escalabilidade
+- Desativável com `MCP_DISABLE_RATE_LIMIT=true`
 
 ## 📚 Documentação
 

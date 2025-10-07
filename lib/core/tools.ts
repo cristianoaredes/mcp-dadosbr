@@ -21,8 +21,8 @@ function logPerformanceMetrics(): void {
   const uptime = Date.now() - metrics.startTime;
   const avgResponseTime = metrics.requests > 0 ? metrics.totalTime / metrics.requests : 0;
   const cacheHitRate = metrics.requests > 0 ? (metrics.cacheHits / metrics.requests) * 100 : 0;
-  
-  console.error(`[metrics] Uptime: ${Math.round(uptime/1000)}s | Requests: ${metrics.requests} | Cache Hit Rate: ${cacheHitRate.toFixed(1)}% | Avg Response: ${avgResponseTime.toFixed(0)}ms | Errors: ${metrics.errors}`);
+
+  console.error(`[metrics] Uptime: ${Math.round(uptime / 1000)}s | Requests: ${metrics.requests} | Cache Hit Rate: ${cacheHitRate.toFixed(1)}% | Avg Response: ${avgResponseTime.toFixed(0)}ms | Errors: ${metrics.errors}`);
 }
 
 // Log metrics every 100 requests
@@ -33,7 +33,7 @@ function recordMetrics(elapsed: number, fromCache: boolean, error: boolean) {
   metrics.totalTime += elapsed;
   if (fromCache) metrics.cacheHits++;
   if (error) metrics.errors++;
-  
+
   // Log metrics every 10 requests (simple monitoring)
   if (metrics.requests - lastMetricsLog >= 10) {
     logPerformanceMetrics();
@@ -87,11 +87,11 @@ export async function lookup(
         source: result.source,
         fetchedAt: new Date().toISOString(),
       };
-      
+
       if (cache) {
         await cache.set(cacheKey, responseData);
       }
-      
+
       recordMetrics(elapsed, false, false);
       console.log(
         `[${new Date().toISOString()}] [${type}_lookup] [${input}] [success] [${elapsed}ms] [${transportMode}] [${baseUrl}]`
@@ -193,6 +193,10 @@ export const TOOL_DEFINITIONS = [
           maximum: 20,
           default: 10,
         },
+        api_key: {
+          type: "string",
+          description: "Optional Tavily API key (if not provided, uses server configuration)",
+        },
       },
       required: ["cnpj"],
     },
@@ -213,8 +217,8 @@ export async function executeTool(
     const parsed = CepSchema.parse(args);
     return await lookup("cep", parsed.cep, apiConfig, cache);
   } else if (name === "cnpj_search") {
-    const { query, max_results = 5 } = args;
-    return await executeSearch(query, max_results, cache);
+    const { query, max_results = 5, api_key } = args;
+    return await executeSearch(query, max_results, cache, api_key);
   } else if (name === "sequentialthinking") {
     const result = thinkingProcessor.processThought(args);
     return result;
@@ -223,7 +227,8 @@ export async function executeTool(
     return await executeIntelligence(
       args as IntelligenceOptions,
       apiConfig,
-      cache
+      cache,
+      (args as any).api_key
     );
   } else {
     throw new Error(`Unknown tool: ${name}`);

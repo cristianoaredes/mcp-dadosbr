@@ -1,0 +1,265 @@
+<social_media_best_practices>
+  <platform_specific_guidelines>
+    <platform name="linkedin">
+      <character_limits>
+        <optimal>1200-1300 characters for maximum engagement</optimal>
+        <maximum>3000 characters (but engagement drops after 1300)</maximum>
+      </character_limits>
+      
+      <formatting_best_practices>
+        <practice>Use line breaks every 2-3 sentences for readability</practice>
+        <practice>Bullet points work well (use • or emojis as bullets)</practice>
+        <practice>Bold formatting not available, use CAPS sparingly</practice>
+        <practice>Links display as previews, place strategically</practice>
+      </formatting_best_practices>
+      
+      <tone_guidelines>
+        <guideline>Professional but personable</guideline>
+        <guideline>Technical content is welcomed (developer audience)</guideline>
+        <guideline>Show expertise without being preachy</guideline>
+        <guideline>Thought leadership and insights valued</guideline>
+      </tone_guidelines>
+      
+      <hashtag_strategy>
+        <rule>3-5 hashtags at the END of post</rule>
+        <rule>Mix popular (#OpenSource) + niche (#MCPProtocol) tags</rule>
+        <rule>Research trending tags in your domain</rule>
+        <rule>Don't use more than 5 - looks spammy</rule>
+      </hashtag_strategy>
+      
+      <engagement_tactics>
+        <tactic>Ask questions to invite comments</tactic>
+        <tactic>Tag relevant organizations (use @ mentions)</tactic>
+        <tactic>Share personal learning or journey</tactic>
+        <tactic>Use data/metrics to add credibility</tactic>
+        <tactic>Post during business hours (9 AM - 5 PM user's timezone)</tactic>
+      </engagement_tactics>
+    </platform>
+
+    <platform name="instagram">
+      <character_limits>
+        <optimal>125-150 characters for optimal engagement (people read the preview)</optimal>
+        <maximum>2200 characters for caption</maximum>
+      </character_limits>
+      
+      <formatting_best_practices>
+        <practice>First 125 chars are crucial (shown in feed)</practice>
+        <practice>Use line breaks for visual rhythm</practice>
+        <practice>Emojis are essential, not optional (use 5-10)</practice>
+        <practice>Consider adding period (.) on separate lines to create space</practice>
+      </formatting_best_practices>
+      
+      <tone_guidelines>
+        <guideline>More casual and conversational</guideline>
+        <guideline>Visual storytelling - text supports image</guideline>
+        <guideline>Authenticity and personality matter more</guideline>
+        <guideline>Behind-the-scenes content performs well</guideline>
+      </tone_guidelines>
+      
+      <hashtag_strategy>
+        <rule>10-15 hashtags (can be in first comment to keep caption clean)</rule>
+        <rule>Mix size: 3 popular (100k+), 7 medium (10k-100k), 5 niche (1k-10k)</rule>
+        <rule>Research hashtags before using (avoid banned/spam tags)</rule>
+        <rule>Create branded hashtag for your project</rule>
+      </hashtag_strategy>
+      
+      <engagement_tactics>
+        <tactic>High-quality visuals are mandatory</tactic>
+        <tactic>Carousel posts get 3x engagement</tactic>
+        <tactic>Stories for timely updates</tactic>
+        <tactic>Use polls and questions in stories</tactic>
+        <tactic>Post consistently (3-5 times per week)</tactic>
+      </engagement_tactics>
+    </platform>
+
+    <platform name="xcom">
+      <character_limits>
+        <standard>280 characters per tweet</standard>
+        <thread>Unlimited tweets in thread, but keep each under 280</thread>
+      </character_limits>
+      
+      <formatting_best_practices>
+        <practice>Front-load key information (first tweet matters most)</practice>
+        <practice>Use line breaks even in short tweets</practice>
+        <practice>Thread numbering: 1/ 2/ 3/ helps readability</practice>
+        <practice>End threads with CTA or question</practice>
+      </formatting_best_practices>
+      
+      <tone_guidelines>
+        <guideline>Conversational and direct</guideline>
+        <guideline>Wit and humor appreciated</guideline>
+        <guideline>Real-time reactions and commentary</guideline>
+        <guideline>Authenticity over polish</guideline>
+      </tone_guidelines>
+      
+      <hashtag_strategy>
+        <rule>1-2 hashtags maximum (decreases engagement if more)</rule>
+        <rule>Use ONLY highly relevant tags</rule>
+        <rule>Consider not using hashtags at all for casual posts</rule>
+        <rule>Place hashtags inline, not at end</rule>
+      </hashtag_strategy>
+      
+      <engagement_tactics>
+        <tactic>Reply to own thread to add context</tactic>
+        <tactic>Engage with replies within first hour</tactic>
+        <tactic>Quote tweet for discussions</tactic>
+        <tactic>Use polls for quick feedback</tactic>
+        <tactic>Optimal posting: weekdays 9 AM - 3 PM</tactic>
+      </engagement_tactics>
+    </platform>
+  </platform_specific_guidelines>
+
+  <content_creation_principles>
+    <principle name="show_dont_tell" priority="critical">
+      <description>
+        Use specific examples, metrics, and concrete details instead of vague claims
+      </description>
+      <example>
+        <bad>We made significant improvements to performance</bad>
+        <good>Reduced API response time from 500ms to 50ms (10x faster)</good>
+      </example>
+    </principle>
+
+    <principle name="value_first" priority="critical">
+      <description>
+        Lead with benefits and value, not features or technical details
+      </description>
+      <example>
+        <bad>We added a new caching layer using Redis</bad>
+        <good>Your queries now load instantly thanks to smart caching - no more waiting</good>
+      </example>
+    </principle>
+
+    <principle name="storytelling" priority="high">
+      <description>
+        Frame updates as stories with beginning, middle, and end
+      </description>
+      <structure>
+        <beginning>Where we started / The problem</beginning>
+        <middle>What we built / The journey</middle>
+        <end>Where we are now / The impact</end>
+      </structure>
+    </principle>
+
+    <principle name="technical_accessibility" priority="high">
+      <description>
+        Make technical content accessible without dumbing it down
+      </description>
+      <tactics>
+        <tactic>Define acronyms on first use</tactic>
+        <tactic>Use analogies for complex concepts</tactic>
+        <tactic>Provide context before diving into details</tactic>
+        <tactic>Link to detailed technical docs for depth</tactic>
+      </tactics>
+    </principle>
+
+    <principle name="authenticity" priority="medium">
+      <description>
+        Share real challenges, learnings, and behind-the-scenes insights
+      </description>
+      <approach>
+        <element>Mention what was hard</element>
+        <element>Share what you learned</element>
+        <element>Credit contributors</element>
+        <element>Be honest about limitations</element>
+      </approach>
+    </principle>
+  </content_creation_principles>
+
+  <common_pitfalls>
+    <pitfall>
+      <name>Excessive emoji use</name>
+      <description>Using too many emojis makes content look unprofessional</description>
+      <correct_approach>
+        Use 3-6 emojis strategically for LinkedIn, 5-10 for Instagram, 1-3 for X.com
+      </correct_approach>
+    </pitfall>
+
+    <pitfall>
+      <name>Feature listing without context</name>
+      <description>Lists of features without explaining WHY they matter</description>
+      <correct_approach>
+        For each feature, explain the problem it solves or benefit it provides
+      </correct_approach>
+    </pitfall>
+
+    <pitfall>
+      <name>Generic openings</name>
+      <description>Starting with "I'm excited to announce" or "I'm pleased to share"</description>
+      <correct_approach>
+        Start with the impact, a question, a surprising fact, or jump right into the story
+      </correct_approach>
+    </pitfall>
+
+    <pitfall>
+      <name>Hashtag stuffing</name>
+      <description>Using 20+ hashtags thinking it increases reach</description>
+      <correct_approach>
+        Quality over quantity - use only highly relevant, researched hashtags
+      </correct_approach>
+    </pitfall>
+
+    <pitfall>
+      <name>No call-to-action</name>
+      <description>Post ends without telling reader what to do next</description>
+      <correct_approach>
+        Always end with clear CTA: try it, read more, contribute, share feedback
+      </correct_approach>
+    </pitfall>
+
+    <pitfall>
+      <name>Ignoring mobile formatting</name>
+      <description>Long paragraphs that look bad on mobile devices</description>
+      <correct_approach>
+        Test on mobile - use short paragraphs (2-3 sentences max), add line breaks
+      </correct_approach>
+    </pitfall>
+  </common_pitfalls>
+
+  <multi_language_content>
+    <language name="portuguese_br">
+      <guidelines>
+        <guideline>Use Brazilian Portuguese, not European Portuguese</guideline>
+        <guideline>Common terms: "desenvolvedores" not "programadores"</guideline>
+        <guideline>Technical terms: often keep English (API, deploy, build)</guideline>
+        <guideline>Informal "você" is acceptable on Instagram, formal for LinkedIn</guideline>
+        <guideline>Popular hashtags: #DevBR #TechBrasil #BrasilTech</guideline>
+      </guidelines>
+    </language>
+
+    <language name="english">
+      <guidelines>
+        <guideline>Use American English spelling (optimize not optimise)</guideline>
+        <guideline>Be inclusive with language (developers, not "guys")</guideline>
+        <guideline>Avoid region-specific references unless necessary</guideline>
+        <guideline>Keep sentences concise and clear</guideline>
+      </guidelines>
+    </language>
+  </multi_language_content>
+
+  <quality_checklist>
+    <category name="before_publishing">
+      <item>Proofread for typos and grammar</item>
+      <item>Verify all links work</item>
+      <item>Check character count</item>
+      <item>Test formatting on mobile view</item>
+      <item>Validate technical accuracy</item>
+      <item>Ensure CTA is clear</item>
+    </category>
+
+    <category name="engagement_optimization">
+      <item>Hook is compelling in first 2 sentences</item>
+      <item>Value proposition is clear</item>
+      <item>Content is scannable (headers, bullets, breaks)</item>
+      <item>Emojis enhance readability</item>
+      <item>Hashtags are relevant and researched</item>
+    </category>
+
+    <category name="brand_consistency">
+      <item>Tone matches brand voice</item>
+      <item>Technical accuracy maintained</item>
+      <item>Links to official resources</item>
+      <item>Credits given where due</item>
+    </category>
+  </quality_checklist>
+</social_media_best_practices>

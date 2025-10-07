@@ -20,6 +20,9 @@ export interface Env {
   MCP_CACHE_SIZE?: string;
   MCP_CACHE_TTL?: string;
   MCP_CACHE?: KVNamespace;
+  MCP_API_KEY?: string;
+  MCP_DISABLE_RATE_LIMIT?: string;
+  MCP_KV?: KVNamespace;
 }
 
 
@@ -88,10 +91,10 @@ export async function handleMCPRequest(
       case "tools/call":
         const params = request.params as { name: string; arguments: unknown };
         const { name, arguments: args } = params;
-        
+
         try {
           const result = await executeTool(name, args, apiConfig, cache);
-          
+
           if (result.ok) {
             return {
               jsonrpc: "2.0",

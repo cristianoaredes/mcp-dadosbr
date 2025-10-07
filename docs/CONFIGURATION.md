@@ -267,6 +267,9 @@ MCP_CACHE_SIZE = "256"
 MCP_CACHE_TTL = "60000"
 CNPJ_API_BASE_URL = "https://api.opencnpj.org/"
 CEP_API_BASE_URL = "https://opencep.com/v1/"
+# Security (optional)
+MCP_API_KEY = "your-secret-api-key"
+MCP_DISABLE_RATE_LIMIT = "false"
 ```
 
 ### KV Storage
@@ -274,14 +277,51 @@ CEP_API_BASE_URL = "https://opencep.com/v1/"
 # wrangler.toml
 [[kv_namespaces]]
 binding = "MCP_CACHE"
-id = "your-kv-namespace-id"
+id = "your-cache-namespace-id"
+
+# Additional KV namespace for rate limiting
+[[kv_namespaces]]
+binding = "MCP_KV"
+id = "your-rate-limit-namespace-id"
 ```
+
+### Security Configuration
+
+#### API Key Authentication
+Protect your Cloudflare Worker endpoints with API key authentication:
+
+```bash
+# Set API key via Wrangler
+wrangler secret put MCP_API_KEY
+# Or use environment variable
+MCP_API_KEY=your-secret-key wrangler deploy
+```
+
+**Protected Endpoints:**
+- REST API endpoints: `/cnpj/*`, `/cep/*`, `/search`, `/intelligence`, `/thinking`
+- **Not Protected:** MCP protocol endpoints (`/mcp`, `/sse`) for AI assistant compatibility
+
+**Authentication Methods:**
+- `Authorization: Bearer <key>`
+- `X-API-Key: <key>` header
+
+#### Rate Limiting
+Built-in rate limiting protects against abuse:
+
+- **Default**: 30 requests per minute per IP
+- **KV-based**: Uses Cloudflare KV for distributed rate limiting
+- **Configurable**: Can be disabled with `MCP_DISABLE_RATE_LIMIT=true`
+
+**Rate Limit Headers:**
+- `429` status code when exceeded
+- `Retry-After` header with seconds to wait
 
 ### Secrets
 ```bash
 # Set secrets via Wrangler CLI
 wrangler secret put API_KEY_VALUE
 wrangler secret put CUSTOM_API_TOKEN
+wrangler secret put MCP_API_KEY
 ```
 
 ## 🧪 Testing Configuration
