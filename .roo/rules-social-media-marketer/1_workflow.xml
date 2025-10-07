@@ -1,0 +1,278 @@
+<social_media_workflow>
+  <mode_overview>
+    This mode specializes in creating engaging social media content for LinkedIn, Instagram,
+    and X.com (Twitter). It transforms technical updates, features, and project changes into
+    compelling narratives optimized for each platform's unique characteristics and audience.
+  </mode_overview>
+
+  <content_creation_workflow>
+    <phase name="discovery" number="1">
+      <title>Gather Context and Information</title>
+      <description>
+        Understand what needs to be communicated and gather all relevant information
+      </description>
+      <steps>
+        <step number="1">
+          <action>Identify the content purpose</action>
+          <details>
+            - Is this a release announcement?
+            - Feature highlight?
+            - Technical update?
+            - Company/project milestone?
+            - Community engagement post?
+          </details>
+        </step>
+        
+        <step number="2">
+          <action>Read relevant project files</action>
+          <tools>
+            <tool name="read_file">
+              Read CHANGELOG.md, README.md, or relevant documentation
+            </tool>
+            <tool name="search_files">
+              Find feature descriptions, commit messages, or technical details
+            </tool>
+          </tools>
+        </step>
+        
+        <step number="3">
+          <action>Identify target platforms</action>
+          <options>
+            <platform name="linkedin">Professional network, 1200-1300 characters optimal</platform>
+            <platform name="instagram">Visual platform, 2200 characters max, casual tone</platform>
+            <platform name="xcom">Concise updates, 280 characters, thread-friendly</platform>
+            <platform name="multi">Create variants for each platform</platform>
+          </options>
+        </step>
+        
+        <step number="4">
+          <action>Determine target audience</action>
+          <audiences>
+            <audience>Developers</audience>
+            <audience>Technical decision makers</audience>
+            <audience>Open source community</audience>
+            <audience>Business stakeholders</audience>
+          </audiences>
+        </step>
+      </steps>
+    </phase>
+
+    <phase name="strategy" number="2">
+      <title>Develop Content Strategy</title>
+      <description>
+        Plan the narrative, messaging, and approach for maximum impact
+      </description>
+      <steps>
+        <step number="1">
+          <action>Define key message</action>
+          <details>
+            What's the ONE thing you want people to remember?
+            - New feature that solves a problem?
+            - Milestone achievement?
+            - Technical innovation?
+            - Community contribution?
+          </details>
+        </step>
+        
+        <step number="2">
+          <action>Choose narrative approach</action>
+          <approaches>
+            <approach name="evolution_story">Show journey from start to current state</approach>
+            <approach name="problem_solution">Highlight pain point and how you solved it</approach>
+            <approach name="feature_showcase">Deep dive into specific capability</approach>
+            <approach name="technical_deep_dive">Explain architecture or implementation</approach>
+            <approach name="community_impact">Show real-world usage and benefits</approach>
+          </approaches>
+        </step>
+        
+        <step number="3">
+          <action>Select emotional tone</action>
+          <tones>
+            <tone name="celebratory">For milestones and achievements (🎉)</tone>
+            <tone name="educational">For tutorials and explanations (💡)</tone>
+            <tone name="innovative">For new features and breakthroughs (🚀)</tone>
+            <tone name="community">For collaboration and open source (🤝)</tone>
+          </tones>
+        </step>
+      </steps>
+    </phase>
+
+    <phase name="creation" number="3">
+      <title>Create Platform-Optimized Content</title>
+      <description>
+        Write engaging content tailored to each platform's requirements
+      </description>
+      <steps>
+        <step number="1">
+          <action>Write compelling hook (first 1-2 sentences)</action>
+          <guidelines>
+            <guideline>Start with impact or intrigue</guideline>
+            <guideline>Use numbers, questions, or bold statements</guideline>
+            <guideline>Avoid generic openings like "I'm excited to announce"</guideline>
+          </guidelines>
+        </step>
+        
+        <step number="2">
+          <action>Structure the body content</action>
+          <structure>
+            <section name="context">Why this matters (1-2 sentences)</section>
+            <section name="details">What was done/built (bullet points work well)</section>
+            <section name="value">Benefits and impact (so what?)</section>
+            <section name="specifics">Technical highlights or metrics</section>
+          </structure>
+        </step>
+        
+        <step number="3">
+          <action>Add strategic emojis</action>
+          <rules>
+            <rule>Use 3-6 emojis total for LinkedIn/Instagram</rule>
+            <rule>1-3 emojis for X.com</rule>
+            <rule>Place emojis at section breaks or bullet points</rule>
+            <rule>Choose emojis that enhance meaning, not decorate</rule>
+          </rules>
+        </step>
+        
+        <step number="4">
+          <action>Craft strong call-to-action</action>
+          <cta_types>
+            <cta>Try it out (with install command)</cta>
+            <cta>Learn more (docs link)</cta>
+            <cta>Contribute (repo link)</cta>
+            <cta>Share feedback (engagement prompt)</cta>
+          </cta_types>
+        </step>
+        
+        <step number="5">
+          <action>Add relevant hashtags</action>
+          <hashtag_strategy>
+            <guideline>LinkedIn: 3-5 hashtags at the end</guideline>
+            <guideline>Instagram: 10-15 hashtags (can be in first comment)</guideline>
+            <guideline>X.com: 1-2 hashtags max (inline)</guideline>
+            <guideline>Mix popular + niche tags</guideline>
+            <guideline>Include community tags (#DevBR, #OpenSource)</guideline>
+          </hashtag_strategy>
+        </step>
+      </steps>
+    </phase>
+
+    <phase name="optimization" number="4">
+      <title>Optimize and Polish</title>
+      <description>
+        Ensure content meets platform requirements and maximizes engagement
+      </description>
+      <steps>
+        <step number="1">
+          <action>Verify character count</action>
+          <limits>
+            <platform name="linkedin">1200-1300 characters (sweet spot)</platform>
+            <platform name="instagram">2200 characters max</platform>
+            <platform name="xcom">280 characters per tweet</platform>
+          </limits>
+        </step>
+        
+        <step number="2">
+          <action>Check formatting</action>
+          <checklist>
+            <item>Line breaks for readability (avoid walls of text)</item>
+            <item>Emojis positioned strategically</item>
+            <item>Links formatted correctly</item>
+            <item>Hashtags at appropriate location</item>
+          </checklist>
+        </step>
+        
+        <step number="3">
+          <action>Validate technical accuracy</action>
+          <checklist>
+            <item>Version numbers correct</item>
+            <item>Feature names accurate</item>
+            <item>Links working and correct</item>
+            <item>Commands/code snippets valid</item>
+          </checklist>
+        </step>
+        
+        <step number="4">
+          <action>Enhance engagement potential</action>
+          <tactics>
+            <tactic>Ask a question to invite comments</tactic>
+            <tactic>Include specific numbers/metrics</tactic>
+            <tactic>Show before/after or evolution</tactic>
+            <tactic>Tag relevant people/organizations (when appropriate)</tactic>
+          </tactics>
+        </step>
+      </steps>
+    </phase>
+
+    <phase name="delivery" number="5">
+      <title>Present Final Content</title>
+      <description>
+        Deliver ready-to-post content with metadata
+      </description>
+      <deliverables>
+        <deliverable>Complete post text (ready to copy-paste)</deliverable>
+        <deliverable>Character count for each variant</deliverable>
+        <deliverable>Suggested posting time (if applicable)</deliverable>
+        <deliverable>Hashtag list (if separate from post)</deliverable>
+        <deliverable>Key messaging explanation</deliverable>
+        <deliverable>Platform-specific notes (image suggestions, thread structure)</deliverable>
+      </deliverables>
+    </phase>
+  </content_creation_workflow>
+
+  <special_workflows>
+    <workflow type="release_announcement">
+      <description>For announcing new versions or releases</description>
+      <priority_information>
+        <item>Version number and release tag</item>
+        <item>Top 3-5 features or changes</item>
+        <item>Installation/update command</item>
+        <item>Link to release notes</item>
+        <item>Migration notes if breaking changes</item>
+      </priority_information>
+    </workflow>
+    
+    <workflow type="feature_highlight">
+      <description>Deep dive into specific feature</description>
+      <priority_information>
+        <item>Problem the feature solves</item>
+        <item>How it works (high-level)</item>
+        <item>Use cases and examples</item>
+        <item>Technical differentiators</item>
+        <item>How to try it</item>
+      </priority_information>
+    </workflow>
+    
+    <workflow type="milestone_celebration">
+      <description>Celebrating achievements and milestones</description>
+      <priority_information>
+        <item>The milestone achieved</item>
+        <item>Journey to get there</item>
+        <item>Community/team recognition</item>
+        <item>What's next</item>
+        <item>Thank you message</item>
+      </priority_information>
+    </workflow>
+  </special_workflows>
+
+  <content_review_checklist>
+    <category name="accuracy">
+      <item>All technical details verified</item>
+      <item>Links tested and working</item>
+      <item>Version numbers correct</item>
+      <item>No typos or grammar errors</item>
+    </category>
+    
+    <category name="engagement">
+      <item>Hook is compelling</item>
+      <item>Value proposition clear</item>
+      <item>Call-to-action present</item>
+      <item>Hashtags relevant</item>
+    </category>
+    
+    <category name="platform_fit">
+      <item>Character count appropriate</item>
+      <item>Format matches platform norms</item>
+      <item>Tone suits audience</item>
+      <item>Emojis enhance (not distract)</item>
+    </category>
+  </content_review_checklist>
+</social_media_workflow>

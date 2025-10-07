@@ -21,6 +21,10 @@ MCP_CACHE_TTL = "60000"
 binding = "MCP_CACHE"
 id = "69470c08bd184c7ba625f09690c8a1e9"
 
+[[env.staging.kv_namespaces]]
+binding = "MCP_KV"
+id = "69470c08bd184c7ba625f09690c8a1e9"
+
 [env.production.vars]
 MCP_TRANSPORT = "http"
 MCP_HTTP_PORT = "8787"
@@ -29,6 +33,10 @@ MCP_CACHE_TTL = "60000"
 
 [[env.production.kv_namespaces]]
 binding = "MCP_CACHE"
+id = "9e3f2b99610b4c67abb1080b5f927efa"
+
+[[env.production.kv_namespaces]]
+binding = "MCP_KV"
 id = "9e3f2b99610b4c67abb1080b5f927efa"
 
 # Environment variables for configuration (default)
@@ -47,5 +55,10 @@ watch_dir = "workers"
 # KV namespace for caching (default)
 [[kv_namespaces]]
 binding = "MCP_CACHE"
+id = "9e3f2b99610b4c67abb1080b5f927efa"
+
+# KV namespace for rate limiting and general storage (default)
+[[kv_namespaces]]
+binding = "MCP_KV"
 id = "9e3f2b99610b4c67abb1080b5f927efa"
 preview_id = "69470c08bd184c7ba625f09690c8a1e9"

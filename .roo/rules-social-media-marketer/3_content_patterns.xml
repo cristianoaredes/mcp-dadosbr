@@ -1,0 +1,320 @@
+<social_media_content_patterns>
+  <content_templates>
+    <template name="release_announcement_linkedin">
+      <structure><![CDATA[
+🚀 [Hook: Bold statement about the release]
+
+[Context paragraph: Why this release matters - 2-3 sentences]
+
+✨ [What's New section header]
+
+[Bullet point 1: Feature/improvement with benefit]
+[Bullet point 2: Feature/improvement with benefit]
+[Bullet point 3: Feature/improvement with benefit]
+
+🎯 [Impact or Key Differentiator section]
+
+[1-2 sentences about what makes this special or unique]
+
+📦 [Installation/Usage]
+`npm install package@version` or similar command
+
+🔗 [Links section]
+• Docs: [url]
+• Demo: [url]
+• Changelog: [url]
+
+#Hashtag1 #Hashtag2 #Hashtag3 #Hashtag4 #Hashtag5
+      ]]></structure>
+      
+      <character_range>1100-1300 characters</character_range>
+      
+      <example><![CDATA[
+🚀 From basic lookups to intelligent automation: MCP DadosBR v0.3.2 brings enterprise-grade Brazilian data intelligence to your AI workflows
+
+Two months ago, we launched with simple CNPJ and CEP lookups. Today, we're shipping a complete intelligence platform that automatically researches companies, validates data, and delivers insights in under 25 seconds.
+
+✨ What's New in v0.3.2:
+
+• CNPJ Intelligence: Automated multi-query workflows with 100% accuracy filtering
+• Tavily Integration: Enterprise search replacing DuckDuckGo with guaranteed precision
+• Edge Deployment: Running on Cloudflare Workers globally
+• One-Click Install: Smithery integration for instant setup
+
+🎯 The game-changer: Our intelligence tool doesn't just search - it orchestrates, validates, and filters. Every result is verified to contain actual CNPJ data, eliminating noise and false positives.
+
+📦 Get started: `npm install @aredes.me/mcp-dadosbr`
+
+🔗 Explore:
+• Docs: github.com/user/repo
+• Live Demo: your-domain.com
+• Full Changelog: Release notes link
+
+#MCP #AI #BrazilianData #OpenSource #CloudflareWorkers
+      ]]></example>
+    </template>
+
+    <template name="feature_spotlight_linkedin">
+      <structure><![CDATA[
+💡 [Feature name] + [what problem it solves in one line]
+
+[The Problem section - 2-3 sentences describing the pain point]
+
+[The Solution section - how your feature addresses it]
+
+🔧 How it works:
+• [Step or aspect 1]
+• [Step or aspect 2]
+• [Step or aspect 3]
+
+📊 [Metrics or Results if available]
+
+[Use case example - concrete scenario]
+
+💡 [Why this approach is unique or better]
+
+Try it: [command or link]
+
+#RelevantHashtag #TechHashtag #DomainHashtag
+      ]]></structure>
+      
+      <character_range>900-1200 characters</character_range>
+    </template>
+
+    <template name="technical_deep_dive_linkedin">
+      <structure><![CDATA[
+🏗️ [Architecture/Technical topic]: [Key insight or approach]
+
+[Opening: The technical challenge or decision]
+
+🎯 Our approach:
+
+[Core technical decision explained accessibly]
+
+⚡ Key benefits:
+• [Benefit 1 with technical detail]
+• [Benefit 2 with technical detail]  
+• [Benefit 3 with technical detail]
+
+🔍 Implementation highlights:
+[Brief technical details that show depth without overwhelming]
+
+📈 Results:
+[Metrics or outcomes if available]
+
+[Learning or insight from the process]
+
+Explore the code: [repo link]
+
+#TechnicalArchitecture #Engineering #SystemDesign
+      ]]></structure>
+      
+      <character_range>1000-1250 characters</character_range>
+    </template>
+
+    <template name="twitter_thread_starter">
+      <structure><![CDATA[
+Tweet 1/ [Hook + key announcement]
+[Emoji] [Main point in 1-2 lines]
+[Optional link]
+
+Tweet 2/ [Context or "why"]
+[Explain background or problem]
+
+Tweet 3/ [The solution or feature]
+[What you built and how it helps]
+
+Tweet 4/ [Technical highlight]
+[Interesting technical detail]
+
+Tweet 5/ [Call to action]
+[How to try it, where to learn more]
+[Links]
+      ]]></structure>
+      
+      <guidelines>
+        <guideline>Each tweet should be self-contained but part of narrative</guideline>
+        <guideline>First tweet determines if people read the thread</guideline>
+        <guideline>Mix formats: some text-only, some with links, some with questions</guideline>
+        <guideline>End with CTA or question to drive engagement</guideline>
+      </guidelines>
+    </template>
+
+    <template name="milestone_celebration">
+      <structure><![CDATA[
+🎉 [Milestone achieved]!
+
+[Brief context: How far you've come]
+
+📈 The journey:
+[Timeline or progression - can be visual]
+
+👥 [Community/team recognition]
+[Thank contributors, users, supporters]
+
+🚀 What's next:
+[Future direction or upcoming features]
+
+[Gratitude and invitation to join]
+
+Repo: [link]
+
+#Milestone #OpenSource #Community
+      ]]></structure>
+      
+      <character_range>800-1100 characters</character_range>
+    </template>
+  </content_templates>
+
+  <copywriting_formulas>
+    <formula name="AIDA">
+      <description>Attention, Interest, Desire, Action</description>
+      <application>
+        <attention>Strong hook that stops scrolling</attention>
+        <interest>Context that makes them care</interest>
+        <desire>Show benefits and value</desire>
+        <action>Clear CTA on what to do next</action>
+      </application>
+    </formula>
+
+    <formula name="PAS">
+      <description>Problem, Agitate, Solve</description>
+      <application>
+        <problem>Identify a pain point your audience has</problem>
+        <agitate>Make them feel the problem more deeply</agitate>
+        <solve>Present your solution as the answer</solve>
+      </application>
+    </formula>
+
+    <formula name="BAB">
+      <description>Before, After, Bridge</description>
+      <application>
+        <before>Describe the old way or problem state</before>
+        <after>Paint picture of improved state</after>
+        <bridge>Show how your solution gets them there</bridge>
+      </application>
+    </formula>
+  </copywriting_formulas>
+
+  <storytelling_frameworks>
+    <framework name="hero_journey">
+      <structure>
+        <stage name="ordinary_world">Where we started (basic features)</stage>
+        <stage name="call_to_adventure">The challenge or opportunity (user needs)</stage>
+        <stage name="trials">Development challenges overcome</stage>
+        <stage name="transformation">The solution or feature built</stage>
+        <stage name="return">Impact and current state</stage>
+      </structure>
+      <use_case>Perfect for release announcements showing evolution</use_case>
+    </framework>
+
+    <framework name="three_act_structure">
+      <structure>
+        <act number="1">Setup: The context and problem</act>
+        <act number="2">Confrontation: The challenge and our approach</act>
+        <act number="3">Resolution: The solution and results</act>
+      </structure>
+      <use_case>Good for feature spotlights and technical stories</use_case>
+    </framework>
+  </storytelling_frameworks>
+
+  <emoji_usage_patterns>
+    <category name="announcement_celebrations">
+      <emoji>🚀 Launch/Release</emoji>
+      <emoji>🎉 Celebration/Milestone</emoji>
+      <emoji>✨ New Feature</emoji>
+      <emoji>🎯 Achievement/Goal</emoji>
+      <emoji>🏆 Award/Recognition</emoji>
+    </category>
+
+    <category name="technical_concepts">
+      <emoji>⚡ Performance/Speed</emoji>
+      <emoji>🔒 Security</emoji>
+      <emoji>🏗️ Architecture</emoji>
+      <emoji>🔧 Tools/Configuration</emoji>
+      <emoji>📊 Data/Analytics</emoji>
+      <emoji>🤖 AI/Automation</emoji>
+    </category>
+
+    <category name="content_organization">
+      <emoji>📚 Documentation</emoji>
+      <emoji>📦 Package/Distribution</emoji>
+      <emoji>🌐 Web/Global</emoji>
+      <emoji>💻 Code/Development</emoji>
+      <emoji>🔗 Links/Resources</emoji>
+    </category>
+
+    <category name="process_workflow">
+      <emoji>📈 Growth/Progress</emoji>
+      <emoji>🔍 Research/Discovery</emoji>
+      <emoji>💡 Ideas/Innovation</emoji>
+      <emoji>✅ Completion/Success</emoji>
+      <emoji>🎨 Design/Creativity</emoji>
+    </category>
+  </emoji_usage_patterns>
+
+  <hashtag_research_guide>
+    <research_steps>
+      <step>Search platform for potential hashtags</step>
+      <step>Check follower count and post frequency</step>
+      <step>Analyze top posts using the hashtag</step>
+      <step>Mix high-volume (100k+) with niche (1k-10k) tags</step>
+      <step>Avoid banned or spam-associated tags</step>
+    </research_steps>
+
+    <recommended_tags>
+      <category name="technology">
+        <tag>#OpenSource</tag>
+        <tag>#DevTools</tag>
+        <tag>#API</tag>
+        <tag>#CloudComputing</tag>
+        <tag>#TypeScript</tag>
+      </category>
+
+      <category name="ai_ml">
+        <tag>#AI</tag>
+        <tag>#MachineLearning</tag>
+        <tag>#AIEngineering</tag>
+        <tag>#ModelContextProtocol</tag>
+        <tag>#LLM</tag>
+      </category>
+
+      <category name="brazilian_tech">
+        <tag>#DevBR</tag>
+        <tag>#BrazilianTech</tag>
+        <tag>#TechBrasil</tag>
+        <tag>#DadosAbertos</tag>
+      </category>
+
+      <category name="development">
+        <tag>#WebDevelopment</tag>
+        <tag>#SoftwareEngineering</tag>
+        <tag>#Programming</tag>
+        <tag>#DevCommunity</tag>
+      </category>
+    </recommended_tags>
+  </hashtag_research_guide>
+
+  <visual_content_suggestions>
+    <suggestion type="release_announcement">
+      <visual>Feature comparison table or timeline infographic</visual>
+      <visual>Screenshot of new UI or dashboard</visual>
+      <visual>Code snippet with syntax highlighting</visual>
+      <visual>Architecture diagram</visual>
+    </suggestion>
+
+    <suggestion type="feature_highlight">
+      <visual>Before/after comparison</visual>
+      <visual>Performance metrics graph</visual>
+      <visual>Feature demo GIF or video</visual>
+      <visual>User workflow diagram</visual>
+    </suggestion>
+
+    <suggestion type="technical_content">
+      <visual>Architecture diagram</visual>
+      <visual>Code example with annotations</visual>
+      <visual>System flow chart</visual>
+      <visual>Performance benchmarks</visual>
+    </suggestion>
+  </visual_content_suggestions>
+</social_media_content_patterns>

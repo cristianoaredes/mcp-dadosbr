@@ -11,7 +11,8 @@ export interface SearchResponse extends LookupResult {
 export async function executeSearch(
   query: string,
   maxResults: number = 5,
-  cache?: Cache
+  cache?: Cache,
+  apiKey?: string
 ): Promise<SearchResponse> {
   const startTime = Date.now();
   const cacheKey = `search:${query}:${maxResults}`;
@@ -30,7 +31,7 @@ export async function executeSearch(
   }
 
   try {
-    const provider = await getAvailableProvider();
+    const provider = await getAvailableProvider(undefined, apiKey);
     const searchResult = await provider.search(query, maxResults);
 
     if (!searchResult.ok) {
@@ -74,7 +75,7 @@ export async function executeSearch(
   } catch (error: any) {
     const elapsed = Date.now() - startTime;
     const errorMessage = error.message || 'Search failed';
-    
+
     console.error(
       `[${new Date().toISOString()}] [search] [${query}] [error: ${errorMessage}] [${elapsed}ms] [${transportMode}]`
     );
@@ -125,6 +126,10 @@ Examples:
         minimum: 1,
         maximum: 20,
         default: 5
+      },
+      api_key: {
+        type: "string",
+        description: "Optional Tavily API key (if not provided, uses server configuration)"
       }
     },
     required: ["query"]

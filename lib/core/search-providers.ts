@@ -104,19 +104,21 @@ export class TavilyProvider implements SearchProvider {
 export type ProviderType = "tavily";
 
 export function createProvider(
-  type: ProviderType = "tavily"
+  type: ProviderType = "tavily",
+  apiKey?: string
 ): SearchProvider {
   if (type !== "tavily") {
     throw new Error(`Provider ${type} is not supported. Configure TAVILY_API_KEY and use provider \"tavily\".`);
   }
-  return new TavilyProvider();
+  return new TavilyProvider(apiKey);
 }
 
 // Get first available provider with smart fallback
 export async function getAvailableProvider(
-  preferred?: ProviderType
+  preferred?: ProviderType,
+  apiKey?: string
 ): Promise<SearchProvider> {
-  const provider = preferred ? createProvider(preferred) : new TavilyProvider();
+  const provider = preferred ? createProvider(preferred, apiKey) : new TavilyProvider(apiKey);
 
   if (!(await provider.isAvailable())) {
     throw new Error(
@@ -131,9 +133,10 @@ export async function getAvailableProvider(
 export async function searchWithFallback(
   query: string,
   maxResults: number = SEARCH.DEFAULT_MAX_RESULTS,
-  preferredProvider?: ProviderType
+  preferredProvider?: ProviderType,
+  apiKey?: string
 ): Promise<Result<SearchResult[], Error>> {
-  const provider = preferredProvider ? createProvider(preferredProvider) : new TavilyProvider();
+  const provider = preferredProvider ? createProvider(preferredProvider, apiKey) : new TavilyProvider(apiKey);
 
   if (!(await provider.isAvailable())) {
     return Result.err(

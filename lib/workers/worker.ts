@@ -14,6 +14,119 @@ import {
 } from "../adapters/cloudflare.js";
 import { MCPRequest } from "../types/index.js";
 
+// Rate limiting configuration
+const RATE_LIMIT_WINDOW = 60 * 1000; // 1 minute in milliseconds
+const RATE_LIMIT_MAX_REQUESTS = 30; // Max requests per window per IP
+
+// Authentication and rate limiting middleware
+async function authenticateRequest(request: Request, env: Env): Promise<{ authenticated: boolean; error?: Response }> {
+  // Skip authentication for health checks, OAuth endpoints, and MCP protocol endpoints
+  const url = new URL(request.url);
+  if (url.pathname === "/health" ||
+    url.pathname === "/mcp" ||
+    url.pathname === "/sse" ||
+    url.pathname.startsWith("/oauth/") ||
+    url.pathname.startsWith("/.well-known/") ||
+    url.pathname === "/openapi.json") {
+    return { authenticated: true };
+  }
+
+  // Check for API key if configured
+  const expectedApiKey = env.MCP_API_KEY;
+  if (expectedApiKey) {
+    const authHeader = request.headers.get("Authorization");
+    const apiKey = request.headers.get("X-API-Key");
+
+    let providedKey: string | null = null;
+
+    if (authHeader?.startsWith("Bearer ")) {
+      providedKey = authHeader.substring(7);
+    } else if (apiKey) {
+      providedKey = apiKey;
+    }
+
+    if (!providedKey || providedKey !== expectedApiKey) {
+      return {
+        authenticated: false,
+        error: new Response(
+          JSON.stringify({
+            error: "Unauthorized",
+            message: "Valid API key required. Provide via 'Authorization: Bearer <key>' or 'X-API-Key: <key>' header."
+          }),
+          {
+            status: 401,
+            headers: {
+              "Content-Type": "application/json",
+              "WWW-Authenticate": "Bearer",
+              ...corsHeaders,
+            },
+          }
+        )
+      };
+    }
+  }
+
+  return { authenticated: true };
+}
+
+async function checkRateLimit(request: Request, env: Env): Promise<{ allowed: boolean; error?: Response }> {
+  // Skip rate limiting for health checks
+  const url = new URL(request.url);
+  if (url.pathname === "/health") {
+    return { allowed: true };
+  }
+
+  // Skip rate limiting if disabled
+  if (env.MCP_DISABLE_RATE_LIMIT === "true") {
+    return { allowed: true };
+  }
+
+  const clientIP = request.headers.get("CF-Connecting-IP") ||
+    request.headers.get("X-Forwarded-For") ||
+    request.headers.get("X-Real-IP") ||
+    "unknown";
+
+  const now = Date.now();
+  const windowStart = Math.floor(now / RATE_LIMIT_WINDOW) * RATE_LIMIT_WINDOW;
+  const key = `ratelimit:${clientIP}:${windowStart}`;
+
+  try {
+    // Get current request count
+    const currentCount = await env.MCP_KV?.get(key) || "0";
+    const count = parseInt(currentCount as string) || 0;
+
+    if (count >= RATE_LIMIT_MAX_REQUESTS) {
+      return {
+        allowed: false,
+        error: new Response(
+          JSON.stringify({
+            error: "Rate limit exceeded",
+            message: `Too many requests. Maximum ${RATE_LIMIT_MAX_REQUESTS} requests per minute allowed.`,
+            retryAfter: Math.ceil((windowStart + RATE_LIMIT_WINDOW - now) / 1000)
+          }),
+          {
+            status: 429,
+            headers: {
+              "Content-Type": "application/json",
+              "Retry-After": Math.ceil((windowStart + RATE_LIMIT_MAX_REQUESTS - now) / 1000).toString(),
+              ...corsHeaders,
+            },
+          }
+        )
+      };
+    }
+
+    // Increment counter
+    await env.MCP_KV?.put(key, (count + 1).toString());
+
+    return { allowed: true };
+  } catch (error) {
+    // If KV fails, allow request but log error
+    console.error("Rate limiting error:", error);
+    return { allowed: true };
+  }
+}
+
 // Local type for ExportedHandler to avoid conflicts
 type WorkerExportedHandler<Env = unknown> = {
   fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response>;
@@ -217,6 +330,18 @@ export default {
       return corsResponse;
     }
 
+    // Apply rate limiting
+    const rateLimitResult = await checkRateLimit(request, env);
+    if (!rateLimitResult.allowed) {
+      return rateLimitResult.error!;
+    }
+
+    // Apply authentication
+    const authResult = await authenticateRequest(request, env);
+    if (!authResult.authenticated) {
+      return authResult.error!;
+    }
+
     // Route handling
     switch (url.pathname) {
       case "/health":
@@ -357,6 +482,9 @@ export default {
           security: [
             {
               "OAuth2": ["mcp"]
+            },
+            {
+              "ApiKeyAuth": []
             }
           ],
           components: {
@@ -374,6 +502,12 @@ export default {
                     }
                   }
                 }
+              },
+              ApiKeyAuth: {
+                type: "apiKey",
+                in: "header",
+                name: "X-API-Key",
+                description: "API key for authentication. Can also be provided via 'Authorization: Bearer <key>' header."
               }
             }
           },
@@ -381,7 +515,10 @@ export default {
             "/cnpj/{cnpj}": {
               get: {
                 summary: "Look up CNPJ company data",
-                security: [{ "OAuth2": ["mcp"] }],
+                security: [
+                  { "OAuth2": ["mcp"] },
+                  { "ApiKeyAuth": [] }
+                ],
                 parameters: [{
                   name: "cnpj",
                   in: "path",
@@ -391,14 +528,19 @@ export default {
                 }],
                 responses: {
                   "200": { description: "Company information" },
-                  "404": { description: "CNPJ not found" }
+                  "404": { description: "CNPJ not found" },
+                  "401": { description: "Unauthorized - API key required" },
+                  "429": { description: "Rate limit exceeded" }
                 }
               }
             },
             "/cep/{cep}": {
               get: {
                 summary: "Look up CEP postal code data",
-                security: [{ "OAuth2": ["mcp"] }],
+                security: [
+                  { "OAuth2": ["mcp"] },
+                  { "ApiKeyAuth": [] }
+                ],
                 parameters: [{
                   name: "cep",
                   in: "path",
@@ -408,14 +550,19 @@ export default {
                 }],
                 responses: {
                   "200": { description: "Address information" },
-                  "404": { description: "CEP not found" }
+                  "404": { description: "CEP not found" },
+                  "401": { description: "Unauthorized - API key required" },
+                  "429": { description: "Rate limit exceeded" }
                 }
               }
             },
             "/search": {
               post: {
                 summary: "Search the web for Brazilian company information",
-                security: [{ "OAuth2": ["mcp"] }],
+                security: [
+                  { "OAuth2": ["mcp"] },
+                  { "ApiKeyAuth": [] }
+                ],
                 requestBody: {
                   required: true,
                   content: {
@@ -442,14 +589,19 @@ export default {
                 },
                 responses: {
                   "200": { description: "Search results" },
-                  "400": { description: "Invalid request" }
+                  "400": { description: "Invalid request" },
+                  "401": { description: "Unauthorized - API key required" },
+                  "429": { description: "Rate limit exceeded" }
                 }
               }
             },
             "/intelligence": {
               post: {
                 summary: "Intelligent search for Brazilian company information",
-                security: [{ "OAuth2": ["mcp"] }],
+                security: [
+                  { "OAuth2": ["mcp"] },
+                  { "ApiKeyAuth": [] }
+                ],
                 requestBody: {
                   required: true,
                   content: {
@@ -491,14 +643,19 @@ export default {
                 },
                 responses: {
                   "200": { description: "Intelligence search results" },
-                  "400": { description: "Invalid request" }
+                  "400": { description: "Invalid request" },
+                  "401": { description: "Unauthorized - API key required" },
+                  "429": { description: "Rate limit exceeded" }
                 }
               }
             },
             "/thinking": {
               post: {
                 summary: "Structured reasoning and problem-solving",
-                security: [{ "OAuth2": ["mcp"] }],
+                security: [
+                  { "OAuth2": ["mcp"] },
+                  { "ApiKeyAuth": [] }
+                ],
                 requestBody: {
                   required: true,
                   content: {
@@ -532,6 +689,47 @@ export default {
                 },
                 responses: {
                   "200": { description: "Thinking result" },
+                  "400": { description: "Invalid request" },
+                  "401": { description: "Unauthorized - API key required" },
+                  "429": { description: "Rate limit exceeded" }
+                }
+              }
+            },
+            "/mcp": {
+              post: {
+                summary: "MCP JSON-RPC endpoint",
+                description: "Model Context Protocol JSON-RPC endpoint for AI assistants",
+                security: [], // No authentication required for MCP protocol
+                requestBody: {
+                  required: true,
+                  content: {
+                    "application/json": {
+                      schema: {
+                        type: "object",
+                        properties: {
+                          jsonrpc: { type: "string", enum: ["2.0"] },
+                          id: { type: ["string", "number", "null"] },
+                          method: { type: "string" },
+                          params: { type: "object" }
+                        },
+                        required: ["jsonrpc", "method"]
+                      }
+                    }
+                  }
+                },
+                responses: {
+                  "200": { description: "MCP response" },
+                  "400": { description: "Invalid request" }
+                }
+              }
+            },
+            "/sse": {
+              get: {
+                summary: "MCP Server-Sent Events endpoint",
+                description: "Model Context Protocol streaming endpoint for real-time communication",
+                security: [], // No authentication required for MCP protocol
+                responses: {
+                  "200": { description: "SSE stream established" },
                   "400": { description: "Invalid request" }
                 }
               }

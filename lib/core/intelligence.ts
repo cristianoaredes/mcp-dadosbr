@@ -15,6 +15,7 @@ export interface IntelligenceOptions {
   provider?: ProviderType;
   maxResultsPerQuery?: number;
   maxQueries?: number;
+  apiKey?: string;
 }
 
 export interface IntelligenceResult {
@@ -60,10 +61,11 @@ function filterResultsByCnpj(results: SearchResult[], cnpj: string): SearchResul
 export async function executeIntelligence(
   options: IntelligenceOptions,
   apiConfig: ApiConfig,
-  cache?: Cache
+  cache?: Cache,
+  apiKey?: string
 ): Promise<LookupResult> {
   const TOTAL_TIMEOUT_MS = TIMEOUTS.INTELLIGENCE_TOTAL_MS;
-  
+
   // Create timeout promise
   const timeoutPromise = new Promise<never>((_, reject) => {
     setTimeout(() => {
@@ -75,7 +77,7 @@ export async function executeIntelligence(
   });
 
   // Create main execution promise
-  const executionPromise = executeIntelligenceInternal(options, apiConfig, cache);
+  const executionPromise = executeIntelligenceInternal(options, apiConfig, cache, apiKey);
 
   // Race between timeout and execution
   return Promise.race([executionPromise, timeoutPromise]);
@@ -84,7 +86,8 @@ export async function executeIntelligence(
 async function executeIntelligenceInternal(
   options: IntelligenceOptions,
   apiConfig: ApiConfig,
-  cache?: Cache
+  cache?: Cache,
+  apiKey?: string
 ): Promise<LookupResult> {
   const startTime = Date.now();
   const transportMode = process.env.MCP_TRANSPORT || "stdio";
@@ -92,9 +95,9 @@ async function executeIntelligenceInternal(
   try {
     // Step 1: Get company data via cnpj_lookup
     console.error(`[intelligence] [${options.cnpj}] Starting CNPJ intelligence search...`);
-    
+
     const cnpjResult = await lookup('cnpj', options.cnpj, apiConfig, cache);
-    
+
     if (!cnpjResult.ok) {
       return {
         ok: false,
@@ -110,11 +113,11 @@ async function executeIntelligenceInternal(
     const dorks = buildDorks(companyData, options.categories);
     const maxQueries = options.maxQueries || SEARCH.DEFAULT_MAX_QUERIES;
     const selectedDorks = dorks.slice(0, maxQueries);
-    
+
     console.error(`[intelligence] [${options.cnpj}] Generated ${dorks.length} dorks, using ${selectedDorks.length}`);
 
     // Step 3: Resolve provider (requires Tavily API key)
-    const provider: SearchProvider = await getAvailableProvider(options.provider);
+    const provider: SearchProvider = await getAvailableProvider(options.provider, apiKey);
 
     console.error(
       `[intelligence] [${options.cnpj}] Using provider: ${provider.name}`
@@ -145,7 +148,7 @@ async function executeIntelligenceInternal(
         if (searchResult.ok) {
           // Filter results to ensure they contain the CNPJ
           const filteredResults = filterResultsByCnpj(searchResult.value, options.cnpj);
-          
+
           const resultsWithMeta: SearchResultWithMeta[] = filteredResults.map(r => ({
             ...r,
             query: dork.query,
@@ -171,7 +174,7 @@ async function executeIntelligenceInternal(
 
     // Step 5: Build response
     const elapsed = Date.now() - startTime;
-    
+
     const intelligence: IntelligenceResult = {
       company_data: companyData,
       search_results: searchResults,
@@ -191,7 +194,7 @@ async function executeIntelligenceInternal(
 
   } catch (error: unknown) {
     const elapsed = Date.now() - startTime;
-    
+
     // Handle timeout errors specifically
     if (error instanceof TimeoutError) {
       console.error(
@@ -267,6 +270,10 @@ Note: You must set TAVILY_API_KEY to enable web search queries.`,
         minimum: 1,
         maximum: 20,
         default: 10
+      },
+      api_key: {
+        type: "string",
+        description: "Optional Tavily API key (if not provided, uses server configuration)"
       }
     },
     required: ["cnpj"]
