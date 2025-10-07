@@ -4,8 +4,8 @@
  * Based on Cloudflare's MCP Agent documentation
  */
 
-import { 
-  handleMCPRequest, 
+import {
+  handleMCPRequest,
   handleMCPEndpoint,
   handleCORS,
   handleHealthCheck,
@@ -18,6 +18,26 @@ import { MCPRequest } from "../types/index.js";
 type WorkerExportedHandler<Env = unknown> = {
   fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response>;
 };
+
+// Request body types for REST endpoints
+interface SearchRequestBody {
+  query: string;
+  max_results?: number;
+}
+
+interface IntelligenceRequestBody {
+  cnpj: string;
+  categories?: string[];
+  max_results_per_query?: number;
+  max_queries?: number;
+}
+
+interface ThinkingRequestBody {
+  thoughts: string;
+  next_thought_needed?: boolean;
+  thought_number?: number;
+  total_thoughts?: number;
+}
 
 declare global {
   interface ExecutionContext {
@@ -254,7 +274,7 @@ export default {
         const clientId = authUrl.searchParams.get("client_id");
         const redirectUri = authUrl.searchParams.get("redirect_uri");
         const state = authUrl.searchParams.get("state");
-        
+
         if (!redirectUri) {
           return new Response("Missing redirect_uri", { status: 400, headers: corsHeaders });
         }
@@ -330,14 +350,38 @@ export default {
           openapi: "3.0.0",
           info: {
             title: "MCP DadosBR API",
-            description: "Brazilian public data lookup API for CNPJ (companies) and CEP (postal codes)",
+            description: "Brazilian public data lookup API for CNPJ (companies) and CEP (postal codes) with advanced search capabilities",
             version: "1.0.0"
           },
           servers: [{ url: new URL(request.url).origin }],
+          security: [
+            {
+              "OAuth2": ["mcp"]
+            }
+          ],
+          components: {
+            securitySchemes: {
+              OAuth2: {
+                type: "oauth2",
+                flows: {
+                  authorizationCode: {
+                    authorizationUrl: `${new URL(request.url).origin}/oauth/authorize`,
+                    tokenUrl: `${new URL(request.url).origin}/oauth/token`,
+                    scopes: {
+                      "mcp": "Access to MCP DadosBR tools",
+                      "openid": "OpenID Connect",
+                      "profile": "User profile information"
+                    }
+                  }
+                }
+              }
+            }
+          },
           paths: {
             "/cnpj/{cnpj}": {
               get: {
                 summary: "Look up CNPJ company data",
+                security: [{ "OAuth2": ["mcp"] }],
                 parameters: [{
                   name: "cnpj",
                   in: "path",
@@ -354,6 +398,7 @@ export default {
             "/cep/{cep}": {
               get: {
                 summary: "Look up CEP postal code data",
+                security: [{ "OAuth2": ["mcp"] }],
                 parameters: [{
                   name: "cep",
                   in: "path",
@@ -364,6 +409,130 @@ export default {
                 responses: {
                   "200": { description: "Address information" },
                   "404": { description: "CEP not found" }
+                }
+              }
+            },
+            "/search": {
+              post: {
+                summary: "Search the web for Brazilian company information",
+                security: [{ "OAuth2": ["mcp"] }],
+                requestBody: {
+                  required: true,
+                  content: {
+                    "application/json": {
+                      schema: {
+                        type: "object",
+                        properties: {
+                          query: {
+                            type: "string",
+                            description: "Search query with optional operators (site:, intext:, filetype:, etc.)"
+                          },
+                          max_results: {
+                            type: "integer",
+                            minimum: 1,
+                            maximum: 20,
+                            default: 5,
+                            description: "Maximum number of results to return"
+                          }
+                        },
+                        required: ["query"]
+                      }
+                    }
+                  }
+                },
+                responses: {
+                  "200": { description: "Search results" },
+                  "400": { description: "Invalid request" }
+                }
+              }
+            },
+            "/intelligence": {
+              post: {
+                summary: "Intelligent search for Brazilian company information",
+                security: [{ "OAuth2": ["mcp"] }],
+                requestBody: {
+                  required: true,
+                  content: {
+                    "application/json": {
+                      schema: {
+                        type: "object",
+                        properties: {
+                          cnpj: {
+                            type: "string",
+                            description: "Brazilian CNPJ number (with or without formatting)"
+                          },
+                          categories: {
+                            type: "array",
+                            items: {
+                              type: "string",
+                              enum: ["government", "legal", "news", "documents", "social", "partners"]
+                            },
+                            description: "Search categories to include"
+                          },
+                          max_results_per_query: {
+                            type: "integer",
+                            minimum: 1,
+                            maximum: 10,
+                            default: 5,
+                            description: "Maximum results per search query"
+                          },
+                          max_queries: {
+                            type: "integer",
+                            minimum: 1,
+                            maximum: 20,
+                            default: 10,
+                            description: "Maximum number of search queries"
+                          }
+                        },
+                        required: ["cnpj"]
+                      }
+                    }
+                  }
+                },
+                responses: {
+                  "200": { description: "Intelligence search results" },
+                  "400": { description: "Invalid request" }
+                }
+              }
+            },
+            "/thinking": {
+              post: {
+                summary: "Structured reasoning and problem-solving",
+                security: [{ "OAuth2": ["mcp"] }],
+                requestBody: {
+                  required: true,
+                  content: {
+                    "application/json": {
+                      schema: {
+                        type: "object",
+                        properties: {
+                          thought: {
+                            type: "string",
+                            description: "Current thinking step"
+                          },
+                          nextThoughtNeeded: {
+                            type: "boolean",
+                            description: "Whether another thought step is needed"
+                          },
+                          thoughtNumber: {
+                            type: "integer",
+                            minimum: 1,
+                            description: "Current thought number"
+                          },
+                          totalThoughts: {
+                            type: "integer",
+                            minimum: 1,
+                            description: "Estimated total thoughts needed"
+                          }
+                        },
+                        required: ["thought", "nextThoughtNeeded", "thoughtNumber", "totalThoughts"]
+                      }
+                    }
+                  }
+                },
+                responses: {
+                  "200": { description: "Thinking result" },
+                  "400": { description: "Invalid request" }
                 }
               }
             }
@@ -395,8 +564,10 @@ export default {
             mcp: "/mcp (HTTP JSON-RPC)",
             sse: "/sse (Server-Sent Events)",
             health: "/health",
+            openapi: "/openapi.json",
+            oauth: "/.well-known/oauth-authorization-server"
           },
-          tools: ["cnpj_lookup", "cep_lookup"],
+          tools: ["cnpj_lookup", "cep_lookup", "cnpj_search", "sequentialthinking", "cnpj_intelligence"],
           documentation: "https://github.com/cristianoaredes/mcp-dadosbr",
           cloudflare_docs: {
             agents: "https://developers.cloudflare.com/agents/",
@@ -419,7 +590,7 @@ export default {
         const pathMatch = url.pathname.match(/^\/(cnpj|cep)\/(.+)$/);
         if (pathMatch && request.method === "GET") {
           const [, toolType, value] = pathMatch;
-          
+
           try {
             const mcpRequest: MCPRequest = {
               jsonrpc: "2.0",
@@ -439,7 +610,7 @@ export default {
             };
 
             const mcpResponse = await handleMCPRequest(mcpRequest, env);
-            
+
             if (mcpResponse.error) {
               return new Response(
                 JSON.stringify({
@@ -476,6 +647,170 @@ export default {
                   "Content-Type": "application/json",
                   ...corsHeaders,
                 },
+              }
+            );
+          }
+        }
+
+        // Handle advanced REST endpoints for ChatGPT integration
+        if (url.pathname === "/search" && request.method === "POST") {
+          try {
+            const body = await request.json() as SearchRequestBody;
+            const { query, max_results = 5 } = body;
+
+            if (!query) {
+              return new Response(
+                JSON.stringify({ error: "Missing query parameter" }),
+                {
+                  status: 400,
+                  headers: { "Content-Type": "application/json", ...corsHeaders },
+                }
+              );
+            }
+
+            const mcpRequest: MCPRequest = {
+              jsonrpc: "2.0",
+              id: Date.now(),
+              method: "tools/call",
+              params: {
+                name: "cnpj_search",
+                arguments: { query, max_results }
+              }
+            };
+
+            const mcpResponse = await handleMCPRequest(mcpRequest, env);
+
+            if (mcpResponse.error) {
+              return new Response(
+                JSON.stringify({
+                  error: mcpResponse.error.message,
+                  code: mcpResponse.error.code
+                }),
+                {
+                  status: 400,
+                  headers: { "Content-Type": "application/json", ...corsHeaders },
+                }
+              );
+            }
+
+            return new Response(JSON.stringify(mcpResponse.result, null, 2), {
+              status: 200,
+              headers: { "Content-Type": "application/json", ...corsHeaders },
+            });
+          } catch (error) {
+            return new Response(
+              JSON.stringify({
+                error: "Internal server error",
+                message: error instanceof Error ? error.message : "Unknown error"
+              }),
+              {
+                status: 500,
+                headers: { "Content-Type": "application/json", ...corsHeaders },
+              }
+            );
+          }
+        }
+
+        if (url.pathname === "/intelligence" && request.method === "POST") {
+          try {
+            const body = await request.json() as IntelligenceRequestBody;
+            const { cnpj, categories, max_results_per_query = 5, max_queries = 10 } = body;
+
+            if (!cnpj) {
+              return new Response(
+                JSON.stringify({ error: "Missing cnpj parameter" }),
+                {
+                  status: 400,
+                  headers: { "Content-Type": "application/json", ...corsHeaders },
+                }
+              );
+            }
+
+            const mcpRequest: MCPRequest = {
+              jsonrpc: "2.0",
+              id: Date.now(),
+              method: "tools/call",
+              params: {
+                name: "cnpj_intelligence",
+                arguments: { cnpj, categories, max_results_per_query, max_queries }
+              }
+            };
+
+            const mcpResponse = await handleMCPRequest(mcpRequest, env);
+
+            if (mcpResponse.error) {
+              return new Response(
+                JSON.stringify({
+                  error: mcpResponse.error.message,
+                  code: mcpResponse.error.code
+                }),
+                {
+                  status: 400,
+                  headers: { "Content-Type": "application/json", ...corsHeaders },
+                }
+              );
+            }
+
+            return new Response(JSON.stringify(mcpResponse.result, null, 2), {
+              status: 200,
+              headers: { "Content-Type": "application/json", ...corsHeaders },
+            });
+          } catch (error) {
+            return new Response(
+              JSON.stringify({
+                error: "Internal server error",
+                message: error instanceof Error ? error.message : "Unknown error"
+              }),
+              {
+                status: 500,
+                headers: { "Content-Type": "application/json", ...corsHeaders },
+              }
+            );
+          }
+        }
+
+        if (url.pathname === "/thinking" && request.method === "POST") {
+          try {
+            const body = await request.json() as ThinkingRequestBody;
+
+            const mcpRequest: MCPRequest = {
+              jsonrpc: "2.0",
+              id: Date.now(),
+              method: "tools/call",
+              params: {
+                name: "sequentialthinking",
+                arguments: body
+              }
+            };
+
+            const mcpResponse = await handleMCPRequest(mcpRequest, env);
+
+            if (mcpResponse.error) {
+              return new Response(
+                JSON.stringify({
+                  error: mcpResponse.error.message,
+                  code: mcpResponse.error.code
+                }),
+                {
+                  status: 400,
+                  headers: { "Content-Type": "application/json", ...corsHeaders },
+                }
+              );
+            }
+
+            return new Response(JSON.stringify(mcpResponse.result, null, 2), {
+              status: 200,
+              headers: { "Content-Type": "application/json", ...corsHeaders },
+            });
+          } catch (error) {
+            return new Response(
+              JSON.stringify({
+                error: "Internal server error",
+                message: error instanceof Error ? error.message : "Unknown error"
+              }),
+              {
+                status: 500,
+                headers: { "Content-Type": "application/json", ...corsHeaders },
               }
             );
           }
