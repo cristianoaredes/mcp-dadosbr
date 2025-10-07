@@ -1,6 +1,6 @@
 {
   "name": "@aredes.me/mcp-dadosbr",
-  "version": "0.3.4",
+  "version": "0.3.5",
   "description": "Model Context Protocol server for Brazilian public data lookup (CNPJ companies and CEP postal codes) with intelligent web search and sequential thinking",
   "type": "module",
   "module": "lib/index.ts",
