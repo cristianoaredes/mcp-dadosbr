@@ -48,7 +48,6 @@ jobs:
             -d '{"jsonrpc": "2.0", "id": 1, "method": "tools/list"}' || true
           kill $SERVER_PID || true
 
-
   lint:
     name: Code Quality
     runs-on: ubuntu-latest
@@ -133,16 +132,148 @@ jobs:
             echo "⚠️ Worker file not found at $WORKER_FILE"
             exit 0
           fi
-          
+
           WORKER_SIZE=$(wc -c < "$WORKER_FILE")
           MAX_SIZE=1048576  # 1MB in bytes
           SIZE_MB=$(echo "scale=2; $WORKER_SIZE / 1048576" | bc)
-          
+
           echo "📦 Worker bundle size: ${SIZE_MB}MB ($WORKER_SIZE bytes)"
-          
+
           if [ $WORKER_SIZE -gt $MAX_SIZE ]; then
             echo "❌ Worker exceeds Cloudflare's 1MB limit"
             exit 1
           else
             echo "✅ Worker is within size limits"
           fi
+
+  publish-dev:
+    name: Publish Development Version
+    runs-on: ubuntu-latest
+    needs: [test, lint, cloudflare]
+    # Only publish on push to main (not PRs) and only if NPM_TOKEN is available
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'cristianoaredes/mcp-dadosbr'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20.x"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build project
+        run: npm run build
+
+      - name: Configure NPM authentication
+        run: |
+          if [ -z "$NPM_TOKEN" ]; then
+            echo "⚠️  NPM_TOKEN not available, skipping publication"
+            exit 0
+          fi
+          echo "//registry.npmjs.org/:_authToken=$NPM_TOKEN" > ~/.npmrc
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Check if version already published
+        id: check_version
+        run: |
+          PACKAGE_NAME="@aredes.me/mcp-dadosbr"
+          PACKAGE_VERSION=$(node -p "require('./package.json').version")
+
+          echo "📦 Checking if $PACKAGE_NAME@$PACKAGE_VERSION is already published..."
+
+          if npm view "$PACKAGE_NAME@$PACKAGE_VERSION" version 2>/dev/null; then
+            echo "ℹ️  Version $PACKAGE_VERSION already exists on NPM"
+            echo "published=false" >> $GITHUB_OUTPUT
+          else
+            echo "✅ Version $PACKAGE_VERSION not found on NPM, will publish"
+            echo "published=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Publish development version to NPM
+        if: steps.check_version.outputs.published == 'false'
+        run: |
+          PACKAGE_VERSION=$(node -p "require('./package.json').version")
+
+          echo "📦 Publishing development version $PACKAGE_VERSION to NPM..."
+
+          # Publish with 'dev' tag for development versions
+          npm publish --access public --tag dev
+
+          echo "✅ Development version published successfully"
+          echo "📦 Install with: npm install -g @aredes.me/mcp-dadosbr@dev"
+
+      - name: Verify development publication
+        if: steps.check_version.outputs.published == 'false'
+        run: |
+          PACKAGE_NAME="@aredes.me/mcp-dadosbr"
+          PACKAGE_VERSION=$(node -p "require('./package.json').version")
+
+          echo "⏳ Waiting for NPM registry to update..."
+          sleep 5
+
+          # Try to fetch the package info with dev tag
+          if npm view "$PACKAGE_NAME@dev" version > /dev/null 2>&1; then
+            echo "✅ Development version successfully published to NPM"
+            echo "📦 Install: npm install -g $PACKAGE_NAME@dev"
+            echo "📦 View: https://www.npmjs.com/package/$PACKAGE_NAME"
+          else
+            echo "⚠️  Development version may still be processing on NPM"
+          fi
+
+  summary:
+    name: CI Summary
+    runs-on: ubuntu-latest
+    needs: [test, lint, cloudflare, publish-dev]
+    if: always()
+
+    steps:
+      - name: Generate CI summary
+        run: |
+          echo "## 🔄 CI/CD Pipeline Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Test results
+          if [[ "${{ needs.test.result }}" == "success" ]]; then
+            echo "✅ **Tests**: All passed (Node.js 18.x, 20.x)" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ **Tests**: Failed" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          # Lint results
+          if [[ "${{ needs.lint.result }}" == "success" ]]; then
+            echo "✅ **Code Quality**: Passed" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ **Code Quality**: Failed" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          # Cloudflare build results
+          if [[ "${{ needs.cloudflare.result }}" == "success" ]]; then
+            echo "✅ **Cloudflare Workers**: Build successful" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ **Cloudflare Workers**: Build failed" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          # Development publish results
+          if [[ "${{ needs.publish-dev.result }}" == "success" ]]; then
+            echo "✅ **NPM Dev Publish**: Published" >> $GITHUB_STEP_SUMMARY
+            echo "   - Install: \`npm install -g @aredes.me/mcp-dadosbr@dev\`" >> $GITHUB_STEP_SUMMARY
+          elif [[ "${{ needs.publish-dev.result }}" == "skipped" ]]; then
+            echo "⏭️  **NPM Dev Publish**: Skipped (no token or not main branch)" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ **NPM Dev Publish**: Failed" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "---" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Package Info:**" >> $GITHUB_STEP_SUMMARY
+          echo "- **Name**: \`@aredes.me/mcp-dadosbr\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Version**: $(node -p "require('./package.json').version")" >> $GITHUB_STEP_SUMMARY
+          echo "- **NPM**: [View on NPM](https://www.npmjs.com/package/@aredes.me/mcp-dadosbr)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Cloudflare**: [Live Demo](https://mcp-dadosbr.aredes.me)" >> $GITHUB_STEP_SUMMARY
