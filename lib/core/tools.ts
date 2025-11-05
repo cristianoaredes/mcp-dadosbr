@@ -7,6 +7,7 @@ import {
   SequentialThinkingProcessor,
 } from "./sequential-thinking.js";
 import type { IntelligenceOptions } from "./intelligence.js";
+import { TIMEOUTS } from "../config/timeouts.js";
 
 let metrics: Metrics = {
   requests: 0,
@@ -42,7 +43,6 @@ function recordMetrics(elapsed: number, fromCache: boolean, error: boolean) {
 }
 
 // Request deduplication to prevent concurrent identical API calls
-const DEDUP_TIMEOUT_MS = 30000; // 30 seconds timeout for safety
 
 interface PendingRequest {
   promise: Promise<any>;
@@ -62,8 +62,8 @@ async function deduplicate<T>(key: string, fn: () => Promise<T>): Promise<T> {
   // Create timeout to prevent stale entries
   const timeoutId = setTimeout(() => {
     pendingRequests.delete(key);
-    console.error(`[WARN] Deduplication timeout for key: ${key} (after ${DEDUP_TIMEOUT_MS}ms)`);
-  }, DEDUP_TIMEOUT_MS);
+    console.error(`[WARN] Deduplication timeout for key: ${key} (after ${TIMEOUTS.DEDUP_TIMEOUT_MS}ms)`);
+  }, TIMEOUTS.DEDUP_TIMEOUT_MS);
 
   // Execute function and cleanup
   const promise = fn()

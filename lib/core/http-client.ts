@@ -1,18 +1,19 @@
 import { SERVER_NAME, SERVER_VERSION } from "../config/index.js";
 import { HttpResponse } from "../types/index.js";
 import { CircuitBreaker } from "../infrastructure/http/circuit-breaker.js";
+import { TIMEOUTS } from "../config/timeouts.js";
 
 // Global circuit breaker instance for HTTP requests
 const circuitBreaker = new CircuitBreaker({
   failureThreshold: 5,
-  resetTimeoutMs: 30000,
+  resetTimeoutMs: TIMEOUTS.CIRCUIT_BREAKER_RESET_MS,
   halfOpenMaxAttempts: 3,
 });
 
 export async function httpJson(
   url: string,
   authHeaders?: Record<string, string>,
-  timeoutMs = 8000
+  timeoutMs = TIMEOUTS.HTTP_REQUEST_MS
 ): Promise<HttpResponse> {
   return await circuitBreaker.execute(async () => {
     const controller = new AbortController();

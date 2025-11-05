@@ -5,6 +5,7 @@
 
 import { Result, RateLimitError } from "../shared/types/result.js";
 import { SEARCH } from "../shared/utils/constants.js";
+import { TIMEOUTS } from "../config/timeouts.js";
 
 export interface SearchResult {
   title: string;
@@ -82,7 +83,7 @@ export class TavilyProvider implements SearchProvider {
       // Check for rate limiting
       if (err.statusCode === 429 || err.message?.includes("rate limit")) {
         return Result.err(
-          new RateLimitError("Tavily API rate limit exceeded", 60000)
+          new RateLimitError("Tavily API rate limit exceeded", TIMEOUTS.RATE_LIMIT_WINDOW_MS)
         );
       }
 

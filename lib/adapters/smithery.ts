@@ -3,6 +3,7 @@ import { createMCPServer } from "../core/mcp-server.js";
 import { MemoryCache } from "../core/cache.js";
 import { resolveApiConfig } from "../config/index.js";
 import { ApiConfig } from "../types/index.js";
+import { CACHE } from "../shared/utils/constants.js";
 
 export const configSchema = z
   .object({
@@ -32,10 +33,10 @@ interface CreateServerOptions {
 export default function createServer({ config }: CreateServerOptions = {}) {
   // Resolve API configuration with overrides
   const apiConfig = resolveApiConfig(config);
-  
+
   // Create cache with default settings
-  const cache = new MemoryCache(256, 60000);
-  
+  const cache = new MemoryCache(CACHE.DEFAULT_SIZE, CACHE.DEFAULT_TTL_MS);
+
   // Create and return MCP server
   const server = createMCPServer({ apiConfig, cache });
   return server;
