@@ -1,6 +1,8 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { ApiConfig, ServerConfig, ConfigFile } from "../types/index.js";
+import { TIMEOUTS } from "./timeouts.js";
+import { CACHE } from "../shared/utils/constants.js";
 
 // Default API URLs
 const DEFAULT_CNPJ_URL = "https://api.opencnpj.org/";
@@ -138,9 +140,9 @@ export function loadServerConfiguration(): ServerConfig {
   return {
     transport: process.env.MCP_TRANSPORT || "stdio",
     httpPort: parseInt(process.env.MCP_HTTP_PORT || "3000"),
-    cacheSize: parseInt(process.env.MCP_CACHE_SIZE || "256"),
-    cacheTTL: parseInt(process.env.MCP_CACHE_TTL || "60000"),
-    apiTimeout: parseInt(process.env.MCP_API_TIMEOUT || "8000"),
+    cacheSize: parseInt(process.env.MCP_CACHE_SIZE || String(CACHE.DEFAULT_SIZE)),
+    cacheTTL: parseInt(process.env.MCP_CACHE_TTL || String(CACHE.DEFAULT_TTL_MS)),
+    apiTimeout: parseInt(process.env.MCP_API_TIMEOUT || String(TIMEOUTS.HTTP_REQUEST_MS)),
   };
 }
 

@@ -13,9 +13,10 @@ import {
   Env
 } from "../adapters/cloudflare.js";
 import { MCPRequest } from "../types/index.js";
+import { TIMEOUTS } from "../config/timeouts.js";
 
 // Rate limiting configuration
-const RATE_LIMIT_WINDOW = 60 * 1000; // 1 minute in milliseconds
+const RATE_LIMIT_WINDOW = TIMEOUTS.RATE_LIMIT_WINDOW_MS;
 const RATE_LIMIT_MAX_REQUESTS = 30; // Max requests per window per IP
 
 /**
@@ -264,7 +265,7 @@ async function handleSSEEndpoint(
         } catch (error) {
           clearInterval(pingInterval);
         }
-      }, 30000); // Ping every 30 seconds
+      }, TIMEOUTS.PING_INTERVAL_MS); // Ping periodically to keep connection alive
 
       // Handle incoming messages from request body (if any)
       if (request.method === "POST") {

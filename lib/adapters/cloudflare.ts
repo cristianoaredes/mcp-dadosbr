@@ -3,6 +3,8 @@ import { KVCache } from "../core/cache.js";
 import { resolveApiConfig, SERVER_VERSION } from "../config/index.js";
 import { TOOL_DEFINITIONS, executeTool } from "../core/tools.js";
 import { ServerConfig, MCPRequest, MCPResponse } from "../types/index.js";
+import { TIMEOUTS } from "../config/timeouts.js";
+import { CACHE } from "../shared/utils/constants.js";
 
 // Cloudflare Worker types
 declare global {
@@ -69,9 +71,9 @@ export async function handleMCPRequest(
   const serverConfig: ServerConfig = {
     transport: env.MCP_TRANSPORT || "http",
     httpPort: parseInt(env.MCP_HTTP_PORT || "8787"),
-    cacheSize: parseInt(env.MCP_CACHE_SIZE || "256"),
-    cacheTTL: parseInt(env.MCP_CACHE_TTL || "60000"),
-    apiTimeout: 8000,
+    cacheSize: parseInt(env.MCP_CACHE_SIZE || String(CACHE.DEFAULT_SIZE)),
+    cacheTTL: parseInt(env.MCP_CACHE_TTL || String(CACHE.DEFAULT_TTL_MS)),
+    apiTimeout: TIMEOUTS.HTTP_REQUEST_MS,
   };
 
   const apiConfig = resolveApiConfig();

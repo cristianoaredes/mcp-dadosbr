@@ -3,6 +3,8 @@
  * Prevents abuse of external APIs by limiting requests per client
  */
 
+import { TIMEOUTS } from "../config/timeouts.js";
+
 export interface RateLimiterConfig {
   windowMs: number;      // Time window in milliseconds
   maxRequests: number;   // Max requests per window per client
@@ -20,8 +22,8 @@ export class RateLimiter {
   constructor(config: RateLimiterConfig) {
     this.config = config;
 
-    // Cleanup old entries every minute
-    setInterval(() => this.cleanup(), 60000);
+    // Cleanup old entries periodically
+    setInterval(() => this.cleanup(), TIMEOUTS.RATE_LIMIT_CLEANUP_MS);
   }
 
   /**
