@@ -217,8 +217,8 @@ export async function executeTool(
     const parsed = CepSchema.parse(args);
     return await lookup("cep", parsed.cep, apiConfig, cache);
   } else if (name === "cnpj_search") {
-    const { query, max_results = 5, api_key } = args;
-    return await executeSearch(query, max_results, cache, api_key);
+    const { query, max_results = 5 } = args;
+    return await executeSearch(query, max_results, cache);
   } else if (name === "sequentialthinking") {
     const result = thinkingProcessor.processThought(args);
     return result;
@@ -227,8 +227,7 @@ export async function executeTool(
     return await executeIntelligence(
       args as IntelligenceOptions,
       apiConfig,
-      cache,
-      (args as any).api_key
+      cache
     );
   } else {
     throw new Error(`Unknown tool: ${name}`);
