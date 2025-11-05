@@ -18,6 +18,20 @@ import { MCPRequest } from "../types/index.js";
 const RATE_LIMIT_WINDOW = 60 * 1000; // 1 minute in milliseconds
 const RATE_LIMIT_MAX_REQUESTS = 30; // Max requests per window per IP
 
+/**
+ * Generate cryptographically secure random token
+ * @param prefix - Token prefix (e.g., 'mcp', 'access', 'bearer')
+ * @returns Secure random token string
+ */
+function generateSecureToken(prefix: string = 'mcp'): string {
+  const buffer = new Uint8Array(32);
+  crypto.getRandomValues(buffer);
+  const token = Array.from(buffer)
+    .map(b => b.toString(16).padStart(2, '0'))
+    .join('');
+  return `${prefix}_${token}`;
+}
+
 // Authentication and rate limiting middleware
 async function authenticateRequest(request: Request, env: Env): Promise<{ authenticated: boolean; error?: Response }> {
   // Skip authentication for health checks, OAuth endpoints, and MCP protocol endpoints
@@ -404,8 +418,8 @@ export default {
           return new Response("Missing redirect_uri", { status: 400, headers: corsHeaders });
         }
 
-        // For MCP connector, we'll auto-approve and redirect with a dummy code
-        const code = "mcp_access_granted_" + Date.now();
+        // For MCP connector, we'll auto-approve and redirect with a secure code
+        const code = generateSecureToken('access');
         const redirectUrl = new URL(redirectUri);
         redirectUrl.searchParams.set("code", code);
         if (state) redirectUrl.searchParams.set("state", state);
@@ -425,7 +439,7 @@ export default {
         }
 
         const tokenResponse = {
-          access_token: "mcp_token_" + Date.now(),
+          access_token: generateSecureToken('bearer'),
           token_type: "Bearer",
           expires_in: 3600,
           scope: "mcp"
