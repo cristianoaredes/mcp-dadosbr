@@ -61,8 +61,7 @@ function filterResultsByCnpj(results: SearchResult[], cnpj: string): SearchResul
 export async function executeIntelligence(
   options: IntelligenceOptions,
   apiConfig: ApiConfig,
-  cache?: Cache,
-  apiKey?: string
+  cache?: Cache
 ): Promise<LookupResult> {
   const TOTAL_TIMEOUT_MS = TIMEOUTS.INTELLIGENCE_TOTAL_MS;
 
@@ -77,7 +76,7 @@ export async function executeIntelligence(
   });
 
   // Create main execution promise
-  const executionPromise = executeIntelligenceInternal(options, apiConfig, cache, apiKey);
+  const executionPromise = executeIntelligenceInternal(options, apiConfig, cache);
 
   // Race between timeout and execution
   return Promise.race([executionPromise, timeoutPromise]);
@@ -86,8 +85,7 @@ export async function executeIntelligence(
 async function executeIntelligenceInternal(
   options: IntelligenceOptions,
   apiConfig: ApiConfig,
-  cache?: Cache,
-  apiKey?: string
+  cache?: Cache
 ): Promise<LookupResult> {
   const startTime = Date.now();
   const transportMode = process.env.MCP_TRANSPORT || "stdio";
@@ -116,8 +114,8 @@ async function executeIntelligenceInternal(
 
     console.error(`[intelligence] [${options.cnpj}] Generated ${dorks.length} dorks, using ${selectedDorks.length}`);
 
-    // Step 3: Resolve provider (requires Tavily API key)
-    const provider: SearchProvider = await getAvailableProvider(options.provider, apiKey);
+    // Step 3: Resolve provider (requires Tavily API key from server config)
+    const provider: SearchProvider = await getAvailableProvider(options.provider);
 
     console.error(
       `[intelligence] [${options.cnpj}] Using provider: ${provider.name}`
