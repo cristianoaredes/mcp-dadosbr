@@ -42,12 +42,43 @@ function recordMetrics(elapsed: number, fromCache: boolean, error: boolean) {
 }
 
 // Request deduplication to prevent concurrent identical API calls
-const pendingRequests = new Map<string, Promise<any>>();
+const DEDUP_TIMEOUT_MS = 30000; // 30 seconds timeout for safety
+
+interface PendingRequest {
+  promise: Promise<any>;
+  timestamp: number;
+  timeoutId: NodeJS.Timeout;
+}
+
+const pendingRequests = new Map<string, PendingRequest>();
 
 async function deduplicate<T>(key: string, fn: () => Promise<T>): Promise<T> {
-  if (pendingRequests.has(key)) return pendingRequests.get(key);
-  const promise = fn().finally(() => pendingRequests.delete(key));
-  pendingRequests.set(key, promise);
+  // Check if request is already pending
+  const existing = pendingRequests.get(key);
+  if (existing) {
+    return existing.promise;
+  }
+
+  // Create timeout to prevent stale entries
+  const timeoutId = setTimeout(() => {
+    pendingRequests.delete(key);
+    console.error(`[WARN] Deduplication timeout for key: ${key} (after ${DEDUP_TIMEOUT_MS}ms)`);
+  }, DEDUP_TIMEOUT_MS);
+
+  // Execute function and cleanup
+  const promise = fn()
+    .finally(() => {
+      clearTimeout(timeoutId);
+      pendingRequests.delete(key);
+    });
+
+  // Store with metadata
+  pendingRequests.set(key, {
+    promise,
+    timestamp: Date.now(),
+    timeoutId
+  });
+
   return promise;
 }
 
