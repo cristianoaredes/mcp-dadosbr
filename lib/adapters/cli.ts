@@ -4,6 +4,7 @@ import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 import express from "express";
 import { createMCPServer } from "../core/mcp-server.js";
 import { MemoryCache } from "../core/cache.js";
+import { RateLimiter } from "../infrastructure/rate-limiter.js";
 import {
   loadServerConfiguration,
   resolveApiConfig,
@@ -87,11 +88,43 @@ For more information, visit: https://github.com/cristianoaredes/mcp-dadosbr`);
       next();
     });
 
+    // Create rate limiter (30 requests per minute per IP)
+    const rateLimiter = new RateLimiter({
+      windowMs: 60 * 1000,  // 1 minute
+      maxRequests: 30        // 30 requests per minute
+    });
+
+    // Rate limiting middleware
+    const rateLimitMiddleware = (req: express.Request, res: express.Response, next: express.NextFunction) => {
+      const clientId = req.ip || req.socket.remoteAddress || "unknown";
+
+      if (!rateLimiter.checkLimit(clientId)) {
+        const resetTime = rateLimiter.getResetTime(clientId);
+        const resetSeconds = Math.ceil(resetTime / 1000);
+
+        console.error(`[RateLimit] Client ${clientId} exceeded rate limit`);
+
+        res.status(429).json({
+          error: "Rate limit exceeded",
+          message: `Too many requests. Please try again in ${resetSeconds} seconds.`,
+          retryAfter: resetSeconds
+        });
+        return;
+      }
+
+      // Add rate limit headers
+      const remaining = rateLimiter.getRemaining(clientId);
+      res.header("X-RateLimit-Limit", "30");
+      res.header("X-RateLimit-Remaining", remaining.toString());
+
+      next();
+    };
+
     // Store transports by session ID (SSE protocol with stateful sessions)
     const transports: Record<string, SSEServerTransport> = {};
 
     // SSE endpoint - establishes the stream (GET)
-    app.get("/mcp", async (req, res) => {
+    app.get("/mcp", rateLimitMiddleware, async (req, res) => {
       debug("GET /mcp - Establishing SSE stream");
       try {
         // Create a new SSE transport for this client
@@ -122,7 +155,7 @@ For more information, visit: https://github.com/cristianoaredes/mcp-dadosbr`);
     });
 
     // Messages endpoint - receives client JSON-RPC requests (POST)
-    app.post("/messages", async (req, res) => {
+    app.post("/messages", rateLimitMiddleware, async (req, res) => {
       debug("POST /messages");
       try {
         // Extract session ID from URL query parameter
