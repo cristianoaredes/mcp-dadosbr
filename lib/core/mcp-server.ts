@@ -6,6 +6,7 @@ import {
 import { SERVER_NAME, SERVER_VERSION } from "../config/index.js";
 import { TOOL_DEFINITIONS, executeTool, resetMetrics } from "./tools.js";
 import { Cache, ApiConfig } from "../types/index.js";
+import { formatErrorResponse } from "../shared/errors.js";
 
 export interface MCPServerOptions {
   apiConfig: ApiConfig;
@@ -31,25 +32,51 @@ export function createMCPServer(options: MCPServerOptions): Server {
   // Register call tool handler
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const { name, arguments: args } = request.params;
-    
+
     try {
       const result = await executeTool(name, args, apiConfig, cache);
-      
+
+      if (result.ok) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(result.data, null, 2),
+            },
+          ],
+        };
+      }
+
+      // Format error with proper categorization
+      const errorDetails = formatErrorResponse(new Error(result.error));
+
       return {
         content: [
           {
             type: "text",
-            text: result.ok
-              ? JSON.stringify(result.data, null, 2)
-              : `Error: ${result.error}`,
+            text: JSON.stringify({
+              error: errorDetails.message,
+              code: errorDetails.code,
+              ...(errorDetails.data ? { details: errorDetails.data } : {})
+            }, null, 2),
           },
         ],
-        ...(result.ok ? {} : { isError: true }),
+        isError: true,
       };
     } catch (error: any) {
+      // Categorize and format unexpected errors
+      const errorDetails = formatErrorResponse(error);
+
       return {
         content: [
-          { type: "text", text: `Error: ${error.message || "Unknown error"}` },
+          {
+            type: "text",
+            text: JSON.stringify({
+              error: errorDetails.message,
+              code: errorDetails.code,
+              ...(errorDetails.data ? { details: errorDetails.data } : {})
+            }, null, 2),
+          },
         ],
         isError: true,
       };
