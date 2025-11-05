@@ -10,12 +10,59 @@ const DEFAULT_CEP_URL = "https://opencep.com/v1/";
 export const SERVER_NAME = "mcp-dadosbr";
 export const SERVER_VERSION = "1.0.0";
 
-// URL validation and normalization functions
-function validateUrl(url: string): boolean {
+// Allowed API hosts (SSRF protection)
+// Only these hosts can be used for CNPJ and CEP APIs
+const ALLOWED_CNPJ_HOSTS = [
+  "api.opencnpj.org",
+  "www.receitaws.com.br",
+  "receitaws.com.br",
+  "brasilapi.com.br",
+  "publica.cnpj.ws",
+  "minhareceita.org",
+  "localhost", // Allow localhost for development/testing
+  "127.0.0.1",
+];
+
+const ALLOWED_CEP_HOSTS = [
+  "opencep.com",
+  "viacep.com.br",
+  "brasilapi.com.br",
+  "cep.awesomeapi.com.br",
+  "localhost", // Allow localhost for development/testing
+  "127.0.0.1",
+];
+
+/**
+ * Validates URL for SSRF protection
+ * @param url - URL to validate
+ * @param allowedHosts - List of allowed hostnames
+ * @returns true if URL is valid and host is allowed
+ */
+function validateUrl(url: string, allowedHosts: string[]): boolean {
   try {
     const parsed = new URL(url);
-    return parsed.protocol === "https:" || parsed.protocol === "http:";
-  } catch {
+
+    // Only HTTPS allowed (except localhost for development)
+    const isLocalhost = parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1";
+    if (!isLocalhost && parsed.protocol !== "https:") {
+      console.error(`[Security] Rejected non-HTTPS URL: ${url}`);
+      return false;
+    }
+
+    // Check if host is in allowlist
+    const isAllowed = allowedHosts.some(allowed => {
+      return parsed.hostname === allowed || parsed.hostname.endsWith(`.${allowed}`);
+    });
+
+    if (!isAllowed) {
+      console.error(`[Security] Rejected URL with non-allowed host: ${parsed.hostname}`);
+      console.error(`[Security] Allowed hosts: ${allowedHosts.join(", ")}`);
+      return false;
+    }
+
+    return true;
+  } catch (error) {
+    console.error(`[Security] Invalid URL format: ${url}`);
     return false;
   }
 }
@@ -67,12 +114,18 @@ function loadApiConfiguration(): ApiConfig {
     };
   }
 
-  // Validate and normalize URLs
-  if (!validateUrl(config.cnpjBaseUrl)) {
-    throw new Error(`Invalid CNPJ API URL: ${config.cnpjBaseUrl}`);
+  // Validate and normalize URLs with SSRF protection
+  if (!validateUrl(config.cnpjBaseUrl, ALLOWED_CNPJ_HOSTS)) {
+    throw new Error(
+      `Invalid or disallowed CNPJ API URL: ${config.cnpjBaseUrl}. ` +
+      `Allowed hosts: ${ALLOWED_CNPJ_HOSTS.join(", ")}`
+    );
   }
-  if (!validateUrl(config.cepBaseUrl)) {
-    throw new Error(`Invalid CEP API URL: ${config.cepBaseUrl}`);
+  if (!validateUrl(config.cepBaseUrl, ALLOWED_CEP_HOSTS)) {
+    throw new Error(
+      `Invalid or disallowed CEP API URL: ${config.cepBaseUrl}. ` +
+      `Allowed hosts: ${ALLOWED_CEP_HOSTS.join(", ")}`
+    );
   }
 
   config.cnpjBaseUrl = normalizeBaseUrl(config.cnpjBaseUrl);
