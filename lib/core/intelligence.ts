@@ -10,6 +10,51 @@ import { TimeoutError } from '../shared/types/result.js';
 import { SEARCH } from '../shared/utils/constants.js';
 import { TIMEOUTS } from '../config/timeouts.js';
 
+/**
+ * Execute tasks with concurrency limit
+ * Runs multiple promises concurrently up to the specified limit
+ * @param tasks - Array of task functions that return promises
+ * @param limit - Maximum number of concurrent tasks (default: 3)
+ * @returns Array of settled results
+ */
+async function executeWithConcurrencyLimit<T>(
+  tasks: (() => Promise<T>)[],
+  limit: number = 3
+): Promise<PromiseSettledResult<T>[]> {
+  const results: PromiseSettledResult<T>[] = new Array(tasks.length);
+  const executing: Set<Promise<void>> = new Set();
+
+  for (let i = 0; i < tasks.length; i++) {
+    const task = tasks[i];
+
+    // Create a promise that stores result and removes itself when done
+    const promise = task()
+      .then(
+        value => {
+          results[i] = { status: 'fulfilled', value };
+        },
+        reason => {
+          results[i] = { status: 'rejected', reason };
+        }
+      )
+      .then(() => {
+        executing.delete(promise);
+      });
+
+    executing.add(promise);
+
+    // If we hit the concurrency limit, wait for one to complete
+    if (executing.size >= limit) {
+      await Promise.race(executing);
+    }
+  }
+
+  // Wait for all remaining promises
+  await Promise.all(executing);
+
+  return results;
+}
+
 export interface IntelligenceOptions {
   cnpj: string;
   categories?: DorkCategory[];
@@ -142,7 +187,7 @@ async function executeIntelligenceInternal(
       `[intelligence] [${options.cnpj}] Using provider: ${provider.name}`
     );
 
-    // Step 4: Execute searches
+    // Step 4: Execute searches with concurrency limit
     const searchResults: Record<DorkCategory, SearchResultWithMeta[]> = {
       government: [],
       legal: [],
@@ -154,40 +199,78 @@ async function executeIntelligenceInternal(
 
     const providerUsed = provider.name;
     const maxResultsPerQuery = options.maxResultsPerQuery || SEARCH.DEFAULT_MAX_RESULTS;
-    let queriesExecuted = 0;
 
-    for (const dork of selectedDorks) {
-      try {
-        console.error(`[intelligence] [${dork.category}] Searching: ${dork.query}`);
-        const searchResult = await provider.search(
-          dork.query,
-          maxResultsPerQuery
-        );
+    // Get concurrency limit from environment or use default
+    const concurrencyLimit = parseInt(process.env.MCP_INTELLIGENCE_CONCURRENCY || '3', 10);
 
-        if (searchResult.ok) {
-          // Filter results to ensure they contain the CNPJ
-          const filteredResults = filterResultsByCnpj(searchResult.value, options.cnpj);
+    console.error(
+      `[intelligence] [${options.cnpj}] Executing ${selectedDorks.length} queries ` +
+      `with concurrency limit: ${concurrencyLimit}`
+    );
 
-          const resultsWithMeta: SearchResultWithMeta[] = filteredResults.map(r => ({
-            ...r,
-            query: dork.query,
-            category: dork.category
-          }));
-
-          searchResults[dork.category].push(...resultsWithMeta);
-          queriesExecuted += 1;
-
-          console.error(
-            `[intelligence] [${dork.category}] Found ${searchResult.value.length} results, ` +
-            `${filteredResults.length} after CNPJ filter`
+    // Create tasks for concurrent execution
+    const searchTasks = selectedDorks.map(dork => {
+      return async () => {
+        try {
+          console.error(`[intelligence] [${dork.category}] Searching: ${dork.query}`);
+          const searchResult = await provider.search(
+            dork.query,
+            maxResultsPerQuery
           );
-        } else {
-          // Log error but continue with other searches
-          console.error(`[intelligence] [${dork.category}] Search failed: ${searchResult.error.message}`);
+
+          if (searchResult.ok) {
+            // Filter results to ensure they contain the CNPJ
+            const filteredResults = filterResultsByCnpj(searchResult.value, options.cnpj);
+
+            const resultsWithMeta: SearchResultWithMeta[] = filteredResults.map(r => ({
+              ...r,
+              query: dork.query,
+              category: dork.category
+            }));
+
+            console.error(
+              `[intelligence] [${dork.category}] Found ${searchResult.value.length} results, ` +
+              `${filteredResults.length} after CNPJ filter`
+            );
+
+            return {
+              category: dork.category,
+              results: resultsWithMeta,
+              success: true
+            };
+          } else {
+            // Log error but continue with other searches
+            console.error(`[intelligence] [${dork.category}] Search failed: ${searchResult.error.message}`);
+            return {
+              category: dork.category,
+              results: [],
+              success: false
+            };
+          }
+        } catch (error: unknown) {
+          const err = error as Error;
+          console.error(`[intelligence] [${dork.category}] Unexpected error: ${err.message}`);
+          return {
+            category: dork.category,
+            results: [],
+            success: false
+          };
         }
-      } catch (error: unknown) {
-        const err = error as Error;
-        console.error(`[intelligence] [${dork.category}] Unexpected error: ${err.message}`);
+      };
+    });
+
+    // Execute all searches with concurrency limit
+    const searchTaskResults = await executeWithConcurrencyLimit(searchTasks, concurrencyLimit);
+
+    // Aggregate results
+    let queriesExecuted = 0;
+    for (const result of searchTaskResults) {
+      if (result.status === 'fulfilled') {
+        const { category, results, success } = result.value;
+        searchResults[category].push(...results);
+        if (success) {
+          queriesExecuted += 1;
+        }
       }
     }
 
