@@ -41,11 +41,31 @@ function normalizeCnpj(cnpj: string): string {
 
 /**
  * Check if a text contains the CNPJ (with or without formatting)
+ * Uses word boundaries to avoid false positives
  */
 function containsCnpj(text: string, cnpj: string): boolean {
   const normalizedCnpj = normalizeCnpj(cnpj);
-  const normalizedText = normalizeCnpj(text);
-  return normalizedText.includes(normalizedCnpj);
+
+  // Build formatted CNPJ pattern: 12.345.678/0001-90
+  const formatted = normalizedCnpj.replace(
+    /^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/,
+    '$1.$2.$3/$4-$5'
+  );
+
+  // Escape special regex characters in formatted version
+  const escapedFormatted = formatted.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+  // Create patterns with word boundaries
+  // \b doesn't work well with non-word chars, so use lookahead/lookbehind
+  const patterns = [
+    // Unformatted: 12345678000190 (with word boundaries)
+    new RegExp(`(?<!\\d)${normalizedCnpj}(?!\\d)`, 'i'),
+    // Formatted: 12.345.678/0001-90
+    new RegExp(escapedFormatted, 'i')
+  ];
+
+  // Check if any pattern matches
+  return patterns.some(pattern => pattern.test(text));
 }
 
 /**
