@@ -50,7 +50,7 @@ MCP_CACHE_TTL = "60000"
 [build]
 command = "npm run build:worker"
 cwd = "."
-watch_dir = "workers"
+watch_dir = "lib"
 
 # KV namespace for caching (default)
 [[kv_namespaces]]
