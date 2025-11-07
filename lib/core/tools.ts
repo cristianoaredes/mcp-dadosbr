@@ -237,7 +237,7 @@ export const TOOL_DEFINITIONS = [
 // Tool execution logic
 export async function executeTool(
   name: string,
-  args: any,
+  args: unknown,
   apiConfig: ApiConfig,
   cache?: Cache
 ): Promise<LookupResult> {
@@ -248,7 +248,8 @@ export async function executeTool(
     const parsed = CepSchema.parse(args);
     return await lookup("cep", parsed.cep, apiConfig, cache);
   } else if (name === "cnpj_search") {
-    const { query, max_results = 5 } = args;
+    const searchArgs = args as { query: string; max_results?: number };
+    const { query, max_results = 5 } = searchArgs;
     return await executeSearch(query, max_results, cache);
   } else if (name === "sequentialthinking") {
     const result = thinkingProcessor.processThought(args);

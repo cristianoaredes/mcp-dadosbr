@@ -1,6 +1,15 @@
 import { CacheEntry, Cache } from "../types/index.js";
 import { CACHE } from "../shared/utils/constants.js";
 
+/**
+ * Interface for Cloudflare KV storage
+ */
+interface KVNamespace {
+  get(key: string): Promise<string | null>;
+  put(key: string, value: string): Promise<void>;
+  delete(key: string): Promise<void>;
+}
+
 export class MemoryCache implements Cache {
   private cache = new Map<string, CacheEntry>();
   private accessOrder = new Map<string, number>();
@@ -114,7 +123,7 @@ export class MemoryCache implements Cache {
 
 // KV Cache adapter for Cloudflare Workers
 export class KVCache implements Cache {
-  constructor(private kv: any, private ttl: number = CACHE.DEFAULT_TTL_MS) {}
+  constructor(private kv: KVNamespace, private ttl: number = CACHE.DEFAULT_TTL_MS) {}
 
   async get<T = unknown>(key: string): Promise<T | null> {
     const cached = await this.kv.get(key);

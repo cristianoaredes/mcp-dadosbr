@@ -10,7 +10,25 @@ export interface DorkTemplate {
   description: string;
 }
 
-export function buildDorks(cnpjData: any, categories?: DorkCategory[]): DorkTemplate[] {
+/**
+ * Interface for CNPJ data (supports multiple API formats)
+ */
+export interface CNPJData {
+  cnpj?: string;
+  taxId?: string;
+  razao_social?: string;
+  nome_fantasia?: string;
+  alias?: string;
+  qsa?: Array<{ nome?: string; qualificacao?: string }>;
+  QSA?: Array<{ nome?: string; qualificacao?: string }>;
+  company?: {
+    name?: string;
+    members?: Array<{ nome?: string; qualificacao?: string }>;
+  };
+  [key: string]: unknown; // Allow other properties
+}
+
+export function buildDorks(cnpjData: CNPJData, categories?: DorkCategory[]): DorkTemplate[] {
   const allDorks: DorkTemplate[] = [];
   
   // Support both API formats: open.cnpja.com and others
@@ -164,7 +182,7 @@ export function buildDorks(cnpjData: any, categories?: DorkCategory[]): DorkTemp
     // Limit to first 3 partners to avoid too many queries
     const topPartners = qsa.slice(0, 3);
     
-    topPartners.forEach((socio: any) => {
+    topPartners.forEach((socio: { nome?: string; nome_socio?: string; qualificacao?: string; person?: { name?: string } }) => {
       // Support both API formats
       const nomeSocio = socio.nome_socio || socio.nome || socio.person?.name;
       if (nomeSocio && razaoSocial) {
@@ -188,12 +206,12 @@ export function buildDorks(cnpjData: any, categories?: DorkCategory[]): DorkTemp
 }
 
 // Get dorks for specific category
-export function getDorksByCategory(cnpjData: any, category: DorkCategory): DorkTemplate[] {
+export function getDorksByCategory(cnpjData: CNPJData, category: DorkCategory): DorkTemplate[] {
   return buildDorks(cnpjData, [category]);
 }
 
 // Get prioritized dorks (most important first)
-export function getPrioritizedDorks(cnpjData: any, maxDorks: number = 10): DorkTemplate[] {
+export function getPrioritizedDorks(cnpjData: CNPJData, maxDorks: number = 10): DorkTemplate[] {
   const allDorks = buildDorks(cnpjData);
   
   // Priority order

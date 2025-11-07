@@ -205,7 +205,7 @@ async function handleSSEEndpoint(
   };
 
   // Send initial connection event
-  const sendSSEMessage = async (data: any, event?: string, id?: string) => {
+  const sendSSEMessage = async (data: unknown, event?: string, id?: string) => {
     let message = "";
     if (id) message += `id: ${id}\n`;
     if (event) message += `event: ${event}\n`;
