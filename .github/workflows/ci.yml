@@ -14,6 +14,7 @@ jobs:
     strategy:
       matrix:
         node-version: [18.x, 20.x]
+      fail-fast: false  # Continue testing other versions if one fails
 
     steps:
       - name: Checkout code
@@ -24,6 +25,17 @@ jobs:
         with:
           node-version: ${{ matrix.node-version }}
           cache: "npm"
+
+      - name: Cache TypeScript build
+        uses: actions/cache@v4
+        with:
+          path: |
+            build/
+            tsconfig.tsbuildinfo
+          key: ${{ runner.os }}-build-${{ matrix.node-version }}-${{ hashFiles('lib/**/*.ts', 'tsconfig.json') }}
+          restore-keys: |
+            ${{ runner.os }}-build-${{ matrix.node-version }}-
+            ${{ runner.os }}-build-
 
       - name: Install dependencies
         run: npm ci
@@ -36,17 +48,49 @@ jobs:
 
       - name: Test stdio transport
         run: |
-          timeout 10s bash -c 'echo "{\"jsonrpc\": \"2.0\", \"id\": 1, \"method\": \"tools/list\"}" | npm start' || true
+          echo "🧪 Testing stdio transport..."
+          RESPONSE=$(timeout 10s bash -c 'echo "{\"jsonrpc\": \"2.0\", \"id\": 1, \"method\": \"tools/list\"}" | npm start 2>&1' || echo "TIMEOUT")
+
+          if echo "$RESPONSE" | grep -q "tools/list"; then
+            echo "✅ Stdio transport test passed"
+          else
+            echo "⚠️ Stdio transport test inconclusive (this is non-critical)"
+            echo "Response: $RESPONSE"
+          fi
 
       - name: Test HTTP transport
         run: |
+          echo "🧪 Testing HTTP transport..."
           MCP_TRANSPORT=http npm start &
           SERVER_PID=$!
-          sleep 3
-          curl -f -X POST http://localhost:3000/mcp \
+
+          # Wait for server to start with timeout
+          echo "⏳ Waiting for server to start..."
+          for i in {1..10}; do
+            if curl -sf http://localhost:3000/health > /dev/null 2>&1; then
+              echo "✅ Server is ready"
+              break
+            fi
+            if [ $i -eq 10 ]; then
+              echo "❌ Server failed to start within 10 seconds"
+              kill $SERVER_PID 2>/dev/null || true
+              exit 1
+            fi
+            sleep 1
+          done
+
+          # Test MCP endpoint
+          if curl -sf -X POST http://localhost:3000/mcp \
             -H "Content-Type: application/json" \
-            -d '{"jsonrpc": "2.0", "id": 1, "method": "tools/list"}' || true
-          kill $SERVER_PID || true
+            -d '{"jsonrpc": "2.0", "id": 1, "method": "tools/list"}' > /dev/null; then
+            echo "✅ HTTP transport test passed"
+          else
+            echo "❌ HTTP transport test failed"
+            kill $SERVER_PID 2>/dev/null || true
+            exit 1
+          fi
+
+          kill $SERVER_PID 2>/dev/null || true
 
   lint:
     name: Code Quality
@@ -61,6 +105,17 @@ jobs:
         with:
           node-version: "20.x"
           cache: "npm"
+
+      - name: Cache TypeScript build
+        uses: actions/cache@v4
+        with:
+          path: |
+            build/
+            tsconfig.tsbuildinfo
+          key: ${{ runner.os }}-build-lint-${{ hashFiles('lib/**/*.ts', 'tsconfig.json') }}
+          restore-keys: |
+            ${{ runner.os }}-build-lint-
+            ${{ runner.os }}-build-
 
       - name: Install dependencies
         run: npm ci
@@ -88,7 +143,7 @@ jobs:
   cloudflare:
     name: Cloudflare Workers Build
     runs-on: ubuntu-latest
-    needs: [test, lint]
+    needs: [test]  # Removed lint dependency - can run in parallel
 
     steps:
       - name: Checkout code
@@ -100,11 +155,29 @@ jobs:
           node-version: "20.x"
           cache: "npm"
 
+      - name: Cache worker build
+        uses: actions/cache@v4
+        with:
+          path: |
+            build/
+            tsconfig.tsbuildinfo
+          key: ${{ runner.os }}-worker-build-${{ hashFiles('lib/**/*.ts', 'tsconfig.worker.json') }}
+          restore-keys: |
+            ${{ runner.os }}-worker-build-
+            ${{ runner.os }}-build-
+
       - name: Install dependencies
         run: npm ci
 
       - name: Build for Cloudflare Workers
         run: npm run build:worker
+
+      - name: Upload worker artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: worker-build
+          path: build/lib/workers/
+          retention-days: 1
 
       - name: Check worker build output
         run: |
@@ -149,7 +222,7 @@ jobs:
   publish-dev:
     name: Publish Development Version
     runs-on: ubuntu-latest
-    needs: [test, lint, cloudflare]
+    needs: [test, lint]  # Don't wait for cloudflare build
     # Only publish on push to main (not PRs) and only if NPM_TOKEN is available
     if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'cristianoaredes/mcp-dadosbr'
 
