@@ -4,7 +4,12 @@ on:
   push:
     branches: [main]
     paths:
-      - "workers/**"
+      - "lib/workers/**"
+      - "lib/core/**"
+      - "lib/adapters/**"
+      - "lib/config/**"
+      - "lib/infrastructure/**"
+      - "lib/shared/**"
       - "wrangler.toml"
       - "package.json"
       - "tsconfig.worker.json"
@@ -34,6 +39,17 @@ jobs:
           node-version: "20.x"
           cache: "npm"
 
+      - name: Cache worker build
+        uses: actions/cache@v4
+        with:
+          path: |
+            build/
+            tsconfig.tsbuildinfo
+          key: ${{ runner.os }}-worker-build-${{ hashFiles('lib/**/*.ts', 'tsconfig.worker.json') }}
+          restore-keys: |
+            ${{ runner.os }}-worker-build-
+            ${{ runner.os }}-build-
+
       - name: Install dependencies
         run: npm ci
 
@@ -47,33 +63,77 @@ jobs:
           environment: ${{ github.event.inputs.environment || 'staging' }}
           workingDirectory: "."
           wranglerVersion: "3.95.0"
+          command: deploy --env ${{ github.event.inputs.environment || 'staging' }}
+
+      - name: Get worker URL
+        id: get_url
+        run: |
+          ENV="${{ github.event.inputs.environment || 'staging' }}"
+
+          # Get worker name from wrangler.toml
+          if [ "$ENV" = "production" ]; then
+            WORKER_NAME="mcp-dadosbr-aredes-prod"
+            # Production uses custom domain
+            WORKER_URL="https://mcp-dadosbr.aredes.me"
+          else
+            WORKER_NAME="mcp-dadosbr-aredes-staging"
+            # Staging uses workers.dev subdomain
+            WORKER_URL="https://${WORKER_NAME}.workers.dev"
+          fi
+
+          echo "worker_url=$WORKER_URL" >> $GITHUB_OUTPUT
+          echo "📍 Worker URL: $WORKER_URL"
 
       - name: Test deployment
         if: success()
         run: |
-          # Wait for deployment to be ready
-          sleep 30
+          WORKER_URL="${{ steps.get_url.outputs.worker_url }}"
 
-          # Test the deployment (you'll need to update the URL)
-          WORKER_URL="https://mcp-dadosbr-${{ github.event.inputs.environment || 'staging' }}.aredes.me"
+          echo "🧪 Testing deployment at $WORKER_URL"
+          echo "⏳ Waiting for deployment to propagate..."
 
-          # Health check
-          curl -f "$WORKER_URL/health" || exit 1
+          # Poll for deployment readiness (max 60 seconds)
+          for i in {1..12}; do
+            if curl -sf "$WORKER_URL/health" > /dev/null 2>&1; then
+              echo "✅ Health check passed"
+              break
+            fi
+            if [ $i -eq 12 ]; then
+              echo "❌ Deployment health check failed after 60 seconds"
+              exit 1
+            fi
+            echo "⏳ Attempt $i/12 - waiting 5 seconds..."
+            sleep 5
+          done
 
-          # MCP tools list test
-          curl -f -X POST "$WORKER_URL/mcp" \
+          # Test MCP endpoint
+          echo "🧪 Testing MCP endpoint..."
+          RESPONSE=$(curl -sf -X POST "$WORKER_URL/mcp" \
             -H "Content-Type: application/json" \
-            -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' || exit 1
+            -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}')
 
-          echo "✅ Deployment test passed"
+          if echo "$RESPONSE" | grep -q "tools"; then
+            echo "✅ MCP endpoint test passed"
+            echo "📦 Available tools:"
+            echo "$RESPONSE" | jq -r '.result.tools[].name' 2>/dev/null || echo "$RESPONSE"
+          else
+            echo "❌ MCP endpoint test failed"
+            echo "Response: $RESPONSE"
+            exit 1
+          fi
+
+          echo "✅ All deployment tests passed"
 
       - name: Create deployment summary
         if: always()
         run: |
+          WORKER_URL="${{ steps.get_url.outputs.worker_url }}"
+
           echo "## 🚀 Cloudflare Workers Deployment" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Environment:** ${{ github.event.inputs.environment || 'staging' }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Worker Name:** mcp-dadosbr-aredes-${{ github.event.inputs.environment || 'staging' }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit:** \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
           echo "**Status:** ${{ job.status }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
@@ -81,8 +141,21 @@ jobs:
             echo "✅ **Deployment successful!**" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "**Endpoints:**" >> $GITHUB_STEP_SUMMARY
-            echo "- Health: https://mcp-dadosbr-${{ github.event.inputs.environment || 'staging' }}.aredes.me/health" >> $GITHUB_STEP_SUMMARY
-            echo "- MCP: https://mcp-dadosbr-${{ github.event.inputs.environment || 'staging' }}.aredes.me/mcp" >> $GITHUB_STEP_SUMMARY
+            echo "- 🏥 Health: [$WORKER_URL/health]($WORKER_URL/health)" >> $GITHUB_STEP_SUMMARY
+            echo "- 🔌 MCP JSON-RPC: [$WORKER_URL/mcp]($WORKER_URL/mcp)" >> $GITHUB_STEP_SUMMARY
+            echo "- 📡 SSE: [$WORKER_URL/sse]($WORKER_URL/sse)" >> $GITHUB_STEP_SUMMARY
+            echo "- 📖 OpenAPI: [$WORKER_URL/openapi.json]($WORKER_URL/openapi.json)" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Test Commands:**" >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
+            echo "# Health check" >> $GITHUB_STEP_SUMMARY
+            echo "curl $WORKER_URL/health" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "# List tools" >> $GITHUB_STEP_SUMMARY
+            echo "curl -X POST $WORKER_URL/mcp \\" >> $GITHUB_STEP_SUMMARY
+            echo "  -H 'Content-Type: application/json' \\" >> $GITHUB_STEP_SUMMARY
+            echo "  -d '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\"}'" >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
           else
             echo "❌ **Deployment failed**" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY

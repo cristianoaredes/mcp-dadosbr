@@ -125,29 +125,58 @@ jobs:
       - name: Generate changelog
         id: changelog
         run: |
-          # Install conventional-changelog-cli
-          npm install -g conventional-changelog-cli
+          # Generate changelog from git commits
+          VERSION=${{ needs.validate.outputs.version }}
+          PREVIOUS_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
 
-          # Generate changelog for this version
-          CHANGELOG=$(conventional-changelog -p angular -r 2)
+          if [ -z "$PREVIOUS_TAG" ]; then
+            echo "## What's Changed" > RELEASE_NOTES.md
+            echo "" >> RELEASE_NOTES.md
+            git log --pretty=format:"* %s (%h)" --reverse >> RELEASE_NOTES.md
+          else
+            echo "## What's Changed" > RELEASE_NOTES.md
+            echo "" >> RELEASE_NOTES.md
+            git log ${PREVIOUS_TAG}..HEAD --pretty=format:"* %s (%h)" --reverse >> RELEASE_NOTES.md
+          fi
 
-          # Save to file for release notes
-          echo "$CHANGELOG" > RELEASE_NOTES.md
+          # Add full changelog link
+          echo "" >> RELEASE_NOTES.md
+          echo "" >> RELEASE_NOTES.md
+          echo "**Full Changelog**: https://github.com/${{ github.repository }}/compare/${PREVIOUS_TAG}...v${VERSION}" >> RELEASE_NOTES.md
 
-          # Set output (escape for GitHub Actions)
+          # Set output
           echo "changelog<<EOF" >> $GITHUB_OUTPUT
-          echo "$CHANGELOG" >> $GITHUB_OUTPUT
+          cat RELEASE_NOTES.md >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
 
           echo "📝 Changelog generated successfully"
 
       - name: Update CHANGELOG.md
         run: |
-          # Install conventional-changelog-cli if not already installed
-          npm install -g conventional-changelog-cli
+          VERSION=${{ needs.validate.outputs.version }}
+          PREVIOUS_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
 
-          # Update CHANGELOG.md with new version
-          conventional-changelog -p angular -i CHANGELOG.md -s
+          # Create or update CHANGELOG.md
+          if [ ! -f CHANGELOG.md ]; then
+            echo "# Changelog" > CHANGELOG.md
+            echo "" >> CHANGELOG.md
+          fi
+
+          # Prepend new version to CHANGELOG.md
+          {
+            echo "## [$VERSION] - $(date +%Y-%m-%d)"
+            echo ""
+            if [ -z "$PREVIOUS_TAG" ]; then
+              git log --pretty=format:"* %s (%h)" --reverse
+            else
+              git log ${PREVIOUS_TAG}..HEAD --pretty=format:"* %s (%h)" --reverse
+            fi
+            echo ""
+            echo ""
+            cat CHANGELOG.md
+          } > CHANGELOG.md.new
+
+          mv CHANGELOG.md.new CHANGELOG.md
 
           echo "✅ CHANGELOG.md updated"
 
@@ -172,7 +201,7 @@ jobs:
           else
             git add CHANGELOG.md smithery.yaml
             git commit -m "docs: update CHANGELOG.md and smithery.yaml for v${{ needs.validate.outputs.version }}"
-            git push origin HEAD:master || echo "⚠️  Could not push updates (this is non-critical)"
+            git push origin HEAD:main || echo "⚠️  Could not push updates (this is non-critical)"
           fi
 
       - name: Create GitHub Release
@@ -286,6 +315,17 @@ jobs:
           node-version: "20.x"
           cache: "npm"
 
+      - name: Cache worker build
+        uses: actions/cache@v4
+        with:
+          path: |
+            build/
+            tsconfig.tsbuildinfo
+          key: ${{ runner.os }}-worker-build-${{ hashFiles('lib/**/*.ts', 'tsconfig.worker.json') }}
+          restore-keys: |
+            ${{ runner.os }}-worker-build-
+            ${{ runner.os }}-build-
+
       - name: Install dependencies
         run: npm ci
 
@@ -298,20 +338,38 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           environment: "production"
           workingDirectory: "."
+          command: deploy --env production
 
       - name: Verify deployment
         run: |
-          echo "⏳ Waiting for deployment to propagate..."
-          sleep 30
-
           WORKER_URL="https://mcp-dadosbr.aredes.me"
 
-          # Health check
-          if curl -f "$WORKER_URL/health" > /dev/null 2>&1; then
-            echo "✅ Cloudflare Workers deployment verified"
-            echo "🌐 Live at: $WORKER_URL"
+          echo "🧪 Verifying deployment at $WORKER_URL"
+          echo "⏳ Waiting for deployment to propagate..."
+
+          # Poll for deployment readiness (max 60 seconds)
+          for i in {1..12}; do
+            if curl -sf "$WORKER_URL/health" > /dev/null 2>&1; then
+              echo "✅ Health check passed"
+              break
+            fi
+            if [ $i -eq 12 ]; then
+              echo "⚠️ Deployment verification timed out - manual check required"
+              exit 0  # Non-critical failure
+            fi
+            echo "⏳ Attempt $i/12 - waiting 5 seconds..."
+            sleep 5
+          done
+
+          # Test MCP endpoint
+          if curl -sf -X POST "$WORKER_URL/mcp" \
+            -H "Content-Type: application/json" \
+            -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' > /dev/null 2>&1; then
+            echo "✅ MCP endpoint verified"
+            echo "🌐 Production deployment successful!"
+            echo "🔗 Live at: $WORKER_URL"
           else
-            echo "⚠️  Deployment verification failed - manual check required"
+            echo "⚠️ MCP endpoint verification failed - manual check required"
           fi
 
   # Create release summary
