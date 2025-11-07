@@ -49,7 +49,7 @@ export async function handleLookupEndpoint(
       );
     }
 
-    return new Response(JSON.stringify(mcpResponse.result, null, 2), {
+    return new Response(JSON.stringify(mcpResponse.result), {
       status: 200,
       headers: {
         'Content-Type': 'application/json',

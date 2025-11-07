@@ -139,7 +139,7 @@ export default {
           },
         };
 
-        return new Response(JSON.stringify(info, null, 2), {
+        return new Response(JSON.stringify(info), {
           status: 200,
           headers: {
             'Content-Type': 'application/json',
