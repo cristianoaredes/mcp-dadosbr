@@ -122,7 +122,7 @@ export function handleOAuthDiscovery(request: Request): Response {
     id_token_signing_alg_values_supported: ['RS256'],
   };
 
-  return new Response(JSON.stringify(oauthConfig, null, 2), {
+  return new Response(JSON.stringify(oauthConfig), {
     status: 200,
     headers: {
       'Content-Type': 'application/json',

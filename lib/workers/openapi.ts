@@ -283,7 +283,7 @@ export function generateOpenAPISchema(requestUrl: string): unknown {
 export function handleOpenAPIEndpoint(request: Request): Response {
   const schema = generateOpenAPISchema(request.url);
 
-  return new Response(JSON.stringify(schema, null, 2), {
+  return new Response(JSON.stringify(schema), {
     status: 200,
     headers: {
       'Content-Type': 'application/json',

@@ -84,12 +84,19 @@ function normalizeCnpj(cnpj: string): string {
   return cnpj.replace(/\D/g, '');
 }
 
+// Memoize regex patterns for CNPJ filtering to avoid recompilation
+const regexCache = new Map<string, RegExp[]>();
+
 /**
- * Check if a text contains the CNPJ (with or without formatting)
- * Uses word boundaries to avoid false positives
+ * Get memoized regex patterns for CNPJ matching
  */
-function containsCnpj(text: string, cnpj: string): boolean {
+function getCnpjPatterns(cnpj: string): RegExp[] {
   const normalizedCnpj = normalizeCnpj(cnpj);
+
+  // Check cache first
+  if (regexCache.has(normalizedCnpj)) {
+    return regexCache.get(normalizedCnpj)!;
+  }
 
   // Build formatted CNPJ pattern: 12.345.678/0001-90
   const formatted = normalizedCnpj.replace(
@@ -109,7 +116,20 @@ function containsCnpj(text: string, cnpj: string): boolean {
     new RegExp(escapedFormatted, 'i')
   ];
 
-  // Check if any pattern matches
+  // Cache for future use (limit cache size to prevent unbounded growth)
+  if (regexCache.size < 100) {
+    regexCache.set(normalizedCnpj, patterns);
+  }
+
+  return patterns;
+}
+
+/**
+ * Check if a text contains the CNPJ (with or without formatting)
+ * Uses word boundaries to avoid false positives
+ */
+function containsCnpj(text: string, cnpj: string): boolean {
+  const patterns = getCnpjPatterns(cnpj);
   return patterns.some(pattern => pattern.test(text));
 }
 
@@ -274,12 +294,34 @@ async function executeIntelligenceInternal(
       }
     }
 
-    // Step 5: Build response
+    // Step 5: Deduplicate results by URL across categories
+    const deduplicatedResults: Record<DorkCategory, SearchResultWithMeta[]> = {} as Record<DorkCategory, SearchResultWithMeta[]>;
+    const seenUrls = new Set<string>();
+
+    for (const category of Object.keys(searchResults) as DorkCategory[]) {
+      deduplicatedResults[category] = [];
+      for (const result of searchResults[category]) {
+        if (!seenUrls.has(result.url)) {
+          seenUrls.add(result.url);
+          deduplicatedResults[category].push(result);
+        }
+      }
+    }
+
+    // Count total unique results
+    const totalResults = Object.values(deduplicatedResults).reduce((sum, results) => sum + results.length, 0);
+    const duplicatesRemoved = Object.values(searchResults).reduce((sum, results) => sum + results.length, 0) - totalResults;
+
+    if (duplicatesRemoved > 0) {
+      console.error(`[intelligence] [${options.cnpj}] Removed ${duplicatesRemoved} duplicate results`);
+    }
+
+    // Step 6: Build response
     const elapsed = Date.now() - startTime;
 
     const intelligence: IntelligenceResult = {
       company_data: companyData,
-      search_results: searchResults,
+      search_results: deduplicatedResults,
       provider_used: providerUsed,
       queries_executed: queriesExecuted,
       timestamp: new Date().toISOString()
