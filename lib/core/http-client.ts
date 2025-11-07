@@ -45,15 +45,16 @@ export async function httpJson(
         };
       }
       return { ok: true, data: await response.json(), source: url };
-    } catch (error: any) {
-      if (error.name === "AbortError") {
+    } catch (error: unknown) {
+      const err = error as Error & { name?: string };
+      if (err.name === "AbortError") {
         return {
           ok: false,
           error: "request timeout after 8 seconds",
           source: url,
         };
       }
-      if (error.message?.includes("fetch")) {
+      if (err.message?.includes("fetch")) {
         return { ok: false, error: "network error", source: url };
       }
       return { ok: false, error: "unknown error", source: url };

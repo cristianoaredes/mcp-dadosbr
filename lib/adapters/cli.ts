@@ -14,7 +14,7 @@ import {
 
 // Debug logging only in development
 const DEBUG = process.env.NODE_ENV !== "production";
-function debug(...args: any[]) {
+function debug(...args: unknown[]) {
   if (DEBUG) {
     console.error("[DEBUG]", ...args);
   }

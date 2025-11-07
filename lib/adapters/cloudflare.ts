@@ -121,14 +121,15 @@ export async function handleMCPRequest(
               },
             };
           }
-        } catch (error: any) {
+        } catch (error: unknown) {
+          const err = error as Error;
           return {
             jsonrpc: "2.0",
             id: request.id,
             error: {
               code: -32602,
               message: "Invalid parameters",
-              data: error.message,
+              data: err.message,
             },
           };
         }

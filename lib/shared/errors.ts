@@ -30,7 +30,7 @@ export class MCPError extends Error {
   constructor(
     public code: ErrorCode,
     message: string,
-    public data?: any
+    public data?: unknown
   ) {
     super(message);
     this.name = "MCPError";
@@ -49,7 +49,7 @@ export class MCPError extends Error {
  * Validation error - invalid input parameters
  */
 export class ValidationError extends MCPError {
-  constructor(message: string, data?: any) {
+  constructor(message: string, data?: unknown) {
     super(ErrorCode.VALIDATION_ERROR, message, data);
     this.name = "ValidationError";
   }
@@ -120,7 +120,7 @@ export class NetworkError extends MCPError {
  * Configuration error - invalid configuration
  */
 export class ConfigurationError extends MCPError {
-  constructor(message: string, details?: any) {
+  constructor(message: string, details?: unknown) {
     super(ErrorCode.CONFIGURATION_ERROR, message, details);
     this.name = "ConfigurationError";
   }

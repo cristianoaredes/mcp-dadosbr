@@ -72,9 +72,10 @@ export async function executeSearch(
       ok: true,
       data: responseData
     };
-  } catch (error: any) {
+  } catch (error: unknown) {
     const elapsed = Date.now() - startTime;
-    const errorMessage = error.message || 'Search failed';
+    const err = error as Error;
+    const errorMessage = err.message || 'Search failed';
 
     console.error(
       `[${new Date().toISOString()}] [search] [${query}] [error: ${errorMessage}] [${elapsed}ms] [${transportMode}]`

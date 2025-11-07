@@ -63,7 +63,7 @@ export function createMCPServer(options: MCPServerOptions): Server {
         ],
         isError: true,
       };
-    } catch (error: any) {
+    } catch (error: unknown) {
       // Categorize and format unexpected errors
       const errorDetails = formatErrorResponse(error);
 
