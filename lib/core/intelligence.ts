@@ -5,9 +5,55 @@
 import { lookup } from './tools.js';
 import { ApiConfig, Cache, LookupResult } from '../types/index.js';
 import { getAvailableProvider, SearchProvider, SearchResult, ProviderType } from './search-providers.js';
-import { buildDorks, DorkCategory, DorkTemplate } from './dork-templates.js';
+import { buildDorks, DorkCategory, CNPJData } from './dork-templates.js';
 import { TimeoutError } from '../shared/types/result.js';
-import { TIMEOUTS, SEARCH } from '../shared/utils/constants.js';
+import { SEARCH } from '../shared/utils/constants.js';
+import { TIMEOUTS } from '../config/timeouts.js';
+
+/**
+ * Execute tasks with concurrency limit
+ * Runs multiple promises concurrently up to the specified limit
+ * @param tasks - Array of task functions that return promises
+ * @param limit - Maximum number of concurrent tasks (default: 3)
+ * @returns Array of settled results
+ */
+async function executeWithConcurrencyLimit<T>(
+  tasks: (() => Promise<T>)[],
+  limit: number = 3
+): Promise<PromiseSettledResult<T>[]> {
+  const results: PromiseSettledResult<T>[] = new Array(tasks.length);
+  const executing: Set<Promise<void>> = new Set();
+
+  for (let i = 0; i < tasks.length; i++) {
+    const task = tasks[i];
+
+    // Create a promise that stores result and removes itself when done
+    const promise = task()
+      .then(
+        value => {
+          results[i] = { status: 'fulfilled', value };
+        },
+        reason => {
+          results[i] = { status: 'rejected', reason };
+        }
+      )
+      .then(() => {
+        executing.delete(promise);
+      });
+
+    executing.add(promise);
+
+    // If we hit the concurrency limit, wait for one to complete
+    if (executing.size >= limit) {
+      await Promise.race(executing);
+    }
+  }
+
+  // Wait for all remaining promises
+  await Promise.all(executing);
+
+  return results;
+}
 
 export interface IntelligenceOptions {
   cnpj: string;
@@ -38,13 +84,53 @@ function normalizeCnpj(cnpj: string): string {
   return cnpj.replace(/\D/g, '');
 }
 
+// Memoize regex patterns for CNPJ filtering to avoid recompilation
+const regexCache = new Map<string, RegExp[]>();
+
+/**
+ * Get memoized regex patterns for CNPJ matching
+ */
+function getCnpjPatterns(cnpj: string): RegExp[] {
+  const normalizedCnpj = normalizeCnpj(cnpj);
+
+  // Check cache first
+  if (regexCache.has(normalizedCnpj)) {
+    return regexCache.get(normalizedCnpj)!;
+  }
+
+  // Build formatted CNPJ pattern: 12.345.678/0001-90
+  const formatted = normalizedCnpj.replace(
+    /^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/,
+    '$1.$2.$3/$4-$5'
+  );
+
+  // Escape special regex characters in formatted version
+  const escapedFormatted = formatted.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+  // Create patterns with word boundaries
+  // \b doesn't work well with non-word chars, so use lookahead/lookbehind
+  const patterns = [
+    // Unformatted: 12345678000190 (with word boundaries)
+    new RegExp(`(?<!\\d)${normalizedCnpj}(?!\\d)`, 'i'),
+    // Formatted: 12.345.678/0001-90
+    new RegExp(escapedFormatted, 'i')
+  ];
+
+  // Cache for future use (limit cache size to prevent unbounded growth)
+  if (regexCache.size < 100) {
+    regexCache.set(normalizedCnpj, patterns);
+  }
+
+  return patterns;
+}
+
 /**
  * Check if a text contains the CNPJ (with or without formatting)
+ * Uses word boundaries to avoid false positives
  */
 function containsCnpj(text: string, cnpj: string): boolean {
-  const normalizedCnpj = normalizeCnpj(cnpj);
-  const normalizedText = normalizeCnpj(text);
-  return normalizedText.includes(normalizedCnpj);
+  const patterns = getCnpjPatterns(cnpj);
+  return patterns.some(pattern => pattern.test(text));
 }
 
 /**
@@ -61,8 +147,7 @@ function filterResultsByCnpj(results: SearchResult[], cnpj: string): SearchResul
 export async function executeIntelligence(
   options: IntelligenceOptions,
   apiConfig: ApiConfig,
-  cache?: Cache,
-  apiKey?: string
+  cache?: Cache
 ): Promise<LookupResult> {
   const TOTAL_TIMEOUT_MS = TIMEOUTS.INTELLIGENCE_TOTAL_MS;
 
@@ -77,7 +162,7 @@ export async function executeIntelligence(
   });
 
   // Create main execution promise
-  const executionPromise = executeIntelligenceInternal(options, apiConfig, cache, apiKey);
+  const executionPromise = executeIntelligenceInternal(options, apiConfig, cache);
 
   // Race between timeout and execution
   return Promise.race([executionPromise, timeoutPromise]);
@@ -86,8 +171,7 @@ export async function executeIntelligence(
 async function executeIntelligenceInternal(
   options: IntelligenceOptions,
   apiConfig: ApiConfig,
-  cache?: Cache,
-  apiKey?: string
+  cache?: Cache
 ): Promise<LookupResult> {
   const startTime = Date.now();
   const transportMode = process.env.MCP_TRANSPORT || "stdio";
@@ -105,7 +189,7 @@ async function executeIntelligenceInternal(
       };
     }
 
-    const companyData = cnpjResult.data;
+    const companyData = cnpjResult.data as CNPJData;
     const company = companyData as { razao_social?: string };
     console.error(`[intelligence] [${options.cnpj}] Company: ${company.razao_social || 'Unknown'}`);
 
@@ -116,14 +200,14 @@ async function executeIntelligenceInternal(
 
     console.error(`[intelligence] [${options.cnpj}] Generated ${dorks.length} dorks, using ${selectedDorks.length}`);
 
-    // Step 3: Resolve provider (requires Tavily API key)
-    const provider: SearchProvider = await getAvailableProvider(options.provider, apiKey);
+    // Step 3: Resolve provider (requires Tavily API key from server config)
+    const provider: SearchProvider = await getAvailableProvider(options.provider);
 
     console.error(
       `[intelligence] [${options.cnpj}] Using provider: ${provider.name}`
     );
 
-    // Step 4: Execute searches
+    // Step 4: Execute searches with concurrency limit
     const searchResults: Record<DorkCategory, SearchResultWithMeta[]> = {
       government: [],
       legal: [],
@@ -135,49 +219,109 @@ async function executeIntelligenceInternal(
 
     const providerUsed = provider.name;
     const maxResultsPerQuery = options.maxResultsPerQuery || SEARCH.DEFAULT_MAX_RESULTS;
-    let queriesExecuted = 0;
 
-    for (const dork of selectedDorks) {
-      try {
-        console.error(`[intelligence] [${dork.category}] Searching: ${dork.query}`);
-        const searchResult = await provider.search(
-          dork.query,
-          maxResultsPerQuery
-        );
+    // Get concurrency limit from environment or use default
+    const concurrencyLimit = parseInt(process.env.MCP_INTELLIGENCE_CONCURRENCY || '3', 10);
 
-        if (searchResult.ok) {
-          // Filter results to ensure they contain the CNPJ
-          const filteredResults = filterResultsByCnpj(searchResult.value, options.cnpj);
+    console.error(
+      `[intelligence] [${options.cnpj}] Executing ${selectedDorks.length} queries ` +
+      `with concurrency limit: ${concurrencyLimit}`
+    );
 
-          const resultsWithMeta: SearchResultWithMeta[] = filteredResults.map(r => ({
-            ...r,
-            query: dork.query,
-            category: dork.category
-          }));
-
-          searchResults[dork.category].push(...resultsWithMeta);
-          queriesExecuted += 1;
-
-          console.error(
-            `[intelligence] [${dork.category}] Found ${searchResult.value.length} results, ` +
-            `${filteredResults.length} after CNPJ filter`
+    // Create tasks for concurrent execution
+    const searchTasks = selectedDorks.map(dork => {
+      return async () => {
+        try {
+          console.error(`[intelligence] [${dork.category}] Searching: ${dork.query}`);
+          const searchResult = await provider.search(
+            dork.query,
+            maxResultsPerQuery
           );
-        } else {
-          // Log error but continue with other searches
-          console.error(`[intelligence] [${dork.category}] Search failed: ${searchResult.error.message}`);
+
+          if (searchResult.ok) {
+            // Filter results to ensure they contain the CNPJ
+            const filteredResults = filterResultsByCnpj(searchResult.value, options.cnpj);
+
+            const resultsWithMeta: SearchResultWithMeta[] = filteredResults.map(r => ({
+              ...r,
+              query: dork.query,
+              category: dork.category
+            }));
+
+            console.error(
+              `[intelligence] [${dork.category}] Found ${searchResult.value.length} results, ` +
+              `${filteredResults.length} after CNPJ filter`
+            );
+
+            return {
+              category: dork.category,
+              results: resultsWithMeta,
+              success: true
+            };
+          } else {
+            // Log error but continue with other searches
+            console.error(`[intelligence] [${dork.category}] Search failed: ${searchResult.error.message}`);
+            return {
+              category: dork.category,
+              results: [],
+              success: false
+            };
+          }
+        } catch (error: unknown) {
+          const err = error as Error;
+          console.error(`[intelligence] [${dork.category}] Unexpected error: ${err.message}`);
+          return {
+            category: dork.category,
+            results: [],
+            success: false
+          };
         }
-      } catch (error: unknown) {
-        const err = error as Error;
-        console.error(`[intelligence] [${dork.category}] Unexpected error: ${err.message}`);
+      };
+    });
+
+    // Execute all searches with concurrency limit
+    const searchTaskResults = await executeWithConcurrencyLimit(searchTasks, concurrencyLimit);
+
+    // Aggregate results
+    let queriesExecuted = 0;
+    for (const result of searchTaskResults) {
+      if (result.status === 'fulfilled') {
+        const { category, results, success } = result.value;
+        searchResults[category].push(...results);
+        if (success) {
+          queriesExecuted += 1;
+        }
       }
     }
 
-    // Step 5: Build response
+    // Step 5: Deduplicate results by URL across categories
+    const deduplicatedResults: Record<DorkCategory, SearchResultWithMeta[]> = {} as Record<DorkCategory, SearchResultWithMeta[]>;
+    const seenUrls = new Set<string>();
+
+    for (const category of Object.keys(searchResults) as DorkCategory[]) {
+      deduplicatedResults[category] = [];
+      for (const result of searchResults[category]) {
+        if (!seenUrls.has(result.url)) {
+          seenUrls.add(result.url);
+          deduplicatedResults[category].push(result);
+        }
+      }
+    }
+
+    // Count total unique results
+    const totalResults = Object.values(deduplicatedResults).reduce((sum, results) => sum + results.length, 0);
+    const duplicatesRemoved = Object.values(searchResults).reduce((sum, results) => sum + results.length, 0) - totalResults;
+
+    if (duplicatesRemoved > 0) {
+      console.error(`[intelligence] [${options.cnpj}] Removed ${duplicatesRemoved} duplicate results`);
+    }
+
+    // Step 6: Build response
     const elapsed = Date.now() - startTime;
 
     const intelligence: IntelligenceResult = {
       company_data: companyData,
-      search_results: searchResults,
+      search_results: deduplicatedResults,
       provider_used: providerUsed,
       queries_executed: queriesExecuted,
       timestamp: new Date().toISOString()

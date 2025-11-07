@@ -5,6 +5,7 @@
 
 import { Result, RateLimitError } from "../shared/types/result.js";
 import { SEARCH } from "../shared/utils/constants.js";
+import { TIMEOUTS } from "../config/timeouts.js";
 
 export interface SearchResult {
   title: string;
@@ -29,8 +30,9 @@ export class TavilyProvider implements SearchProvider {
   private apiKey?: string;
   private client?: TavilyClient;
 
-  constructor(apiKey?: string) {
-    this.apiKey = apiKey || process.env.TAVILY_API_KEY;
+  constructor() {
+    // Use server-configured API key only (never accept from client)
+    this.apiKey = process.env.TAVILY_API_KEY;
     if (this.apiKey) {
       this.client = new TavilyClient({ apiKey: this.apiKey });
     }
@@ -81,7 +83,7 @@ export class TavilyProvider implements SearchProvider {
       // Check for rate limiting
       if (err.statusCode === 429 || err.message?.includes("rate limit")) {
         return Result.err(
-          new RateLimitError("Tavily API rate limit exceeded", 60000)
+          new RateLimitError("Tavily API rate limit exceeded", TIMEOUTS.RATE_LIMIT_WINDOW_MS)
         );
       }
 
@@ -104,21 +106,19 @@ export class TavilyProvider implements SearchProvider {
 export type ProviderType = "tavily";
 
 export function createProvider(
-  type: ProviderType = "tavily",
-  apiKey?: string
+  type: ProviderType = "tavily"
 ): SearchProvider {
   if (type !== "tavily") {
     throw new Error(`Provider ${type} is not supported. Configure TAVILY_API_KEY and use provider \"tavily\".`);
   }
-  return new TavilyProvider(apiKey);
+  return new TavilyProvider();
 }
 
 // Get first available provider with smart fallback
 export async function getAvailableProvider(
-  preferred?: ProviderType,
-  apiKey?: string
+  preferred?: ProviderType
 ): Promise<SearchProvider> {
-  const provider = preferred ? createProvider(preferred, apiKey) : new TavilyProvider(apiKey);
+  const provider = preferred ? createProvider(preferred) : new TavilyProvider();
 
   if (!(await provider.isAvailable())) {
     throw new Error(
@@ -133,10 +133,9 @@ export async function getAvailableProvider(
 export async function searchWithFallback(
   query: string,
   maxResults: number = SEARCH.DEFAULT_MAX_RESULTS,
-  preferredProvider?: ProviderType,
-  apiKey?: string
+  preferredProvider?: ProviderType
 ): Promise<Result<SearchResult[], Error>> {
-  const provider = preferredProvider ? createProvider(preferredProvider, apiKey) : new TavilyProvider(apiKey);
+  const provider = preferredProvider ? createProvider(preferredProvider) : new TavilyProvider();
 
   if (!(await provider.isAvailable())) {
     return Result.err(
