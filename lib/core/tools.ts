@@ -7,6 +7,7 @@ import {
   SequentialThinkingProcessor,
 } from "./sequential-thinking.js";
 import type { IntelligenceOptions } from "./intelligence.js";
+import { TIMEOUTS } from "../config/timeouts.js";
 
 let metrics: Metrics = {
   requests: 0,
@@ -42,12 +43,42 @@ function recordMetrics(elapsed: number, fromCache: boolean, error: boolean) {
 }
 
 // Request deduplication to prevent concurrent identical API calls
-const pendingRequests = new Map<string, Promise<any>>();
+
+interface PendingRequest {
+  promise: Promise<any>;
+  timestamp: number;
+  timeoutId: NodeJS.Timeout;
+}
+
+const pendingRequests = new Map<string, PendingRequest>();
 
 async function deduplicate<T>(key: string, fn: () => Promise<T>): Promise<T> {
-  if (pendingRequests.has(key)) return pendingRequests.get(key);
-  const promise = fn().finally(() => pendingRequests.delete(key));
-  pendingRequests.set(key, promise);
+  // Check if request is already pending
+  const existing = pendingRequests.get(key);
+  if (existing) {
+    return existing.promise;
+  }
+
+  // Create timeout to prevent stale entries
+  const timeoutId = setTimeout(() => {
+    pendingRequests.delete(key);
+    console.error(`[WARN] Deduplication timeout for key: ${key} (after ${TIMEOUTS.DEDUP_TIMEOUT_MS}ms)`);
+  }, TIMEOUTS.DEDUP_TIMEOUT_MS);
+
+  // Execute function and cleanup
+  const promise = fn()
+    .finally(() => {
+      clearTimeout(timeoutId);
+      pendingRequests.delete(key);
+    });
+
+  // Store with metadata
+  pendingRequests.set(key, {
+    promise,
+    timestamp: Date.now(),
+    timeoutId
+  });
+
   return promise;
 }
 
@@ -206,7 +237,7 @@ export const TOOL_DEFINITIONS = [
 // Tool execution logic
 export async function executeTool(
   name: string,
-  args: any,
+  args: unknown,
   apiConfig: ApiConfig,
   cache?: Cache
 ): Promise<LookupResult> {
@@ -217,8 +248,9 @@ export async function executeTool(
     const parsed = CepSchema.parse(args);
     return await lookup("cep", parsed.cep, apiConfig, cache);
   } else if (name === "cnpj_search") {
-    const { query, max_results = 5, api_key } = args;
-    return await executeSearch(query, max_results, cache, api_key);
+    const searchArgs = args as { query: string; max_results?: number };
+    const { query, max_results = 5 } = searchArgs;
+    return await executeSearch(query, max_results, cache);
   } else if (name === "sequentialthinking") {
     const result = thinkingProcessor.processThought(args);
     return result;
@@ -227,8 +259,7 @@ export async function executeTool(
     return await executeIntelligence(
       args as IntelligenceOptions,
       apiConfig,
-      cache,
-      (args as any).api_key
+      cache
     );
   } else {
     throw new Error(`Unknown tool: ${name}`);
