@@ -5,7 +5,7 @@
 import { lookup } from './tools.js';
 import { ApiConfig, Cache, LookupResult } from '../types/index.js';
 import { getAvailableProvider, SearchProvider, SearchResult, ProviderType } from './search-providers.js';
-import { buildDorks, DorkCategory, DorkTemplate, CNPJData } from './dork-templates.js';
+import { buildDorks, DorkCategory, CNPJData } from './dork-templates.js';
 import { TimeoutError } from '../shared/types/result.js';
 import { SEARCH } from '../shared/utils/constants.js';
 import { TIMEOUTS } from '../config/timeouts.js';
