@@ -230,6 +230,7 @@ curl -X POST https://mcp-dadosbr.aredes.me/mcp \
 
 ## 📚 Documentação
 
+- **[📖 Exemplos de Uso](EXAMPLES.md)** — Exemplos práticos de todas as 18 ferramentas
 - **[Configuration Guide](docs/CONFIGURATION.md)**
 - **[Usage Examples](docs/USAGE_EXAMPLES.md)**
 - **[MCP Client Integration](docs/MCP_CLIENT_INTEGRATION.md)**
@@ -334,6 +335,7 @@ npx @aredes.me/mcp-dadosbr
 
 ### Documentation & Support
 
+- **[📖 Usage Examples](EXAMPLES.md)** — Practical examples for all 18 tools
 - [Configuration Guide](docs/CONFIGURATION.md)
 - [Usage Examples](docs/USAGE_EXAMPLES.md)
 - [Search Providers](docs/PROVIDERS.md)
