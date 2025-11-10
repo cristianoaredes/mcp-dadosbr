@@ -100,7 +100,13 @@ export default {
             health: '/health',
             openapi: '/openapi.json'
           },
-          tools: ['cnpj_lookup', 'cep_lookup', 'cnpj_search', 'sequentialthinking', 'cnpj_intelligence'],
+          tools: [
+            'cnpj_lookup', 'cep_lookup', 'cnpj_search', 'sequentialthinking', 'cnpj_intelligence',
+            'cpf_validate', 'cnpj_validate', 'cep_validate',
+            'banco_lookup', 'bancos_list', 'feriados_nacionais', 'ddd_lookup',
+            'ibge_uf', 'ibge_municipios', 'isbn_lookup', 'ncm_lookup',
+            'fipe_marcas', 'fipe_preco', 'taxa_lookup'
+          ],
           documentation: 'https://github.com/cristianoaredes/mcp-dadosbr',
           cloudflare_docs: {
             agents: 'https://developers.cloudflare.com/agents/',

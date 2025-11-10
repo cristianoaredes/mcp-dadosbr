@@ -129,13 +129,36 @@ Pode consultar o CNPJ 11.222.333/0001-81?
 
 ## 🛠️ Ferramentas Disponíveis
 
+### Dados Empresariais e Endereços
 - 🏢 **`cnpj_lookup`** — razão social, situação cadastral, endereço, CNAE (fonte: OpenCNPJ)
 - 📮 **`cep_lookup`** — logradouro, bairro, cidade, UF, DDD (fonte: OpenCEP)
 - 🔍 **`cnpj_search`** — buscas web com dorks (site:, intext:, filetype:) via Tavily
-- 🤔 **`sequentialthinking`** — raciocínio estruturado passo a passo
-- 🎯 **`cnpj_intelligence`** — orquestra múltiplas consultas e gera relatório consolidado com filtros de assertividade
+- 🎯 **`cnpj_intelligence`** — orquestra múltiplas consultas e gera relatório consolidado
 
-> **✨ Novidade v0.3.2**: Buscas web agora usam **Tavily** exclusivamente, com filtros automáticos para garantir **100% de precisão** nos resultados (valida CNPJ em todos os snippets retornados). Configure `TAVILY_API_KEY` obrigatoriamente.
+### Validação e Formatação
+- ✅ **`cpf_validate`** — valida e formata CPF (com verificação de dígito)
+- ✅ **`cnpj_validate`** — valida e formata CNPJ (com verificação de dígito)
+- ✅ **`cep_validate`** — valida e formata CEP
+
+### Dados Governamentais (BrasilAPI)
+- 🏦 **`banco_lookup`** — informações de bancos por código
+- 🏦 **`bancos_list`** — lista todos os bancos brasileiros
+- 📅 **`feriados_nacionais`** — feriados nacionais por ano
+- 📞 **`ddd_lookup`** — cidades por código de área (DDD)
+- 🗺️ **`ibge_uf`** — informações de estados (IBGE)
+- 🏙️ **`ibge_municipios`** — municípios por estado (IBGE)
+
+### Dados Econômicos e Comerciais
+- 📊 **`taxa_lookup`** — taxas oficiais (SELIC, CDI, IPCA, etc)
+- 🚗 **`fipe_marcas`** — marcas de veículos (carros, motos, caminhões)
+- 💰 **`fipe_preco`** — preço de veículo por código FIPE
+- 📦 **`ncm_lookup`** — Nomenclatura Comum do Mercosul
+- 📚 **`isbn_lookup`** — informações de livros por ISBN
+
+### Raciocínio
+- 🤔 **`sequentialthinking`** — raciocínio estruturado passo a passo
+
+> **✨ Novidades**: Agora com **18 ferramentas**! Validadores de CPF/CNPJ/CEP, dados IBGE, bancos, feriados, FIPE, NCM, ISBN e muito mais - tudo via APIs públicas gratuitas (BrasilAPI).
 
 ## 🧪 Testes em Linha de Comando
 
