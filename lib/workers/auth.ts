@@ -13,20 +13,18 @@ export interface AuthResult {
 /**
  * Authenticate incoming request
  * Checks for API key in Authorization header or X-API-Key header
- * Skips authentication for public endpoints (health, OAuth, etc.)
+ * Skips authentication for public endpoints (health, MCP protocol, etc.)
  */
 export async function authenticateRequest(
   request: Request,
   env: Env
 ): Promise<AuthResult> {
-  // Skip authentication for health checks, OAuth endpoints, and MCP protocol endpoints
+  // Skip authentication for health checks, MCP protocol endpoints, and OpenAPI schema
   const url = new URL(request.url);
   if (
     url.pathname === "/health" ||
     url.pathname === "/mcp" ||
     url.pathname === "/sse" ||
-    url.pathname.startsWith("/oauth/") ||
-    url.pathname.startsWith("/.well-known/") ||
     url.pathname === "/openapi.json"
   ) {
     return { authenticated: true };

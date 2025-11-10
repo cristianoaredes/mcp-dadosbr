@@ -14,13 +14,6 @@ import {
 import { authenticateRequest } from './auth.js';
 import { checkRateLimit } from './rate-limit.js';
 import { handleSSEEndpoint } from './sse.js';
-import {
-  handleOAuthAuthorize,
-  handleOAuthToken,
-  handleOAuthUserInfo,
-  handleJWKS,
-  handleOAuthDiscovery
-} from './oauth.js';
 import { handleOpenAPIEndpoint } from './openapi.js';
 import {
   handleLookupEndpoint,
@@ -84,27 +77,6 @@ export default {
         }
         return await handleSSEEndpoint(request, env);
 
-      case '/.well-known/oauth-authorization-server':
-      case '/.well-known/openid_configuration':
-        // OAuth discovery endpoint for ChatGPT MCP connector
-        return handleOAuthDiscovery(request);
-
-      case '/oauth/authorize':
-        // OAuth authorize endpoint
-        return handleOAuthAuthorize(request);
-
-      case '/oauth/token':
-        // OAuth token endpoint
-        return handleOAuthToken(request);
-
-      case '/oauth/userinfo':
-        // OAuth userinfo endpoint
-        return handleOAuthUserInfo();
-
-      case '/.well-known/jwks.json':
-        // JSON Web Key Set endpoint
-        return handleJWKS();
-
       case '/openapi.json':
         // OpenAPI schema endpoint
         return handleOpenAPIEndpoint(request);
@@ -126,8 +98,7 @@ export default {
             mcp: '/mcp (HTTP JSON-RPC)',
             sse: '/sse (Server-Sent Events)',
             health: '/health',
-            openapi: '/openapi.json',
-            oauth: '/.well-known/oauth-authorization-server'
+            openapi: '/openapi.json'
           },
           tools: ['cnpj_lookup', 'cep_lookup', 'cnpj_search', 'sequentialthinking', 'cnpj_intelligence'],
           documentation: 'https://github.com/cristianoaredes/mcp-dadosbr',

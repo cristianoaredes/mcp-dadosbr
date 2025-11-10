@@ -109,7 +109,7 @@ Para usar com ChatGPT, configure o servidor Cloudflare Workers como endpoint rem
 1. **Deploy no Cloudflare Workers**: `npm run deploy`
 2. **Configure no ChatGPT**:
    - URL do servidor: `https://mcp-dadosbr.your-subdomain.workers.dev`
-   - O ChatGPT detectará automaticamente os endpoints OAuth e MCP
+   - O ChatGPT detectará automaticamente os endpoints MCP
 3. **Configure API Key** (opcional, via environment variables no Workers):
    ```bash
    TAVILY_API_KEY="tvly-your-api-key-here"
@@ -163,7 +163,7 @@ curl -i https://mcp-dadosbr.aredes.me/health
 - 🔗 REST API: `/cnpj/{cnpj}` · `/cep/{cep}` · `/search` · `/intelligence` · `/thinking`
 - 🤖 OpenAPI: `/openapi.json`
 - 📊 Health: `/health`
-- 🔐 OAuth 2.0 + API Key Authentication: Protegido contra abuso
+- 🔐 API Key Authentication: Protegido contra abuso
 - ⚡ Rate Limiting: 30 req/min por IP (configurável)
 
 **Smithery**: `smithery.yaml` para deploy single-click.
@@ -176,7 +176,7 @@ npm run deploy
 
 # 2. Configure no ChatGPT:
 # - Server URL: https://your-subdomain.workers.dev
-# - O ChatGPT detectará automaticamente OAuth + MCP endpoints
+# - O ChatGPT detectará automaticamente os endpoints MCP
 ```
 
 ### 🔒 Segurança (Cloudflare Workers)

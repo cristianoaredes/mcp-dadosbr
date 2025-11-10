@@ -20,28 +20,11 @@ export function generateOpenAPISchema(requestUrl: string): unknown {
     servers: [{ url: origin }],
     security: [
       {
-        'OAuth2': ['mcp']
-      },
-      {
         'ApiKeyAuth': []
       }
     ],
     components: {
       securitySchemes: {
-        OAuth2: {
-          type: 'oauth2',
-          flows: {
-            authorizationCode: {
-              authorizationUrl: `${origin}/oauth/authorize`,
-              tokenUrl: `${origin}/oauth/token`,
-              scopes: {
-                'mcp': 'Access to MCP DadosBR tools',
-                'openid': 'OpenID Connect',
-                'profile': 'User profile information'
-              }
-            }
-          }
-        },
         ApiKeyAuth: {
           type: 'apiKey',
           in: 'header',
@@ -55,7 +38,6 @@ export function generateOpenAPISchema(requestUrl: string): unknown {
         get: {
           summary: 'Look up CNPJ company data',
           security: [
-            { 'OAuth2': ['mcp'] },
             { 'ApiKeyAuth': [] }
           ],
           parameters: [{
@@ -77,7 +59,6 @@ export function generateOpenAPISchema(requestUrl: string): unknown {
         get: {
           summary: 'Look up CEP postal code data',
           security: [
-            { 'OAuth2': ['mcp'] },
             { 'ApiKeyAuth': [] }
           ],
           parameters: [{
@@ -99,7 +80,6 @@ export function generateOpenAPISchema(requestUrl: string): unknown {
         post: {
           summary: 'Search the web for Brazilian company information',
           security: [
-            { 'OAuth2': ['mcp'] },
             { 'ApiKeyAuth': [] }
           ],
           requestBody: {
@@ -138,7 +118,6 @@ export function generateOpenAPISchema(requestUrl: string): unknown {
         post: {
           summary: 'Intelligent search for Brazilian company information',
           security: [
-            { 'OAuth2': ['mcp'] },
             { 'ApiKeyAuth': [] }
           ],
           requestBody: {
@@ -192,7 +171,6 @@ export function generateOpenAPISchema(requestUrl: string): unknown {
         post: {
           summary: 'Structured reasoning and problem-solving',
           security: [
-            { 'OAuth2': ['mcp'] },
             { 'ApiKeyAuth': [] }
           ],
           requestBody: {
