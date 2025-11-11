@@ -207,8 +207,9 @@ curl -X POST https://mcp-dadosbr.aredes.me/mcp \
 
 ## 📚 Documentação
 
+- **[Navigation Guide](docs/NAVIGATION.md)** - 🧭 Encontre rapidamente o que procura
 - **[Configuration Guide](docs/CONFIGURATION.md)**
-- **[Usage Examples](docs/USAGE_EXAMPLES.md)**
+- **[Usage Examples](docs/EXAMPLE_USAGE.md)**
 - **[MCP Client Integration](docs/MCP_CLIENT_INTEGRATION.md)**
 - **[Cloudflare Deployment](docs/CLOUDFLARE_DEPLOYMENT.md)**
 - **[Search Providers](docs/PROVIDERS.md)**
@@ -311,10 +312,12 @@ npx @aredes.me/mcp-dadosbr
 
 ### Documentation & Support
 
+- [Navigation Guide](docs/NAVIGATION.md) - 🧭 Quick navigation to find what you need
 - [Configuration Guide](docs/CONFIGURATION.md)
-- [Usage Examples](docs/USAGE_EXAMPLES.md)
+- [Usage Examples](docs/EXAMPLE_USAGE.md)
 - [Search Providers](docs/PROVIDERS.md)
 - [Release Guide](RELEASING.md)
+- [Agent Development Guide](docs/development/AGENTS.md)
 
 ### License
 

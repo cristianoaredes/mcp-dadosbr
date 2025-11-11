@@ -62,6 +62,7 @@ export interface IntelligenceOptions {
   maxResultsPerQuery?: number;
   maxQueries?: number;
   apiKey?: string;
+  cachedCompanyData?: CNPJData; // Reuse company data if already fetched
 }
 
 export interface IntelligenceResult {
@@ -177,19 +178,37 @@ async function executeIntelligenceInternal(
   const transportMode = process.env.MCP_TRANSPORT || "stdio";
 
   try {
-    // Step 1: Get company data via cnpj_lookup
+    // Step 1: Get company data (reuse cached if provided)
     console.error(`[intelligence] [${options.cnpj}] Starting CNPJ intelligence search...`);
 
-    const cnpjResult = await lookup('cnpj', options.cnpj, apiConfig, cache);
+    let companyData: CNPJData;
 
-    if (!cnpjResult.ok) {
-      return {
-        ok: false,
-        error: `Failed to lookup CNPJ: ${cnpjResult.error}`
-      };
+    if (options.cachedCompanyData) {
+      // Reuse provided company data
+      companyData = options.cachedCompanyData;
+      console.error(`[intelligence] [${options.cnpj}] Using cached company data`);
+    } else {
+      // Try to get from cache first
+      const cacheKey = `cnpj:${apiConfig.cnpjBaseUrl}:${options.cnpj}`;
+      const cachedData = cache ? await cache.get<CNPJData>(cacheKey) : null;
+
+      if (cachedData) {
+        companyData = cachedData;
+        console.error(`[intelligence] [${options.cnpj}] Using cache hit for company data`);
+      } else {
+        // Fetch from API only if not in cache
+        const cnpjResult = await lookup('cnpj', options.cnpj, apiConfig, cache);
+
+        if (!cnpjResult.ok) {
+          return {
+            ok: false,
+            error: `Failed to lookup CNPJ: ${cnpjResult.error}`
+          };
+        }
+
+        companyData = cnpjResult.data as CNPJData;
+      }
     }
-
-    const companyData = cnpjResult.data as CNPJData;
     const company = companyData as { razao_social?: string };
     console.error(`[intelligence] [${options.cnpj}] Company: ${company.razao_social || 'Unknown'}`);
 

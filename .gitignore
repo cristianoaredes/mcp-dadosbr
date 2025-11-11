@@ -21,6 +21,9 @@ package-lock.json
 .vscode/
 .idea/
 .kiro/
+.qoder/
+.roo/
+.gemini/
 *.swp
 *.swo
 *~

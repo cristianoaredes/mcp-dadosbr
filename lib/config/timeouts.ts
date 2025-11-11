@@ -111,8 +111,12 @@ export const TIMEOUTS = {
 
 /**
  * Log current timeout configuration (useful for debugging)
+ * Only logs in debug mode (NODE_ENV !== 'production')
  */
 export function logTimeoutConfig(): void {
+  // Only log in non-production environments
+  if (process.env.NODE_ENV === 'production') return;
+
   console.error('[Config] Timeout configuration:');
   console.error(`  HTTP_REQUEST_MS: ${TIMEOUTS.HTTP_REQUEST_MS}ms`);
   console.error(`  INTELLIGENCE_TOTAL_MS: ${TIMEOUTS.INTELLIGENCE_TOTAL_MS}ms`);
