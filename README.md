@@ -102,6 +102,100 @@ npx -y @smithery/cli install @cristianoaredes/mcp-dadosbr --client claude
   ]
 }
 ```
+**Localização**: `~/.continue/config.json`
+
+### 🧑‍💻 Claude Code CLI
+```bash
+# Instalar globalmente
+npm install -g @aredes.me/mcp-dadosbr
+
+# Ou adicionar ao package.json e executar
+npx @aredes.me/mcp-dadosbr
+```
+
+**Uso com Claude Code:**
+```bash
+# Definir variável de ambiente
+export TAVILY_API_KEY="tvly-your-api-key-here"
+
+# Executar Claude Code com MCP
+claude-code --mcp npx @aredes.me/mcp-dadosbr
+```
+
+### 🤖 Google Gemini CLI
+```json
+{
+  "mcpServers": {
+    "dadosbr": {
+      "command": "npx",
+      "args": ["@aredes.me/mcp-dadosbr"],
+      "env": {
+        "TAVILY_API_KEY": "tvly-your-api-key-here"
+      }
+    }
+  }
+}
+```
+**Localização**: `~/.config/gemini/mcp_config.json`
+
+### 📦 Codex CLI
+```bash
+# Configurar no .codexrc
+codex mcp add dadosbr npx @aredes.me/mcp-dadosbr
+
+# Ou via environment
+export CODEX_MCP_SERVERS='{"dadosbr":{"command":"npx","args":["@aredes.me/mcp-dadosbr"],"env":{"TAVILY_API_KEY":"tvly-xxx"}}}'
+```
+
+### 🐝 Zed Editor
+```json
+{
+  "context_servers": {
+    "dadosbr": {
+      "command": {
+        "path": "npx",
+        "args": ["@aredes.me/mcp-dadosbr"]
+      },
+      "env": {
+        "TAVILY_API_KEY": "tvly-your-api-key-here"
+      }
+    }
+  }
+}
+```
+**Localização**: `~/.config/zed/settings.json`
+
+### 🦖 Cline (VS Code Extension)
+```json
+{
+  "mcpServers": {
+    "dadosbr": {
+      "command": "npx",
+      "args": ["@aredes.me/mcp-dadosbr"],
+      "env": {
+        "TAVILY_API_KEY": "tvly-your-api-key-here"
+      }
+    }
+  }
+}
+```
+**Localização**: VS Code Settings > Extensions > Cline > MCP Servers
+
+### ⚡ Roo Cline
+```json
+{
+  "mcpServers": {
+    "dadosbr": {
+      "command": "npx",
+      "args": ["@aredes.me/mcp-dadosbr"],
+      "env": {
+        "TAVILY_API_KEY": "tvly-your-api-key-here"
+      }
+    }
+  }
+}
+```
+**Localização**: `~/.roo-cline/mcp-settings.json`
 
 ### 🤖 ChatGPT MCP
 Para usar com ChatGPT, configure o servidor Cloudflare Workers como endpoint remoto:
@@ -339,16 +433,16 @@ npm run dev
 
 ## ✨ Funcionalidades
 
-✅ **5 ferramentas MCP** - Consulta CNPJ, consulta CEP, busca web, intelligence, sequential thinking
-✅ **Multiplataforma** - NPM, Cloudflare Workers, Smithery
-✅ **Pronto para produção** - Circuit breaker, rate limiting, caching, monitoramento
-✅ **Type-safe** - TypeScript completo com modo estrito
-✅ **Bem testado** - 88 testes unitários, testes de integração abrangentes
-✅ **Bem documentado** - Documentação completa em Português e Inglês
-✅ **Compatível com LGPD** - Mascaramento de PII em logs
-✅ **Escalável** - Cloudflare Workers com deploy global na edge
-✅ **Seguro** - Autenticação por API key, rate limiting, proteção CORS
-✅ **Developer-friendly** - Configuração simples, ótima DX
+- ✅ **5 ferramentas MCP** - Consulta CNPJ, consulta CEP, busca web, intelligence, sequential thinking
+- ✅ **Multiplataforma** - NPM, Cloudflare Workers, Smithery
+- ✅ **Pronto para produção** - Circuit breaker, rate limiting, caching, monitoramento
+- ✅ **Type-safe** - TypeScript completo com modo estrito
+- ✅ **Bem testado** - 88 testes unitários, testes de integração abrangentes
+- ✅ **Bem documentado** - Documentação completa em Português e Inglês
+- ✅ **Compatível com LGPD** - Mascaramento de PII em logs
+- ✅ **Escalável** - Cloudflare Workers com deploy global na edge
+- ✅ **Seguro** - Autenticação por API key, rate limiting, proteção CORS
+- ✅ **Developer-friendly** - Configuração simples, ótima DX
 
 ## 📊 Métricas de Qualidade
 
@@ -471,6 +565,99 @@ npx -y @smithery/cli install @cristianoaredes/mcp-dadosbr --client claude
 }
 ```
 **Location**: `~/.continue/config.json`
+
+### 🧑‍💻 Claude Code CLI
+```bash
+# Install globally
+npm install -g @aredes.me/mcp-dadosbr
+
+# Or add to package.json and run
+npx @aredes.me/mcp-dadosbr
+```
+
+**Usage with Claude Code:**
+```bash
+# Set environment variable
+export TAVILY_API_KEY="tvly-your-api-key-here"
+
+# Run Claude Code with MCP
+claude-code --mcp npx @aredes.me/mcp-dadosbr
+```
+
+### 🤖 Google Gemini CLI
+```json
+{
+  "mcpServers": {
+    "dadosbr": {
+      "command": "npx",
+      "args": ["@aredes.me/mcp-dadosbr"],
+      "env": {
+        "TAVILY_API_KEY": "tvly-your-api-key-here"
+      }
+    }
+  }
+}
+```
+**Location**: `~/.config/gemini/mcp_config.json`
+
+### 📦 Codex CLI
+```bash
+# Configure in .codexrc
+codex mcp add dadosbr npx @aredes.me/mcp-dadosbr
+
+# Or via environment
+export CODEX_MCP_SERVERS='{"dadosbr":{"command":"npx","args":["@aredes.me/mcp-dadosbr"],"env":{"TAVILY_API_KEY":"tvly-xxx"}}}'
+```
+
+### 🐝 Zed Editor
+```json
+{
+  "context_servers": {
+    "dadosbr": {
+      "command": {
+        "path": "npx",
+        "args": ["@aredes.me/mcp-dadosbr"]
+      },
+      "env": {
+        "TAVILY_API_KEY": "tvly-your-api-key-here"
+      }
+    }
+  }
+}
+```
+**Location**: `~/.config/zed/settings.json`
+
+### 🦖 Cline (VS Code Extension)
+```json
+{
+  "mcpServers": {
+    "dadosbr": {
+      "command": "npx",
+      "args": ["@aredes.me/mcp-dadosbr"],
+      "env": {
+        "TAVILY_API_KEY": "tvly-your-api-key-here"
+      }
+    }
+  }
+}
+```
+**Location**: VS Code Settings > Extensions > Cline > MCP Servers
+
+### ⚡ Roo Cline
+```json
+{
+  "mcpServers": {
+    "dadosbr": {
+      "command": "npx",
+      "args": ["@aredes.me/mcp-dadosbr"],
+      "env": {
+        "TAVILY_API_KEY": "tvly-your-api-key-here"
+      }
+    }
+  }
+}
+```
+**Location**: `~/.roo-cline/mcp-settings.json`
 
 ### 🤖 ChatGPT MCP
 To use with ChatGPT, configure the Cloudflare Workers server as a remote endpoint:
@@ -708,16 +895,16 @@ npm run dev
 
 ## ✨ Features
 
-✅ **5 MCP tools** - CNPJ lookup, CEP lookup, web search, intelligence, sequential thinking
-✅ **Multi-platform** - NPM, Cloudflare Workers, Smithery
-✅ **Production-ready** - Circuit breaker, rate limiting, caching, monitoring
-✅ **Type-safe** - Full TypeScript with strict mode
-✅ **Well-tested** - 88 unit tests, comprehensive integration tests
-✅ **Well-documented** - Complete docs in Portuguese and English
-✅ **LGPD compliant** - PII masking in logs
-✅ **Scalable** - Cloudflare Workers with global edge deployment
-✅ **Secure** - API key authentication, rate limiting, CORS protection
-✅ **Developer-friendly** - Simple setup, great DX
+- ✅ **5 MCP tools** - CNPJ lookup, CEP lookup, web search, intelligence, sequential thinking
+- ✅ **Multi-platform** - NPM, Cloudflare Workers, Smithery
+- ✅ **Production-ready** - Circuit breaker, rate limiting, caching, monitoring
+- ✅ **Type-safe** - Full TypeScript with strict mode
+- ✅ **Well-tested** - 88 unit tests, comprehensive integration tests
+- ✅ **Well-documented** - Complete docs in Portuguese and English
+- ✅ **LGPD compliant** - PII masking in logs
+- ✅ **Scalable** - Cloudflare Workers with global edge deployment
+- ✅ **Secure** - API key authentication, rate limiting, CORS protection
+- ✅ **Developer-friendly** - Simple setup, great DX
 
 ## 📊 Quality Metrics
 
