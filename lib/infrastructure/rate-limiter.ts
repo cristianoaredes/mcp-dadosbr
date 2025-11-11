@@ -100,7 +100,8 @@ export class RateLimiter {
       }
     }
 
-    if (cleanedCount > 0) {
+    // Only log cleanup in debug mode to avoid exposing client tracking info
+    if (cleanedCount > 0 && process.env.NODE_ENV !== 'production') {
       console.error(`[RateLimiter] Cleaned up ${cleanedCount} expired entries`);
     }
   }

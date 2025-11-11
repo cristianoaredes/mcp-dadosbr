@@ -102,7 +102,9 @@ For more information, visit: https://github.com/cristianoaredes/mcp-dadosbr`);
         const resetTime = rateLimiter.getResetTime(clientId);
         const resetSeconds = Math.ceil(resetTime / 1000);
 
-        console.error(`[RateLimit] Client ${clientId} exceeded rate limit`);
+        // Mask IP address in production logs
+        const logClientId = DEBUG ? clientId : "[masked]";
+        console.error(`[RateLimit] Client ${logClientId} exceeded rate limit`);
 
         res.status(429).json({
           error: "Rate limit exceeded",

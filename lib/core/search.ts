@@ -1,12 +1,18 @@
 import { Cache, LookupResult } from '../types/index.js';
 import { getAvailableProvider, SearchResult } from './search-providers.js';
 
-export interface SearchResponse extends LookupResult {
-  results?: SearchResult[];
-  query?: string;
-  count?: number;
-  provider?: string;
+export interface SearchResponseData {
+  results: SearchResult[];
+  query: string;
+  count: number;
+  provider: string;
+  source: string;
+  fetchedAt: string;
 }
+
+export type SearchResponse =
+  | { ok: true; data: SearchResponseData }
+  | { ok: false; error: string };
 
 export async function executeSearch(
   query: string,
@@ -19,7 +25,7 @@ export async function executeSearch(
 
   // Check cache first
   if (cache) {
-    const cached = await cache.get(cacheKey);
+    const cached = await cache.get<SearchResponseData>(cacheKey);
     if (cached) {
       const elapsed = Date.now() - startTime;
       console.error(
