@@ -11,6 +11,7 @@ import {
   SERVER_NAME,
   SERVER_VERSION
 } from "../config/index.js";
+import { TIMEOUTS } from "../config/timeouts.js";
 
 // Debug logging only in development
 const DEBUG = process.env.NODE_ENV !== "production";
@@ -123,7 +124,43 @@ For more information, visit: https://github.com/cristianoaredes/mcp-dadosbr`);
     };
 
     // Store transports by session ID (SSE protocol with stateful sessions)
-    const transports: Record<string, SSEServerTransport> = {};
+    // Inspired by mcp-camara for better connection management
+    interface TransportSession {
+      transport: SSEServerTransport;
+      createdAt: Date;
+      lastActivity: Date;
+    }
+    const transports: Record<string, TransportSession> = {};
+
+    // Connection monitoring and cleanup
+    // Periodically check for stale connections and clean them up
+    const connectionMonitor = setInterval(() => {
+      const now = new Date();
+      const timeout = TIMEOUTS.SSE_CONNECTION_MS;
+
+      for (const [sessionId, session] of Object.entries(transports)) {
+        const age = now.getTime() - session.lastActivity.getTime();
+        if (age > timeout) {
+          debug(`Cleaning up stale SSE session ${sessionId} (age: ${age}ms)`);
+          session.transport.close?.();
+          delete transports[sessionId];
+        }
+      }
+
+      const activeCount = Object.keys(transports).length;
+      if (activeCount > 0) {
+        debug(`Active SSE connections: ${activeCount}`);
+      }
+    }, TIMEOUTS.PING_INTERVAL_MS);
+
+    // Cleanup on server shutdown
+    process.on('SIGTERM', () => {
+      debug('SIGTERM received, closing SSE connections...');
+      clearInterval(connectionMonitor);
+      for (const session of Object.values(transports)) {
+        session.transport.close?.();
+      }
+    });
 
     // SSE endpoint - establishes the stream (GET)
     app.get("/mcp", rateLimitMiddleware, async (req, res) => {
@@ -133,10 +170,15 @@ For more information, visit: https://github.com/cristianoaredes/mcp-dadosbr`);
         // The endpoint for POST messages is '/messages'
         const transport = new SSEServerTransport("/messages", res);
 
-        // Store transport by its session ID
+        // Store transport by its session ID with metadata
         const sessionId = transport.sessionId;
-        transports[sessionId] = transport;
-        debug(`Created SSE transport with session ID: ${sessionId}`);
+        const now = new Date();
+        transports[sessionId] = {
+          transport,
+          createdAt: now,
+          lastActivity: now,
+        };
+        debug(`Created SSE transport with session ID: ${sessionId} (total sessions: ${Object.keys(transports).length})`);
 
         // Set up cleanup handler
         transport.onclose = () => {
@@ -169,15 +211,18 @@ For more information, visit: https://github.com/cristianoaredes/mcp-dadosbr`);
           return;
         }
 
-        const transport = transports[sessionId];
-        if (!transport) {
+        const session = transports[sessionId];
+        if (!session) {
           debug(`No transport found for session: ${sessionId}`);
           res.status(404).send("Session not found");
           return;
         }
 
+        // Update last activity timestamp to keep session alive
+        session.lastActivity = new Date();
+
         // Handle the POST message with the transport
-        await transport.handlePostMessage(req, res, req.body);
+        await session.transport.handlePostMessage(req, res, req.body);
       } catch (error) {
         debug("Error handling message:", error);
         if (!res.headersSent) {
