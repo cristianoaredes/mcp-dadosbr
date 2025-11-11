@@ -105,21 +105,26 @@ npx -y @smithery/cli install @cristianoaredes/mcp-dadosbr --client claude
 **Localização**: `~/.continue/config.json`
 
 ### 🧑‍💻 Claude Code CLI
-```bash
-# Instalar globalmente
-npm install -g @aredes.me/mcp-dadosbr
 
-# Ou adicionar ao package.json e executar
-npx @aredes.me/mcp-dadosbr
+**Instalação via comando `claude mcp add`:**
+```bash
+# Opção 1: Servidor local stdio (recomendado para desenvolvimento)
+claude mcp add --transport stdio dadosbr \
+  --env TAVILY_API_KEY=tvly-your-api-key-here \
+  -- npx -y @aredes.me/mcp-dadosbr
+
+# Opção 2: Servidor HTTP remoto (Cloudflare Workers)
+claude mcp add --transport http dadosbr \
+  https://mcp-dadosbr.aredes.me/mcp
 ```
 
-**Uso com Claude Code:**
+**Verificação:**
 ```bash
-# Definir variável de ambiente
-export TAVILY_API_KEY="tvly-your-api-key-here"
+# Listar servidores MCP configurados
+claude mcp list
 
-# Executar Claude Code com MCP
-claude-code --mcp npx @aredes.me/mcp-dadosbr
+# Remover se necessário
+claude mcp remove dadosbr
 ```
 
 ### 🤖 Google Gemini CLI
@@ -567,21 +572,26 @@ npx -y @smithery/cli install @cristianoaredes/mcp-dadosbr --client claude
 **Location**: `~/.continue/config.json`
 
 ### 🧑‍💻 Claude Code CLI
-```bash
-# Install globally
-npm install -g @aredes.me/mcp-dadosbr
 
-# Or add to package.json and run
-npx @aredes.me/mcp-dadosbr
+**Installation via `claude mcp add` command:**
+```bash
+# Option 1: Local stdio server (recommended for development)
+claude mcp add --transport stdio dadosbr \
+  --env TAVILY_API_KEY=tvly-your-api-key-here \
+  -- npx -y @aredes.me/mcp-dadosbr
+
+# Option 2: Remote HTTP server (Cloudflare Workers)
+claude mcp add --transport http dadosbr \
+  https://mcp-dadosbr.aredes.me/mcp
 ```
 
-**Usage with Claude Code:**
+**Verification:**
 ```bash
-# Set environment variable
-export TAVILY_API_KEY="tvly-your-api-key-here"
+# List configured MCP servers
+claude mcp list
 
-# Run Claude Code with MCP
-claude-code --mcp npx @aredes.me/mcp-dadosbr
+# Remove if needed
+claude mcp remove dadosbr
 ```
 
 ### 🤖 Google Gemini CLI
