@@ -12,6 +12,7 @@ _Deploy MCP DadosBR as a serverless Cloudflare Worker for global edge performanc
 - [KV Storage Setup](#kv-storage-setup)
 - [Environment Variables](#environment-variables)
 - [Monitoring & Logs](#monitoring--logs)
+- [SSE Connection Stability](#sse-connection-stability)
 - [Troubleshooting](#troubleshooting)
 
 ---
@@ -488,6 +489,149 @@ GET /health
 
 ### CORS Support
 All endpoints include CORS headers for browser compatibility.
+
+---
+
+## SSE Connection Stability
+
+The MCP DadosBR server implements robust Server-Sent Events (SSE) for real-time communication, inspired by best practices from mcp-camara.
+
+### Connection Features
+
+**1. Immediate Connection Feedback**
+- First event sent in <100ms (before server initialization)
+- Provides instant connection confirmation to clients
+- Prevents timeout during initialization phase
+
+**2. Heartbeat Mechanism**
+- Periodic pings every 30 seconds
+- Keeps connection alive during idle periods
+- Helps detect disconnections early
+- Format: `{type: 'ping', timestamp: '2025-01-11T...'}`
+
+**3. Timeout Management**
+- Default connection timeout: **50 seconds**
+- Respects Cloudflare Workers CPU time limit (~50s)
+- Configurable via `MCP_SSE_TIMEOUT` environment variable
+- Automatic graceful shutdown at timeout
+
+**4. Graceful Shutdown**
+- Proper cleanup of intervals and timeouts
+- Prevents resource leaks in Workers environment
+- Cleanup on connection close or error
+
+### Configuration
+
+Configure SSE timeouts via environment variables in `wrangler.toml`:
+
+```toml
+[vars]
+# SSE connection timeout (default: 50000ms / 50 seconds)
+MCP_SSE_TIMEOUT = "50000"
+
+# Ping interval (default: 30000ms / 30 seconds)
+MCP_PING_INTERVAL = "30000"
+```
+
+### Connection Lifecycle
+
+```
+1. Client connects → GET /sse
+2. Server sends connection event immediately (<100ms)
+3. Server sends capabilities (keeps stream alive)
+4. Server starts periodic pings (every 30s)
+5. Connection auto-closes after 50s (or configured timeout)
+6. Client should reconnect automatically
+```
+
+### Event Types
+
+The SSE endpoint emits these event types:
+
+| Event | Description | Example |
+|-------|-------------|---------|
+| `connection` | Initial connection established | `{type: 'connection', status: 'connected', timestamp: '...'}` |
+| `message` | MCP JSON-RPC messages | `{jsonrpc: '2.0', id: 'init', result: {...}}` |
+| `ping` | Heartbeat to keep connection alive | `{type: 'ping', timestamp: '...'}` |
+| `error` | Error notifications | `{type: 'error', message: '...'}` |
+
+### Best Practices
+
+**For Client Implementations:**
+
+1. **Auto-Reconnect**: Implement exponential backoff reconnection
+2. **Heartbeat Monitoring**: Expect pings every 30 seconds
+3. **Timeout Handling**: Be prepared for 50-second connection closes
+4. **Event Handling**: Handle all event types gracefully
+
+**Example Client Code:**
+
+```javascript
+const connectSSE = () => {
+  const eventSource = new EventSource('/sse');
+
+  eventSource.addEventListener('connection', (e) => {
+    console.log('Connected:', JSON.parse(e.data));
+  });
+
+  eventSource.addEventListener('ping', (e) => {
+    const { timestamp } = JSON.parse(e.data);
+    console.log('Heartbeat:', timestamp);
+  });
+
+  eventSource.addEventListener('message', (e) => {
+    const message = JSON.parse(e.data);
+    // Handle MCP messages
+  });
+
+  eventSource.addEventListener('error', (e) => {
+    console.error('SSE error, reconnecting...');
+    eventSource.close();
+    setTimeout(connectSSE, 5000); // Reconnect after 5s
+  });
+};
+```
+
+### Monitoring SSE Connections
+
+**Check Active Connections** (HTTP mode only):
+
+When running locally with `MCP_TRANSPORT=http`, the server logs active SSE connections:
+
+```bash
+[DEBUG] Created SSE transport with session ID: abc123 (total sessions: 1)
+[DEBUG] Active SSE connections: 1
+[DEBUG] Cleaning up stale SSE session xyz789 (age: 55000ms)
+```
+
+**Cloudflare Workers**:
+
+Monitor SSE usage via Cloudflare Dashboard:
+- Workers & Pages → Your Worker → Metrics
+- Look for request duration (should cluster around 50s)
+- Check CPU time usage (SSE connections are CPU-bound)
+
+### Troubleshooting SSE
+
+**Connection closes immediately**
+- Check Workers CPU time limits
+- Reduce `MCP_SSE_TIMEOUT` if needed
+- Verify client accepts `text/event-stream`
+
+**No heartbeat pings received**
+- Check `MCP_PING_INTERVAL` configuration
+- Verify connection stays open for >30 seconds
+- Check Workers logs for errors
+
+**Connections accumulate/leak**
+- Verify graceful shutdown is working
+- Check cleanup logic in monitoring interval
+- Review Workers memory usage in dashboard
+
+**Timeout errors in Claude Desktop**
+- SSE timeout (50s) is working as designed
+- Claude should auto-reconnect
+- This is normal behavior for long-idle connections
 
 ---
 

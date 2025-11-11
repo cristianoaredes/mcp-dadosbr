@@ -74,11 +74,12 @@ export const TIMEOUTS = {
 
   /**
    * SSE connection timeout (Cloudflare Workers)
-   * Default: 300000ms (5 minutes)
+   * Default: 50000ms (50 seconds) - respects Workers CPU time limit
    * Env: MCP_SSE_TIMEOUT
+   * Note: Cloudflare Workers have a CPU time limit of ~50s
    */
   get SSE_CONNECTION_MS(): number {
-    return getTimeoutMs('MCP_SSE_TIMEOUT', 300000);
+    return getTimeoutMs('MCP_SSE_TIMEOUT', 50000);
   },
 
   /**

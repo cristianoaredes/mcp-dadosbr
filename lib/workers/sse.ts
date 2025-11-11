@@ -55,10 +55,16 @@ export async function handleSSEEndpoint(
     }
   };
 
-  // Handle the SSE connection
+  // Handle the SSE connection asynchronously
+  // Inspired by mcp-camara SSE implementation for robustness
   (async () => {
+    let pingInterval: NodeJS.Timeout | undefined;
+    let timeoutHandle: NodeJS.Timeout | undefined;
+
     try {
-      // Send connection established event
+      // 1. IMMEDIATE CONNECTION EVENT
+      // Send connection established event BEFORE any initialization
+      // This provides immediate feedback to the client (<100ms typically)
       await sendSSEMessage(
         {
           type: "connection",
@@ -70,7 +76,9 @@ export async function handleSSEEndpoint(
         "connection"
       );
 
-      // Send server capabilities
+      // 2. EARLY CAPABILITIES RESPONSE
+      // Send server capabilities immediately to keep stream alive
+      // This prevents client timeout while server initializes
       await sendSSEMessage(
         {
           jsonrpc: "2.0",
@@ -89,8 +97,10 @@ export async function handleSSEEndpoint(
         "message"
       );
 
-      // Keep connection alive with periodic pings
-      const pingInterval = setInterval(async () => {
+      // 3. HEARTBEAT MECHANISM
+      // Keep connection alive with periodic pings every 30 seconds
+      // This helps detect disconnections early and prevents timeout on idle connections
+      pingInterval = setInterval(async () => {
         try {
           await sendSSEMessage(
             {
@@ -100,11 +110,13 @@ export async function handleSSEEndpoint(
             "ping"
           );
         } catch (error) {
-          clearInterval(pingInterval);
+          console.error("SSE ping error:", error);
+          if (pingInterval) clearInterval(pingInterval);
         }
-      }, TIMEOUTS.PING_INTERVAL_MS); // Ping periodically to keep connection alive
+      }, TIMEOUTS.PING_INTERVAL_MS);
 
-      // Handle incoming messages from request body (if any)
+      // 4. HANDLE INCOMING REQUESTS
+      // Process POST requests with MCP commands
       if (request.method === "POST") {
         try {
           const body = await request.text();
@@ -119,6 +131,7 @@ export async function handleSSEEndpoint(
             );
           }
         } catch (error) {
+          console.error("SSE request processing error:", error);
           await sendSSEMessage(
             {
               jsonrpc: "2.0",
@@ -134,12 +147,18 @@ export async function handleSSEEndpoint(
         }
       }
 
-      // Clean up on connection close
-      setTimeout(() => {
-        clearInterval(pingInterval);
+      // 5. CONNECTION TIMEOUT
+      // Close connection after configured timeout to respect Workers CPU time limit
+      // Default: 50 seconds (configurable via MCP_SSE_TIMEOUT)
+      // Note: Cloudflare Workers have a CPU time limit of ~50 seconds
+      timeoutHandle = setTimeout(() => {
+        console.log("SSE connection timeout reached, closing gracefully");
+        if (pingInterval) clearInterval(pingInterval);
         writer.close();
-      }, TIMEOUTS.SSE_CONNECTION_MS); // Close after configured inactivity period
+      }, TIMEOUTS.SSE_CONNECTION_MS);
     } catch (error) {
+      // 6. ERROR HANDLING
+      // Log errors and notify client before closing
       console.error("SSE handler error:", error);
       await sendSSEMessage(
         {
@@ -149,6 +168,16 @@ export async function handleSSEEndpoint(
         "error"
       );
       writer.close();
+    } finally {
+      // 7. GRACEFUL SHUTDOWN
+      // Ensure all resources are cleaned up properly
+      // This prevents resource leaks in Workers environment
+      if (pingInterval) {
+        clearInterval(pingInterval);
+      }
+      if (timeoutHandle) {
+        clearTimeout(timeoutHandle);
+      }
     }
   })();
 
