@@ -79,10 +79,12 @@
     "@genkit-ai/mcp": "^1.22.0",
     "@modelcontextprotocol/sdk": "^1.21.1",
     "@smithery/sdk": "^1.7.4",
+    "agents": "^0.2.21",
     "async-mutex": "^0.5.0",
     "chalk": "^5.6.2",
     "express": "^5.0.1",
     "tavily": "^1.0.2",
+    "workers-mcp": "^0.0.13",
     "zod": "^3.23.8"
   },
   "devDependencies": {
