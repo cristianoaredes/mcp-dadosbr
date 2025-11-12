@@ -1,34 +1,15 @@
 name = "mcp-dadosbr-aredes"
-main = "build/lib/workers/mcp-agent.js"
+main = "build/lib/workers/worker.js"
 compatibility_date = "2024-09-27"
 compatibility_flags = ["nodejs_compat"]
-
-# Durable Objects configuration for MCP Agent
-[[migrations]]
-tag = "v1"
-new_sqlite_classes = ["DadosBRMCP"]
-
-[[durable_objects.bindings]]
-name = "MCP_OBJECT"
-class_name = "DadosBRMCP"
 
 # Custom domain configuration - Will be set up via Dashboard
 
 [env.production]
 name = "mcp-dadosbr-aredes-prod"
 
-# Durable Objects for production
-[[env.production.durable_objects.bindings]]
-name = "MCP_OBJECT"
-class_name = "DadosBRMCP"
-
 [env.staging]
 name = "mcp-dadosbr-aredes-staging"
-
-# Durable Objects for staging
-[[env.staging.durable_objects.bindings]]
-name = "MCP_OBJECT"
-class_name = "DadosBRMCP"
 
 [env.staging.vars]
 MCP_TRANSPORT = "http"
