@@ -25,6 +25,7 @@ export interface Env {
   MCP_API_KEY?: string;
   MCP_DISABLE_RATE_LIMIT?: string;
   MCP_KV?: KVNamespace;
+  TAVILY_API_KEY?: string; // Tavily search API key (secret)
 }
 
 
@@ -68,6 +69,12 @@ export async function handleMCPRequest(
   request: MCPRequest,
   env: Env
 ): Promise<MCPResponse> {
+  // Inject Cloudflare Workers environment variables into process.env
+  // This allows tools to access secrets like TAVILY_API_KEY
+  if (env.TAVILY_API_KEY) {
+    process.env.TAVILY_API_KEY = env.TAVILY_API_KEY;
+  }
+
   const serverConfig: ServerConfig = {
     transport: env.MCP_TRANSPORT || "http",
     httpPort: parseInt(env.MCP_HTTP_PORT || "8787"),

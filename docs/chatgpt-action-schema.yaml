@@ -1,0 +1,136 @@
+openapi: 3.0.0
+info:
+  title: MCP DadosBR API
+  description: API brasileira para consulta de CNPJ (empresas) e CEP (endereços) com busca inteligente
+  version: 1.0.0
+
+servers:
+  - url: https://mcp-dadosbr.aredes.me
+    description: Servidor de produção
+
+paths:
+  /cnpj/{cnpj}:
+    get:
+      operationId: lookupCNPJ
+      summary: Consultar dados de empresa pelo CNPJ
+      description: Retorna informações completas de uma empresa brasileira
+      parameters:
+        - name: cnpj
+          in: path
+          required: true
+          description: CNPJ da empresa (com ou sem formatação)
+          schema:
+            type: string
+          example: "28526270000150"
+      responses:
+        '200':
+          description: Dados da empresa
+          content:
+            application/json:
+              schema:
+                type: object
+        '404':
+          description: CNPJ não encontrado
+
+  /cep/{cep}:
+    get:
+      operationId: lookupCEP
+      summary: Consultar endereço pelo CEP
+      description: Retorna informações de endereço brasileiro
+      parameters:
+        - name: cep
+          in: path
+          required: true
+          description: CEP (com ou sem formatação)
+          schema:
+            type: string
+          example: "01310-100"
+      responses:
+        '200':
+          description: Dados do endereço
+          content:
+            application/json:
+              schema:
+                type: object
+        '404':
+          description: CEP não encontrado
+
+  /search:
+    post:
+      operationId: searchWeb
+      summary: Buscar informações na web
+      description: Busca inteligente na web sobre empresas brasileiras
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - query
+              properties:
+                query:
+                  type: string
+                  description: Consulta de busca
+                  example: "Magazine Luiza CNPJ processos trabalhistas"
+                max_results:
+                  type: integer
+                  minimum: 1
+                  maximum: 20
+                  default: 5
+                  description: Número máximo de resultados
+      responses:
+        '200':
+          description: Resultados da busca
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /intelligence:
+    post:
+      operationId: intelligenceSearch
+      summary: Busca inteligente sobre empresas
+      description: Busca categorizada e inteligente sobre empresas brasileiras
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - cnpj
+              properties:
+                cnpj:
+                  type: string
+                  description: CNPJ da empresa
+                  example: "28526270000150"
+                categories:
+                  type: array
+                  items:
+                    type: string
+                    enum:
+                      - government
+                      - legal
+                      - news
+                      - documents
+                      - social
+                      - partners
+                  description: Categorias de busca
+                max_results_per_query:
+                  type: integer
+                  minimum: 1
+                  maximum: 10
+                  default: 5
+                max_queries:
+                  type: integer
+                  minimum: 1
+                  maximum: 20
+                  default: 10
+      responses:
+        '200':
+          description: Resultados da busca inteligente
+          content:
+            application/json:
+              schema:
+                type: object
