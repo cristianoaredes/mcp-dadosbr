@@ -169,6 +169,12 @@ export async function handleMCPEndpoint(
   request: Request,
   env: Env
 ): Promise<Response> {
+  // Inject Cloudflare Workers environment variables into process.env
+  // This allows tools to access secrets like TAVILY_API_KEY
+  if (env.TAVILY_API_KEY) {
+    process.env.TAVILY_API_KEY = env.TAVILY_API_KEY;
+  }
+
   try {
     const body = await request.text();
     let mcpRequest: MCPRequest;

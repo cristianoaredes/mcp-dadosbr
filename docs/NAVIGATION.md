@@ -46,8 +46,10 @@
 - **[🇧🇷 Configuração do Ambiente](docs/pt-br/desenvolvimento/configuracao-ambiente.md)** - Complete setup guide (PT-BR)
 
 ### 🚀 Deployment
-- **[☁️ Cloudflare Deployment](docs/CLOUDFLARE_DEPLOYMENT.md)** - Serverless deployment
-- **[🔧 MCP Client Integration](docs/MCP_CLIENT_INTEGRATION.md)** - IDE setup (Claude, Cursor, Windsurf)
+- **[☁️ Cloudflare Deployment](CLOUDFLARE_DEPLOYMENT.md)** - Serverless deployment guide
+- **[✅ Deployment Ready](DEPLOYMENT_READY.md)** - Pre-deployment checklist and instructions
+- **[🔍 Workers Review](CLOUDFLARE_WORKERS_REVIEW.md)** - Code compatibility analysis
+- **[🔧 MCP Client Integration](MCP_CLIENT_INTEGRATION.md)** - IDE setup (Claude, Cursor, Windsurf)
 
 ## 🧠 I want to use advanced features
 
