@@ -159,15 +159,32 @@ export async function handleSSEEndpoint(
     } catch (error) {
       // 6. ERROR HANDLING
       // Log errors and notify client before closing
-      console.error("SSE handler error:", error);
-      await sendSSEMessage(
-        {
-          type: "error",
-          message: error instanceof Error ? error.message : "Unknown error",
-        },
-        "error"
-      );
-      writer.close();
+      const errorMessage = error instanceof Error 
+        ? error.message 
+        : typeof error === 'string' 
+        ? error 
+        : 'Unknown error occurred';
+      
+      console.error("SSE handler error:", errorMessage, error);
+      
+      try {
+        await sendSSEMessage(
+          {
+            type: "error",
+            message: errorMessage,
+            timestamp: new Date().toISOString(),
+          },
+          "error"
+        );
+      } catch (sendError) {
+        console.error("Failed to send error message:", sendError);
+      }
+      
+      try {
+        await writer.close();
+      } catch (closeError) {
+        console.error("Failed to close writer:", closeError);
+      }
     } finally {
       // 7. GRACEFUL SHUTDOWN
       // Ensure all resources are cleaned up properly
