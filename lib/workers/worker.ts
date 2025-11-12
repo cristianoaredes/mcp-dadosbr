@@ -18,6 +18,7 @@ import {
   handleOAuthAuthorize,
   handleOAuthToken,
   handleOAuthUserInfo,
+  handleOAuthRegister,
   handleJWKS,
   handleOAuthDiscovery
 } from './oauth.js';
@@ -102,6 +103,10 @@ export default {
       case '/oauth/token':
         // OAuth token endpoint
         return handleOAuthToken(request);
+
+      case '/oauth/register':
+        // OAuth dynamic client registration endpoint (RFC 7591)
+        return await handleOAuthRegister(request);
 
       case '/oauth/userinfo':
         // OAuth userinfo endpoint
