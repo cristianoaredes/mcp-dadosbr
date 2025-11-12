@@ -104,8 +104,61 @@ export function handleJWKS(): Response {
 }
 
 /**
+ * Handle /oauth/register endpoint
+ * RFC 7591 Dynamic Client Registration for ChatGPT integration
+ */
+export async function handleOAuthRegister(request: Request): Promise<Response> {
+  if (request.method !== 'POST') {
+    return new Response('Method not allowed', {
+      status: 405,
+      headers: corsHeaders
+    });
+  }
+
+  try {
+    const body = await request.json() as Record<string, unknown>;
+    
+    // Generate client credentials
+    const clientId = generateSecureToken('client');
+    const clientSecret = generateSecureToken('secret');
+    
+    // Build registration response
+    const registrationResponse = {
+      client_id: clientId,
+      client_secret: clientSecret,
+      client_id_issued_at: Math.floor(Date.now() / 1000),
+      client_secret_expires_at: 0, // Never expires
+      redirect_uris: body.redirect_uris || [],
+      grant_types: body.grant_types || ['authorization_code'],
+      response_types: body.response_types || ['code'],
+      client_name: body.client_name || 'MCP Client',
+      token_endpoint_auth_method: body.token_endpoint_auth_method || 'client_secret_basic',
+    };
+
+    return new Response(JSON.stringify(registrationResponse), {
+      status: 201,
+      headers: {
+        'Content-Type': 'application/json',
+        ...corsHeaders,
+      },
+    });
+  } catch (error) {
+    return new Response(JSON.stringify({
+      error: 'invalid_request',
+      error_description: error instanceof Error ? error.message : 'Invalid registration request'
+    }), {
+      status: 400,
+      headers: {
+        'Content-Type': 'application/json',
+        ...corsHeaders,
+      },
+    });
+  }
+}
+
+/**
  * Handle /.well-known/oauth-authorization-server endpoint
- * OAuth discovery endpoint for ChatGPT MCP connector
+ * OAuth discovery endpoint for ChatGPT MCP connector with RFC 7591 support
  */
 export function handleOAuthDiscovery(request: Request): Response {
   const baseUrl = new URL(request.url).origin;
@@ -113,6 +166,7 @@ export function handleOAuthDiscovery(request: Request): Response {
     issuer: baseUrl,
     authorization_endpoint: `${baseUrl}/oauth/authorize`,
     token_endpoint: `${baseUrl}/oauth/token`,
+    registration_endpoint: `${baseUrl}/oauth/register`,
     userinfo_endpoint: `${baseUrl}/oauth/userinfo`,
     jwks_uri: `${baseUrl}/.well-known/jwks.json`,
     scopes_supported: ['openid', 'profile', 'mcp'],
@@ -120,6 +174,8 @@ export function handleOAuthDiscovery(request: Request): Response {
     grant_types_supported: ['authorization_code'],
     subject_types_supported: ['public'],
     id_token_signing_alg_values_supported: ['RS256'],
+    token_endpoint_auth_methods_supported: ['client_secret_basic', 'client_secret_post'],
+    registration_endpoint_auth_methods_supported: ['none'],
   };
 
   return new Response(JSON.stringify(oauthConfig), {
