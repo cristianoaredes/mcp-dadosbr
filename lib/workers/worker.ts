@@ -102,7 +102,7 @@ export default {
 
       case '/oauth/token':
         // OAuth token endpoint
-        return handleOAuthToken(request);
+        return await handleOAuthToken(request);
 
       case '/oauth/register':
         // OAuth dynamic client registration endpoint (RFC 7591)
