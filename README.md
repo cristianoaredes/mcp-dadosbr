@@ -32,6 +32,7 @@ npx @aredes.me/mcp-dadosbr
       "args": ["@aredes.me/mcp-dadosbr"],
       "env": {
         "TAVILY_API_KEY": "tvly-your-key",
+        "PERPLEXITY_API_KEY": "pplx-your-key",
         "TRANSPARENCIA_API_KEY": "your-key",
         "DATAJUD_API_KEY": "your-key"
       }
@@ -158,9 +159,9 @@ depois use cnes_saude para encontrar hospitais em Belo Horizonte.
 | Variável | Obrigatória | Descrição |
 |---|---|---|
 | `TAVILY_API_KEY` | Para buscas | [tavily.com](https://tavily.com) — habilita `cnpj_search` + `cnpj_intelligence` |
+| `PERPLEXITY_API_KEY` | Alternativo | [perplexity.ai](https://docs.perplexity.ai/) — provider alternativo de busca (se Tavily não configurado) |
 | `TRANSPARENCIA_API_KEY` | Para transparência | [portaldatransparencia.gov.br](http://portaldatransparencia.gov.br/api-de-dados) |
 | `DATAJUD_API_KEY` | Para processos | [datajud.cnj.jus.br](https://datajud-wiki.cnj.jus.br/) |
-| `PERPLEXITY_API_KEY` | Opcional | Provider alternativo de busca via Perplexity |
 | `MCP_TRANSPORT` | — | `stdio` (padrão) ou `http` |
 | `MCP_HTTP_PORT` | — | Porta HTTP (padrão: `3000`) |
 
@@ -252,6 +253,7 @@ npx @aredes.me/mcp-dadosbr
       "args": ["@aredes.me/mcp-dadosbr"],
       "env": {
         "TAVILY_API_KEY": "tvly-your-key",
+        "PERPLEXITY_API_KEY": "pplx-your-key",
         "TRANSPARENCIA_API_KEY": "your-key",
         "DATAJUD_API_KEY": "your-key"
       }
@@ -276,6 +278,7 @@ npx @aredes.me/mcp-dadosbr
 | Variable | Required for | How to get |
 |---|---|---|
 | `TAVILY_API_KEY` | Web search tools | [tavily.com](https://tavily.com) |
+| `PERPLEXITY_API_KEY` | Alternative search | [perplexity.ai](https://docs.perplexity.ai/) (used if Tavily not set) |
 | `TRANSPARENCIA_API_KEY` | Government transparency | [Portal da Transparência API](http://portaldatransparencia.gov.br/api-de-dados) |
 | `DATAJUD_API_KEY` | Court proceedings | [Datajud Wiki](https://datajud-wiki.cnj.jus.br/) |
 
