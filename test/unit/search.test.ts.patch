@@ -1,0 +1,15 @@
+--- test/unit/search.test.ts
++++ test/unit/search.test.ts
+@@ -6,9 +6,9 @@
+ 
+ // Mock the Tavily client
+ vi.mock('tavily', () => {
+   return {
+-    TavilyClient: vi.fn().mockImplementation(() => ({
+-      search: vi.fn(),
+-    })),
++    TavilyClient: class TavilyClient {
++      search = vi.fn();
++    },
+   };
+ });

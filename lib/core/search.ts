@@ -97,7 +97,7 @@ export async function executeSearch(
 // Tool definition for MCP
 export const SEARCH_TOOL = {
   name: "cnpj_search",
-  description: `Search the web for information about Brazilian companies, CNPJ numbers, people, and more using DuckDuckGo.
+  description: `Search the web for information about Brazilian companies, CNPJ numbers, people, and more using Tavily or Perplexity.
 
 This tool supports advanced search operators:
 - site:example.com - Search within a specific domain

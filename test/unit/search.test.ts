@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { executeSearch } from '../../lib/core/search.js';
-import { TavilyProvider, getAvailableProvider, searchWithFallback, createProvider } from '../../lib/core/search-providers.js';
+import { TavilyProvider, PerplexityProvider, getAvailableProvider, searchWithFallback, createProvider } from '../../lib/core/search-providers.js';
 import { MemoryCache } from '../../lib/core/cache.js';
 import { Result, RateLimitError } from '../../lib/shared/types/result.js';
 
@@ -61,9 +61,7 @@ describe('Search Functionality', () => {
             { title: 'Test', url: 'http://test.com', content: 'test snippet' }
           ]
         });
-        (TavilyClient as any).mockImplementation(() => ({
-          search: mockSearch
-        }));
+        (TavilyClient as any).mockImplementation(function () { return { search: mockSearch }; });
 
         const result = await executeSearch('test query');
 
@@ -81,9 +79,7 @@ describe('Search Functionality', () => {
             { title: 'Test', url: 'http://test.com', content: 'test snippet' }
           ]
         });
-        (TavilyClient as any).mockImplementation(() => ({
-          search: mockSearch
-        }));
+        (TavilyClient as any).mockImplementation(function () { return { search: mockSearch }; });
 
         const result = await executeSearch('new query', 5, cache);
 
@@ -112,9 +108,7 @@ describe('Search Functionality', () => {
             ]
           });
         });
-        (TavilyClient as any).mockImplementation(() => ({
-          search: mockSearch
-        }));
+        (TavilyClient as any).mockImplementation(function () { return { search: mockSearch }; });
 
         await executeSearch('query 1', 5, cache);
         await executeSearch('query 2', 5, cache);
@@ -134,9 +128,7 @@ describe('Search Functionality', () => {
             { title: 'Test', url: 'http://test.com', content: 'snippet' }
           ]
         });
-        (TavilyClient as any).mockImplementation(() => ({
-          search: mockSearch
-        }));
+        (TavilyClient as any).mockImplementation(function () { return { search: mockSearch }; });
 
         await executeSearch('same query', 5, cache);
         await executeSearch('same query', 10, cache);
@@ -156,9 +148,7 @@ describe('Search Functionality', () => {
             { title: 'Test Result', url: 'http://example.com', content: 'Test snippet' }
           ]
         });
-        (TavilyClient as any).mockImplementation(() => ({
-          search: mockSearch
-        }));
+        (TavilyClient as any).mockImplementation(function () { return { search: mockSearch }; });
 
         const result = await executeSearch('test query', 5);
 
@@ -183,9 +173,7 @@ describe('Search Functionality', () => {
             { title: 'Result 3', url: 'http://example3.com', content: 'Snippet 3' }
           ]
         });
-        (TavilyClient as any).mockImplementation(() => ({
-          search: mockSearch
-        }));
+        (TavilyClient as any).mockImplementation(function () { return { search: mockSearch }; });
 
         const result = await executeSearch('multi results', 10);
 
@@ -204,9 +192,7 @@ describe('Search Functionality', () => {
             { title: 'R2', url: 'http://2.com', content: 'S2' }
           ]
         });
-        (TavilyClient as any).mockImplementation(() => ({
-          search: mockSearch
-        }));
+        (TavilyClient as any).mockImplementation(function () { return { search: mockSearch }; });
 
         await executeSearch('test', 7);
 
@@ -219,9 +205,7 @@ describe('Search Functionality', () => {
       it('should use default maxResults when not specified', async () => {
         const { TavilyClient } = await import('tavily');
         const mockSearch = vi.fn().mockResolvedValue({ results: [] });
-        (TavilyClient as any).mockImplementation(() => ({
-          search: mockSearch
-        }));
+        (TavilyClient as any).mockImplementation(function () { return { search: mockSearch }; });
 
         await executeSearch('test');
 
@@ -236,9 +220,7 @@ describe('Search Functionality', () => {
       it('should handle provider errors gracefully', async () => {
         const { TavilyClient } = await import('tavily');
         const mockSearch = vi.fn().mockRejectedValue(new Error('API Error'));
-        (TavilyClient as any).mockImplementation(() => ({
-          search: mockSearch
-        }));
+        (TavilyClient as any).mockImplementation(function () { return { search: mockSearch }; });
 
         const result = await executeSearch('error query');
 
@@ -251,12 +233,13 @@ describe('Search Functionality', () => {
       it('should handle provider returning error Result', async () => {
         // This tests the case when provider.search returns Result.err
         delete process.env.TAVILY_API_KEY;
+        delete process.env.PERPLEXITY_API_KEY;
 
         const result = await executeSearch('no api key');
 
         expect(result.ok).toBe(false);
         if (!result.ok) {
-          expect(result.error).toContain('unavailable');
+          expect(result.error).toContain('No search providers available');
         }
       });
 
@@ -265,9 +248,7 @@ describe('Search Functionality', () => {
         const errorWithoutMessage = new Error();
         errorWithoutMessage.message = '';
         const mockSearch = vi.fn().mockRejectedValue(errorWithoutMessage);
-        (TavilyClient as any).mockImplementation(() => ({
-          search: mockSearch
-        }));
+        (TavilyClient as any).mockImplementation(function () { return { search: mockSearch }; });
 
         const result = await executeSearch('empty error');
 
@@ -283,9 +264,7 @@ describe('Search Functionality', () => {
       it('should handle empty query', async () => {
         const { TavilyClient } = await import('tavily');
         const mockSearch = vi.fn().mockResolvedValue({ results: [] });
-        (TavilyClient as any).mockImplementation(() => ({
-          search: mockSearch
-        }));
+        (TavilyClient as any).mockImplementation(function () { return { search: mockSearch }; });
 
         const result = await executeSearch('', 5);
 
@@ -299,9 +278,7 @@ describe('Search Functionality', () => {
       it('should handle very long queries', async () => {
         const { TavilyClient } = await import('tavily');
         const mockSearch = vi.fn().mockResolvedValue({ results: [] });
-        (TavilyClient as any).mockImplementation(() => ({
-          search: mockSearch
-        }));
+        (TavilyClient as any).mockImplementation(function () { return { search: mockSearch }; });
 
         const longQuery = 'a'.repeat(1000);
         const result = await executeSearch(longQuery, 5);
@@ -318,9 +295,7 @@ describe('Search Functionality', () => {
         const mockSearch = vi.fn().mockResolvedValue({
           results: [{ title: 'One', url: 'http://one.com', content: 'snippet' }]
         });
-        (TavilyClient as any).mockImplementation(() => ({
-          search: mockSearch
-        }));
+        (TavilyClient as any).mockImplementation(function () { return { search: mockSearch }; });
 
         const result = await executeSearch('single', 1);
 
@@ -334,9 +309,7 @@ describe('Search Functionality', () => {
       it('should handle maxResults of 20 (max)', async () => {
         const { TavilyClient } = await import('tavily');
         const mockSearch = vi.fn().mockResolvedValue({ results: [] });
-        (TavilyClient as any).mockImplementation(() => ({
-          search: mockSearch
-        }));
+        (TavilyClient as any).mockImplementation(function () { return { search: mockSearch }; });
 
         const result = await executeSearch('max results', 20);
 
@@ -397,9 +370,7 @@ describe('Search Functionality', () => {
         process.env.TAVILY_API_KEY = 'test-key';
         const { TavilyClient } = await import('tavily');
         const mockSearch = vi.fn().mockResolvedValue({ results: [] });
-        (TavilyClient as any).mockImplementation(() => ({
-          search: mockSearch
-        }));
+        (TavilyClient as any).mockImplementation(function () { return { search: mockSearch }; });
 
         const provider = new TavilyProvider();
         const result = await provider.search('no results', 5);
@@ -414,9 +385,7 @@ describe('Search Functionality', () => {
         process.env.TAVILY_API_KEY = 'test-key';
         const { TavilyClient } = await import('tavily');
         const mockSearch = vi.fn().mockResolvedValue(null);
-        (TavilyClient as any).mockImplementation(() => ({
-          search: mockSearch
-        }));
+        (TavilyClient as any).mockImplementation(function () { return { search: mockSearch }; });
 
         const provider = new TavilyProvider();
         const result = await provider.search('null response', 5);
@@ -433,9 +402,7 @@ describe('Search Functionality', () => {
         const rateLimitError: any = new Error('Rate limit exceeded');
         rateLimitError.statusCode = 429;
         const mockSearch = vi.fn().mockRejectedValue(rateLimitError);
-        (TavilyClient as any).mockImplementation(() => ({
-          search: mockSearch
-        }));
+        (TavilyClient as any).mockImplementation(function () { return { search: mockSearch }; });
 
         const provider = new TavilyProvider();
         const result = await provider.search('rate limited', 5);
@@ -453,9 +420,7 @@ describe('Search Functionality', () => {
         const authError: any = new Error('Unauthorized');
         authError.statusCode = 401;
         const mockSearch = vi.fn().mockRejectedValue(authError);
-        (TavilyClient as any).mockImplementation(() => ({
-          search: mockSearch
-        }));
+        (TavilyClient as any).mockImplementation(function () { return { search: mockSearch }; });
 
         const provider = new TavilyProvider();
         const result = await provider.search('auth error', 5);
@@ -473,9 +438,7 @@ describe('Search Functionality', () => {
         const authError: any = new Error('Forbidden');
         authError.statusCode = 403;
         const mockSearch = vi.fn().mockRejectedValue(authError);
-        (TavilyClient as any).mockImplementation(() => ({
-          search: mockSearch
-        }));
+        (TavilyClient as any).mockImplementation(function () { return { search: mockSearch }; });
 
         const provider = new TavilyProvider();
         const result = await provider.search('forbidden', 5);
@@ -490,9 +453,7 @@ describe('Search Functionality', () => {
         process.env.TAVILY_API_KEY = 'test-key';
         const { TavilyClient } = await import('tavily');
         const mockSearch = vi.fn().mockRejectedValue(new Error('Network error'));
-        (TavilyClient as any).mockImplementation(() => ({
-          search: mockSearch
-        }));
+        (TavilyClient as any).mockImplementation(function () { return { search: mockSearch }; });
 
         const provider = new TavilyProvider();
         const result = await provider.search('network error', 5);
@@ -512,9 +473,7 @@ describe('Search Functionality', () => {
             { title: 'Test Title', url: 'http://test.com', content: 'Test Content' }
           ]
         });
-        (TavilyClient as any).mockImplementation(() => ({
-          search: mockSearch
-        }));
+        (TavilyClient as any).mockImplementation(function () { return { search: mockSearch }; });
 
         const provider = new TavilyProvider();
         const result = await provider.search('mapping test', 5);
@@ -538,9 +497,7 @@ describe('Search Functionality', () => {
             { title: undefined, url: undefined, content: undefined }
           ]
         });
-        (TavilyClient as any).mockImplementation(() => ({
-          search: mockSearch
-        }));
+        (TavilyClient as any).mockImplementation(function () { return { search: mockSearch }; });
 
         const provider = new TavilyProvider();
         const result = await provider.search('missing fields', 5);
@@ -558,6 +515,9 @@ describe('Search Functionality', () => {
     });
   });
 
+  // Mock global fetch for PerplexityProvider tests
+  global.fetch = vi.fn();
+
   describe('Provider factory functions', () => {
     describe('createProvider', () => {
       it('should create Tavily provider', () => {
@@ -567,56 +527,79 @@ describe('Search Functionality', () => {
         expect(provider).toBeInstanceOf(TavilyProvider);
       });
 
+      it('should create Perplexity provider', () => {
+        const provider = createProvider('perplexity');
+
+        expect(provider.name).toBe('perplexity');
+        expect(provider).toBeInstanceOf(PerplexityProvider);
+      });
+
       it('should throw for unsupported provider type', () => {
         expect(() => createProvider('unsupported' as any)).toThrow('not supported');
       });
     });
 
     describe('getAvailableProvider', () => {
-      it('should return Tavily provider when API key is set', async () => {
+      it('should return Tavily provider when TAVILY_API_KEY is set', async () => {
         process.env.TAVILY_API_KEY = 'test-key';
+        delete process.env.PERPLEXITY_API_KEY;
 
         const provider = await getAvailableProvider();
 
         expect(provider.name).toBe('tavily');
       });
 
-      it('should throw when no provider is available', async () => {
+      it('should return Perplexity provider when only PERPLEXITY_API_KEY is set', async () => {
         delete process.env.TAVILY_API_KEY;
+        process.env.PERPLEXITY_API_KEY = 'test-perp-key';
 
-        await expect(getAvailableProvider()).rejects.toThrow('unavailable');
+        const provider = await getAvailableProvider();
+
+        expect(provider.name).toBe('perplexity');
       });
 
-      it('should use preferred provider when specified', async () => {
+      it('should throw when no provider is available', async () => {
+        delete process.env.TAVILY_API_KEY;
+        delete process.env.PERPLEXITY_API_KEY;
+
+        await expect(getAvailableProvider()).rejects.toThrow('No search providers available');
+      });
+
+      it('should use preferred provider when specified and available', async () => {
         process.env.TAVILY_API_KEY = 'test-key';
+        process.env.PERPLEXITY_API_KEY = 'test-perp-key';
 
-        const provider = await getAvailableProvider('tavily');
+        const provider = await getAvailableProvider('perplexity');
 
-        expect(provider.name).toBe('tavily');
+        expect(provider.name).toBe('perplexity');
       });
     });
 
     describe('searchWithFallback', () => {
+      beforeEach(() => {
+        vi.resetAllMocks();
+      });
+
       it('should return error when no provider is available', async () => {
         delete process.env.TAVILY_API_KEY;
+        delete process.env.PERPLEXITY_API_KEY;
 
         const result = await searchWithFallback('test query');
 
         expect(result.ok).toBe(false);
         if (!result.ok) {
-          expect(result.error.message).toContain('unavailable');
+          expect(result.error.message).toContain('No search providers available');
         }
       });
 
-      it('should use available provider for search', async () => {
+      it('should use available provider for search (Tavily first)', async () => {
         process.env.TAVILY_API_KEY = 'test-key';
+        process.env.PERPLEXITY_API_KEY = 'test-perp-key';
         const { TavilyClient } = await import('tavily');
         const mockSearch = vi.fn().mockResolvedValue({
           results: [{ title: 'Fallback', url: 'http://fb.com', content: 'test' }]
         });
-        (TavilyClient as any).mockImplementation(() => ({
-          search: mockSearch
-        }));
+        (TavilyClient as any).mockImplementation(function () { return { search: mockSearch }; });
 
         const result = await searchWithFallback('fallback query', 5);
 
@@ -624,15 +607,41 @@ describe('Search Functionality', () => {
         if (result.ok) {
           expect(result.value).toHaveLength(1);
         }
+        expect(mockSearch).toHaveBeenCalled();
+        expect(global.fetch).not.toHaveBeenCalled();
+      });
+
+      it('should fallback to Perplexity if Tavily is unavailable', async () => {
+        delete process.env.TAVILY_API_KEY;
+        process.env.PERPLEXITY_API_KEY = 'test-perp-key';
+
+        const mockFetchResponse = {
+          ok: true,
+          json: vi.fn().mockResolvedValue({
+            choices: [{
+              message: { content: 'Perplexity snippet' }
+            }],
+            citations: ['https://example.com']
+          })
+        };
+        (global.fetch as any).mockResolvedValue(mockFetchResponse);
+
+        const result = await searchWithFallback('fallback query', 5);
+
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.value).toHaveLength(1);
+          expect(result.value[0].snippet).toBe('Perplexity snippet');
+          expect(result.value[0].url).toBe('https://example.com');
+        }
+        expect(global.fetch).toHaveBeenCalled();
       });
 
       it('should use default max results when not specified', async () => {
         process.env.TAVILY_API_KEY = 'test-key';
         const { TavilyClient } = await import('tavily');
         const mockSearch = vi.fn().mockResolvedValue({ results: [] });
-        (TavilyClient as any).mockImplementation(() => ({
-          search: mockSearch
-        }));
+        (TavilyClient as any).mockImplementation(function () { return { search: mockSearch }; });
 
         await searchWithFallback('test');
 
@@ -646,9 +655,7 @@ describe('Search Functionality', () => {
         process.env.TAVILY_API_KEY = 'test-key';
         const { TavilyClient } = await import('tavily');
         const mockSearch = vi.fn().mockResolvedValue({ results: [] });
-        (TavilyClient as any).mockImplementation(() => ({
-          search: mockSearch
-        }));
+        (TavilyClient as any).mockImplementation(function () { return { search: mockSearch }; });
 
         const result = await searchWithFallback('test', 5, 'tavily');
 

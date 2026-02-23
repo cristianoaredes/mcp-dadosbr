@@ -2,7 +2,7 @@
  * CNPJ Intelligence - Automatic intelligent search based on CNPJ data
  */
 
-import { lookup } from './tools.js';
+import { lookup } from '../tools/core.js';
 import { ApiConfig, Cache, LookupResult } from '../types/index.js';
 import { getAvailableProvider, SearchProvider, SearchResult, ProviderType } from './search-providers.js';
 import { buildDorks, DorkCategory, CNPJData } from './dork-templates.js';
@@ -233,7 +233,11 @@ async function executeIntelligenceInternal(
       news: [],
       documents: [],
       social: [],
-      partners: []
+      partners: [],
+      security: [],
+      databases: [],
+      infrastructure: [],
+      social_media: []
     };
 
     const providerUsed = provider.name;
