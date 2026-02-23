@@ -99,34 +99,133 @@ export class TavilyProvider implements SearchProvider {
   }
 }
 
+// Perplexity Provider (Paid, reliable)
+export class PerplexityProvider implements SearchProvider {
+  name = "perplexity";
+  private apiKey?: string;
+
+  constructor() {
+    this.apiKey = process.env.PERPLEXITY_API_KEY;
+  }
+
+  async isAvailable(): Promise<boolean> {
+    return !!this.apiKey;
+  }
+
+  async search(
+    query: string,
+    maxResults: number = SEARCH.DEFAULT_MAX_RESULTS
+  ): Promise<Result<SearchResult[], Error>> {
+    if (!this.apiKey) {
+      return Result.err(
+        new Error(
+          "Perplexity API key not configured. Set PERPLEXITY_API_KEY environment variable."
+        )
+      );
+    }
+
+    try {
+      const response = await fetch("https://api.perplexity.ai/chat/completions", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${this.apiKey}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          model: "sonar",
+          messages: [
+            {
+              role: "system",
+              content: "You are a precise search assistant. Provide concise, factual answers based on the search queries. Focus strictly on the information requested without unnecessary conversational filler."
+            },
+            {
+              role: "user",
+              content: query
+            }
+          ]
+        })
+      });
+
+      if (!response.ok) {
+        if (response.status === 429) {
+          return Result.err(
+            new RateLimitError("Perplexity API rate limit exceeded", TIMEOUTS.RATE_LIMIT_WINDOW_MS)
+          );
+        }
+        if (response.status === 401 || response.status === 403) {
+          return Result.err(
+            new Error("Perplexity API authentication failed. Check your API key.")
+          );
+        }
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json() as any;
+      if (!data || !data.choices || data.choices.length === 0) {
+        return Result.ok([]);
+      }
+
+      const content = data.choices[0]?.message?.content || "";
+      let url = "";
+
+      // If citations are available, use the first one as a reference link
+      if (data.citations && data.citations.length > 0) {
+        url = data.citations[0];
+      }
+
+      return Result.ok([
+        {
+          title: "Perplexity Output",
+          url: url,
+          snippet: content
+        }
+      ]);
+    } catch (error: unknown) {
+      const err = error as Error;
+      return Result.err(new Error(`Perplexity search failed: ${err.message}`));
+    }
+  }
+}
+
 // Note: SerpAPI provider was removed as it was not implemented
 // If you need SerpAPI support, please open an issue on GitHub
 
 // Provider Factory
-export type ProviderType = "tavily";
+export type ProviderType = "tavily" | "perplexity";
 
 export function createProvider(
   type: ProviderType = "tavily"
 ): SearchProvider {
-  if (type !== "tavily") {
-    throw new Error(`Provider ${type} is not supported. Configure TAVILY_API_KEY and use provider \"tavily\".`);
+  if (type === "perplexity") {
+    return new PerplexityProvider();
+  } else if (type === "tavily") {
+    return new TavilyProvider();
   }
-  return new TavilyProvider();
+
+  throw new Error(`Provider ${type} is not supported. Configure TAVILY_API_KEY or PERPLEXITY_API_KEY.`);
 }
 
 // Get first available provider with smart fallback
 export async function getAvailableProvider(
   preferred?: ProviderType
 ): Promise<SearchProvider> {
-  const provider = preferred ? createProvider(preferred) : new TavilyProvider();
-
-  if (!(await provider.isAvailable())) {
-    throw new Error(
-      "Tavily provider is unavailable. Set TAVILY_API_KEY to use cnpj_intelligence searches."
-    );
+  if (preferred) {
+    const provider = createProvider(preferred);
+    if (await provider.isAvailable()) {
+      return provider;
+    }
   }
 
-  return provider;
+  // Fallback chain: Tavily -> Perplexity
+  const tavily = new TavilyProvider();
+  if (await tavily.isAvailable()) return tavily;
+
+  const perplexity = new PerplexityProvider();
+  if (await perplexity.isAvailable()) return perplexity;
+
+  throw new Error(
+    "No search providers available. Configure TAVILY_API_KEY or PERPLEXITY_API_KEY to use search features."
+  );
 }
 
 // Enhanced search with automatic fallback
@@ -135,15 +234,10 @@ export async function searchWithFallback(
   maxResults: number = SEARCH.DEFAULT_MAX_RESULTS,
   preferredProvider?: ProviderType
 ): Promise<Result<SearchResult[], Error>> {
-  const provider = preferredProvider ? createProvider(preferredProvider) : new TavilyProvider();
-
-  if (!(await provider.isAvailable())) {
-    return Result.err(
-      new Error(
-        "Tavily provider unavailable. Set TAVILY_API_KEY to enable cnpj_intelligence searches."
-      )
-    );
+  try {
+    const provider = await getAvailableProvider(preferredProvider);
+    return provider.search(query, maxResults);
+  } catch (error) {
+    return Result.err(error as Error);
   }
-
-  return provider.search(query, maxResults);
 }

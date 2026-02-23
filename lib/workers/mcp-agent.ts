@@ -25,6 +25,9 @@ export interface DadosBRMCPEnv {
   MCP_API_KEY?: string;
   MCP_DISABLE_RATE_LIMIT?: string;
   TAVILY_API_KEY?: string;
+  PERPLEXITY_API_KEY?: string;
+  TRANSPARENCIA_API_KEY?: string;
+  DATAJUD_API_KEY?: string;
 }
 
 /**
@@ -51,6 +54,15 @@ export class DadosBRMCP extends McpAgent<DadosBRMCPEnv> {
     // This allows tools to access secrets like TAVILY_API_KEY
     if (this.env.TAVILY_API_KEY) {
       process.env.TAVILY_API_KEY = this.env.TAVILY_API_KEY;
+    }
+    if (this.env.PERPLEXITY_API_KEY) {
+      process.env.PERPLEXITY_API_KEY = this.env.PERPLEXITY_API_KEY;
+    }
+    if (this.env.TRANSPARENCIA_API_KEY) {
+      process.env.TRANSPARENCIA_API_KEY = this.env.TRANSPARENCIA_API_KEY;
+    }
+    if (this.env.DATAJUD_API_KEY) {
+      process.env.DATAJUD_API_KEY = this.env.DATAJUD_API_KEY;
     }
 
     // Resolve API configuration
