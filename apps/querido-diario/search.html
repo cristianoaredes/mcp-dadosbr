@@ -1,0 +1,41 @@
+<section class="gazette-search" aria-labelledby="gazette-heading" hidden>
+  <header class="gazette-heading">
+    <div>
+      <h2 id="gazette-heading" tabindex="-1">Querido Diário</h2>
+      <p id="gazette-location"></p>
+    </div>
+    <button type="button" id="gazette-close" aria-label="Fechar Querido Diário" hidden>Fechar</button>
+  </header>
+  <form autocomplete="off">
+    <div class="gazette-fields">
+      <div id="gazette-territory-field">
+        <label for="gazette-territory">Código IBGE do município</label>
+        <input id="gazette-territory" type="text" inputmode="numeric" pattern="[0-9]{7}" maxlength="7" placeholder="Ex. 2304400">
+      </div>
+      <div>
+        <label for="gazette-query">Termo</label>
+        <input id="gazette-query" type="search" placeholder="Ex. licitação">
+      </div>
+      <div>
+        <label for="gazette-since">Publicação desde</label>
+        <input id="gazette-since" type="date">
+      </div>
+      <div>
+        <label for="gazette-until">Publicação até</label>
+        <input id="gazette-until" type="date">
+      </div>
+      <button type="button" id="gazette-submit" disabled>Buscar</button>
+    </div>
+  </form>
+  <div class="gazette-results" aria-busy="false">
+    <p id="gazette-status" role="status">Conectando ao servidor…</p>
+    <button type="button" id="gazette-retry" hidden>Tentar novamente</button>
+    <ol id="gazette-list" class="gazette-list" aria-label="Publicações"></ol>
+    <nav id="gazette-pagination" class="gazette-pagination" aria-label="Páginas de publicações" hidden>
+      <button type="button" id="gazette-previous">Anterior</button>
+      <span id="gazette-page"></span>
+      <button type="button" id="gazette-next">Próxima</button>
+    </nav>
+  </div>
+  <footer id="gazette-source">Fonte · Querido Diário — Open Knowledge Brasil</footer>
+</section>

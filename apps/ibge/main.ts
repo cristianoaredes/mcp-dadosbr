@@ -1,5 +1,6 @@
 import { App, applyDocumentTheme } from "@modelcontextprotocol/ext-apps";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+import { createGazetteSearch } from "../querido-diario/search.js";
 
 type Query =
   | { tipo: "regioes" | "estados" | "municipios" }
@@ -16,6 +17,7 @@ type Status = "loading" | "ready" | "error";
 type HostContext = NonNullable<ReturnType<App["getHostContext"]>>;
 
 const app = new App({ name: "Localidades do Brasil", version: "1.0.0" });
+const gazetteSearch = createGazetteSearch(app, true);
 const sourceDocs = "https://servicodados.ibge.gov.br/api/docs/localidades";
 const dateFormat = new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" });
 const numberFormat = new Intl.NumberFormat("pt-BR");
@@ -166,6 +168,20 @@ function localityRow(row: Locality, showCities: boolean): HTMLTableRowElement {
   line.append(name);
   if (!showCities) line.append(cell(row.sigla ?? "—"));
   line.append(cell(String(row.id), "code"));
+  if (showCities) {
+    const action = cell("");
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "row-link";
+    button.textContent = "Ver publicações";
+    button.setAttribute("aria-label", "Ver publicações de " + row.nome);
+    button.addEventListener("click", () => {
+      userSelected = true;
+      gazetteSearch.show({ code: String(row.id), name: row.nome }, button);
+    });
+    action.append(button);
+    line.append(action);
+  }
   return line;
 }
 
@@ -191,6 +207,7 @@ function renderResults() {
   element("search-label").textContent = showCities ? "Filtrar municípios" : "Filtrar estados";
   element("name-column").textContent = showCities ? "Município" : "Estado";
   element("uf-column").hidden = showCities;
+  element("gazette-column").hidden = !showCities;
   search.disabled = status !== "ready";
   results.setAttribute("aria-busy", String(status === "loading"));
 
@@ -270,6 +287,7 @@ function resetSearch() {
 }
 
 function changeState(uf: string) {
+  gazetteSearch.hide();
   userSelected = true;
   selectedState = uf;
   nationwide = false;

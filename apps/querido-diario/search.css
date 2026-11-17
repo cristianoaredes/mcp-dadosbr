@@ -1,0 +1,74 @@
+.gazette-search {
+  --gazette-bg: var(--color-background-primary, #fbfcfa);
+  --gazette-line: var(--color-border-primary, #c6d8cb);
+  --gazette-fg: var(--color-text-primary, #182e25);
+  --gazette-muted: var(--color-text-secondary, #476158);
+  --gazette-accent: #0e694b;
+  color: var(--gazette-fg);
+  background: var(--gazette-bg);
+  border: 1px solid var(--gazette-line);
+  border-radius: 14px;
+  padding: clamp(12px, 3vw, 24px);
+}
+
+:root[data-theme="dark"] .gazette-search {
+  --gazette-bg: var(--color-background-primary, #172b23);
+  --gazette-line: var(--color-border-primary, #526a5e);
+  --gazette-fg: var(--color-text-primary, #eef7f0);
+  --gazette-muted: var(--color-text-secondary, #b8cfc1);
+  --gazette-accent: #a1e4b8;
+}
+
+.gazette-search [hidden] { display: none !important; }
+
+.gazette-heading,
+.gazette-pagination {
+  display: flex;
+  gap: 12px;
+  align-items: start;
+  justify-content: space-between;
+}
+
+.gazette-heading h2 { font-size: 1.35rem; margin: 0; }
+.gazette-heading p { margin: 4px 0 12px; color: var(--gazette-muted); }
+
+.gazette-fields {
+  display: grid;
+  gap: 9px;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 140px), 1fr));
+  align-items: end;
+}
+
+.gazette-fields label {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--gazette-muted);
+  font-size: 0.86rem;
+  font-weight: 650;
+}
+
+.gazette-search :is(button, input) {
+  box-sizing: border-box;
+  min-height: 42px;
+  color: var(--gazette-fg);
+  background: var(--gazette-bg);
+  border: 1px solid var(--gazette-line);
+  border-radius: 8px;
+  padding: 7px 10px;
+  font: inherit;
+}
+
+.gazette-search input { width: 100%; min-width: 0; }
+.gazette-search button { cursor: pointer; }
+.gazette-search button:disabled { cursor: default; opacity: 0.55; }
+.gazette-search :focus-visible { outline: 2px solid var(--gazette-accent); outline-offset: 2px; }
+.gazette-search #gazette-submit { border-color: var(--gazette-accent); color: var(--gazette-accent); font-weight: 700; }
+.gazette-results { margin-top: 16px; }
+.gazette-results > p:empty { display: none; }
+.gazette-list { list-style: none; margin: 0; padding: 0; }
+.gazette-list li { border-top: 1px solid var(--gazette-line); padding: 11px 0; overflow-wrap: anywhere; }
+.gazette-list h3 { font-size: 1rem; margin: 0; }
+.gazette-list p { margin: 5px 0 8px; }
+.gazette-link-status { color: var(--gazette-muted); }
+.gazette-pagination { margin-top: 12px; align-items: center; flex-wrap: wrap; }
+.gazette-search footer { margin-top: 16px; color: var(--gazette-muted); font-size: 0.88rem; }
