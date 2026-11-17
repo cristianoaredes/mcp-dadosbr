@@ -1,0 +1,3 @@
+{"action": "Empacotar explorador IBGE, capability de recursos e fallback do CLI", "files": ["lib/core/mcp-server.ts", "lib/tools/government.ts", "apps/ibge/main.ts", "scripts/build-apps.mjs"], "gate_status": "flow", "step": 1, "ts": "2026-11-17T22:16:47Z", "type": "action"}
+{"action": "261 testes, pacote, recursos nos dois transportes e host visível com dados oficiais", "files": ["test/unit/ibge-app.test.ts", "test/integration/transports.mjs"], "gate_status": "flow", "step": 2, "ts": "2026-11-17T22:16:47Z", "type": "action"}
+{"action": "CI GitHub 44188716170, SHA de produto conferido em 22/24/26 na VPS e limpeza confirmada", "files": [], "gate_status": "flow", "step": 3, "ts": "2026-11-17T22:24:45Z", "type": "action"}

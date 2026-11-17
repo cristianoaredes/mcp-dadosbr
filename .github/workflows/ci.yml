@@ -1,46 +1,355 @@
-name: Validate IBGE MCP App
+name: CI/CD Pipeline
+
 on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  verify:
-    name: Verify IBGE MCP App (Node ${{ matrix.node }})
-    if: github.repository == 'cristianoaredes/mcp-dadosbr' && github.actor == 'cristianoaredes' && github.ref == 'refs/heads/codex/ci-tck-0001-ibge-app'
-    runs-on: [self-hosted, linux, x64, dadosbr-ubuntu-24.04, dadosbr-ibge-app-ci]
-    timeout-minutes: 8
+  test:
+    if: github.ref == 'refs/heads/main' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)
+    name: Test & Build
+    runs-on:
+      - self-hosted
+      - linux
+      - x64
+      - ${{ github.event_name == 'pull_request' && format('dadosbr-pr-{0}', github.run_id) || 'dadosbr-ubuntu-24.04' }}
+
     strategy:
-      fail-fast: false
       matrix:
-        node: [22.x, 24.x, 26.x]
+        node-version: [22.x, 24.x, 26.x]
+      fail-fast: false  # Continue testing other versions if one fails
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
         with:
           persist-credentials: false
-          ref: 4d31292b85b4fdedda9d75deb3a10bdc5719540f
-      - name: Confirm feature SHA
-        env:
-          FEATURE_SHA: 4d31292b85b4fdedda9d75deb3a10bdc5719540f
-        run: |
-          test "$(git rev-parse HEAD)" = "$FEATURE_SHA"
-          echo "Verified product SHA: $FEATURE_SHA"
-      - uses: actions/setup-node@v4
+
+      - name: Setup Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
         with:
-          node-version: ${{ matrix.node }}
-          cache: npm
-      - run: npm ci --no-audit --no-fund
-      - run: npm run build
-      - run: npm test
-      - run: npm run test:transport
-      - name: Check npm asset
+          node-version: ${{ matrix.node-version }}
+          cache: "npm"
+
+      - name: Cache TypeScript build
+        uses: actions/cache@v4
+        with:
+          path: |
+            build/
+            tsconfig.tsbuildinfo
+          key: ${{ runner.os }}-build-${{ matrix.node-version }}-${{ hashFiles('lib/**/*.ts', 'tsconfig.json') }}
+          restore-keys: |
+            ${{ runner.os }}-build-${{ matrix.node-version }}-
+            ${{ runner.os }}-build-
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build project
+        run: npm run build
+
+      - name: Run tests
+        run: npm test
+
+      - name: Test MCP stdio and HTTP/SSE
+        run: npm run test:transport
+
+      - name: Verify MCP App in npm package
         run: |
-          npm pack --dry-run --json --ignore-scripts | node -e '
-            const fs = require("node:fs");
-            const [pkg] = JSON.parse(fs.readFileSync(0, "utf8"));
-            const app = pkg.files.find(f => f.path === "build/lib/apps/ibge.html");
-            if (!app || app.size < 1000) process.exit(1);
-            console.log("PASS npm package includes", app.path, app.size, "bytes");
+          npm pack --dry-run --json | node -e '
+            const [pkg] = JSON.parse(require("node:fs").readFileSync(0, "utf8"))
+            const app = pkg.files.find(({ path }) => path === "build/lib/apps/ibge.html")
+            if (!app?.size) throw new Error("IBGE app missing from npm package")
+            console.log("Packaged IBGE app:", app.size, "bytes")
           '
-      - run: npm run build:worker
+
+  lint:
+    if: github.ref == 'refs/heads/main' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)
+    name: Code Quality
+    outputs:
+      package-version: ${{ steps.package.outputs.version }}
+    runs-on:
+      - self-hosted
+      - linux
+      - x64
+      - ${{ github.event_name == 'pull_request' && format('dadosbr-pr-{0}', github.run_id) || 'dadosbr-ubuntu-24.04' }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24.x"
+          cache: "npm"
+
+      - name: Cache TypeScript build
+        uses: actions/cache@v4
+        with:
+          path: |
+            build/
+            tsconfig.tsbuildinfo
+          key: ${{ runner.os }}-build-lint-${{ hashFiles('lib/**/*.ts', 'tsconfig.json') }}
+          restore-keys: |
+            ${{ runner.os }}-build-lint-
+            ${{ runner.os }}-build-
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check TypeScript
+        run: npx tsc --noEmit
+
+      - name: Read package version
+        id: package
+        run: node -p '"version=" + require("./package.json").version' >> "$GITHUB_OUTPUT"
+
+      - name: Check line count constraint
+        run: |
+          TARGET_FILE="lib/core/mcp-server.ts"
+          if [ ! -f "$TARGET_FILE" ]; then
+            echo "ℹ️ Skipping line count check - $TARGET_FILE not found"
+            exit 0
+          fi
+
+          LINE_COUNT=$(wc -l < "$TARGET_FILE")
+          echo "Current line count in $TARGET_FILE: $LINE_COUNT"
+          if [ "$LINE_COUNT" -gt 350 ]; then
+            echo "❌ $TARGET_FILE exceeds 350 lines ($LINE_COUNT lines)"
+            exit 1
+          else
+            echo "✅ $TARGET_FILE is within acceptable limits ($LINE_COUNT lines)"
+          fi
+
+  cloudflare:
+    if: github.ref == 'refs/heads/main' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)
+    name: Cloudflare Workers Build
+    runs-on:
+      - self-hosted
+      - linux
+      - x64
+      - ${{ github.event_name == 'pull_request' && format('dadosbr-pr-{0}', github.run_id) || 'dadosbr-ubuntu-24.04' }}
+    needs: [test]  # Removed lint dependency - can run in parallel
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24.x"
+          cache: "npm"
+
+      - name: Cache worker build
+        uses: actions/cache@v4
+        with:
+          path: |
+            build/
+            tsconfig.tsbuildinfo
+          key: ${{ runner.os }}-worker-build-${{ hashFiles('lib/**/*.ts', 'tsconfig.worker.json') }}
+          restore-keys: |
+            ${{ runner.os }}-worker-build-
+            ${{ runner.os }}-build-
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build for Cloudflare Workers
+        run: npm run build:worker
+
+      - name: Upload worker artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: worker-build
+          path: build/lib/workers/
+          retention-days: 1
+
+      - name: Check worker build output
+        run: |
+          if [ ! -f "build/lib/workers/worker.js" ]; then
+            echo "❌ Worker build failed - build/lib/workers/worker.js not found"
+            exit 1
+          fi
+
+          # Check if the worker file is not empty
+          if [ ! -s "build/lib/workers/worker.js" ]; then
+            echo "❌ Worker build failed - build/lib/workers/worker.js is empty"
+            exit 1
+          fi
+
+          echo "✅ Cloudflare Worker build successful"
+
+          # Show build size
+          WORKER_SIZE=$(wc -c < build/lib/workers/worker.js)
+          echo "Worker bundle size: ${WORKER_SIZE} bytes"
+
+      - name: Check worker bundle size
+        run: |
+          WORKER_FILE="build/lib/workers/worker.js"
+          if [ ! -f "$WORKER_FILE" ]; then
+            echo "⚠️ Worker file not found at $WORKER_FILE"
+            exit 0
+          fi
+
+          WORKER_SIZE=$(wc -c < "$WORKER_FILE")
+          MAX_SIZE=1048576  # 1MB in bytes
+          SIZE_MB=$(echo "scale=2; $WORKER_SIZE / 1048576" | bc)
+
+          echo "📦 Worker bundle size: ${SIZE_MB}MB ($WORKER_SIZE bytes)"
+
+          if [ $WORKER_SIZE -gt $MAX_SIZE ]; then
+            echo "❌ Worker exceeds Cloudflare's 1MB limit"
+            exit 1
+          else
+            echo "✅ Worker is within size limits"
+          fi
+
+  publish-dev:
+    name: Publish Development Version
+    runs-on: [self-hosted, linux, x64, dadosbr-ubuntu-24.04]
+    needs: [test, lint]  # Don't wait for cloudflare build
+    # Only publish on push to main (not PRs) and only if NPM_TOKEN is available
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'cristianoaredes/mcp-dadosbr'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24.x"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build project
+        run: npm run build
+
+      - name: Configure NPM authentication
+        run: |
+          if [ -z "$NPM_TOKEN" ]; then
+            echo "⚠️  NPM_TOKEN not available, skipping publication"
+            exit 0
+          fi
+          echo "//registry.npmjs.org/:_authToken=$NPM_TOKEN" > ~/.npmrc
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Check if version already published
+        id: check_version
+        run: |
+          PACKAGE_NAME="@aredes.me/mcp-dadosbr"
+          PACKAGE_VERSION=$(node -p "require('./package.json').version")
+
+          echo "📦 Checking if $PACKAGE_NAME@$PACKAGE_VERSION is already published..."
+
+          if npm view "$PACKAGE_NAME@$PACKAGE_VERSION" version 2>/dev/null; then
+            echo "ℹ️  Version $PACKAGE_VERSION already exists on NPM"
+            echo "published=true" >> $GITHUB_OUTPUT
+          else
+            echo "✅ Version $PACKAGE_VERSION not found on NPM, will publish"
+            echo "published=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Publish development version to NPM
+        if: steps.check_version.outputs.published == 'false'
+        run: |
+          PACKAGE_VERSION=$(node -p "require('./package.json').version")
+
+          echo "📦 Publishing development version $PACKAGE_VERSION to NPM..."
+
+          # Publish with 'dev' tag for development versions
+          npm publish --access public --tag dev
+
+          echo "✅ Development version published successfully"
+          echo "📦 Install with: npm install -g @aredes.me/mcp-dadosbr@dev"
+
+      - name: Verify development publication
+        if: steps.check_version.outputs.published == 'false'
+        run: |
+          PACKAGE_NAME="@aredes.me/mcp-dadosbr"
+          PACKAGE_VERSION=$(node -p "require('./package.json').version")
+
+          echo "⏳ Waiting for NPM registry to update..."
+          sleep 5
+
+          # Try to fetch the package info with dev tag
+          if npm view "$PACKAGE_NAME@dev" version > /dev/null 2>&1; then
+            echo "✅ Development version successfully published to NPM"
+            echo "📦 Install: npm install -g $PACKAGE_NAME@dev"
+            echo "📦 View: https://www.npmjs.com/package/$PACKAGE_NAME"
+          else
+            echo "⚠️  Development version may still be processing on NPM"
+          fi
+
+  summary:
+    name: CI Summary
+    runs-on:
+      - self-hosted
+      - linux
+      - x64
+      - ${{ github.event_name == 'pull_request' && format('dadosbr-pr-{0}', github.run_id) || 'dadosbr-ubuntu-24.04' }}
+    needs: [test, lint, cloudflare, publish-dev]
+    if: always() && (github.ref == 'refs/heads/main' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository))
+
+    steps:
+      - name: Generate CI summary
+        env:
+          PACKAGE_VERSION: ${{ needs.lint.outputs.package-version }}
+        run: |
+          echo "## 🔄 CI/CD Pipeline Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Test results
+          if [[ "${{ needs.test.result }}" == "success" ]]; then
+            echo "✅ **Tests**: All passed (Node.js 22.x, 24.x, 26.x)" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ **Tests**: Failed" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          # Lint results
+          if [[ "${{ needs.lint.result }}" == "success" ]]; then
+            echo "✅ **Code Quality**: Passed" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ **Code Quality**: Failed" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          # Cloudflare build results
+          if [[ "${{ needs.cloudflare.result }}" == "success" ]]; then
+            echo "✅ **Cloudflare Workers**: Build successful" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ **Cloudflare Workers**: Build failed" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          # Development publish results
+          if [[ "${{ needs.publish-dev.result }}" == "success" ]]; then
+            echo "✅ **NPM Dev Publish**: Published" >> $GITHUB_STEP_SUMMARY
+            echo "   - Install: \`npm install -g @aredes.me/mcp-dadosbr@dev\`" >> $GITHUB_STEP_SUMMARY
+          elif [[ "${{ needs.publish-dev.result }}" == "skipped" ]]; then
+            echo "⏭️  **NPM Dev Publish**: Skipped (no token or not main branch)" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ **NPM Dev Publish**: Failed" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "---" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Package Info:**" >> $GITHUB_STEP_SUMMARY
+          echo "- **Name**: \`@aredes.me/mcp-dadosbr\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Version**: ${PACKAGE_VERSION:-unavailable}" >> $GITHUB_STEP_SUMMARY
+          echo "- **NPM**: [View on NPM](https://www.npmjs.com/package/@aredes.me/mcp-dadosbr)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Cloudflare**: [Live Demo](https://mcp-dadosbr.aredes.me)" >> $GITHUB_STEP_SUMMARY
