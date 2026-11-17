@@ -47,11 +47,11 @@ Se você é um desenvolvedor brasileiro começando com o MCP DadosBR, recomendam
 
 ```bash
 # Clone o repositório
-git clone https://github.com/aredes-me/mcp-dadosbr.git
+git clone https://github.com/cristianoaredes/mcp-dadosbr.git
 cd mcp-dadosbr
 
 # Instale as dependências
-npm install
+npm ci
 
 # Execute em modo de desenvolvimento
 npm run dev

@@ -2,7 +2,7 @@
 
 ## Stack Principal
 
-- **Runtime:** Node.js 18+ / Cloudflare Workers
+- **Runtime:** Node.js 22.12+, 24 ou 26 / Cloudflare Workers
 - **Linguagem:** TypeScript 5.x
 - **Protocol:** Model Context Protocol (MCP) SDK 1.18.2
 
