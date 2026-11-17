@@ -1,3 +1,4 @@
 id,slug,title,status,priority,type,effort,source,reopened_count,rollback_commit,hotfix_for,escaped_defect,created_at,done_at
 TCK-0001,explorador-de-localidades-do-ibge-com-mcp-apps,Explorador de localidades do IBGE com MCP Apps,done,medium,feature,M,user,,,,,2026-11-17T22:10:09Z,
 TCK-0002,mcp-app-querido-diario-a-partir-de-municipio-do-ibge,MCP App Querido Diário a partir de município do IBGE,done,medium,feature,M,user,,,,,2026-11-17T22:48:22Z,
+TCK-0003,mcp-app-para-indicadores-do-banco-central,MCP App para indicadores do Banco Central,done,medium,feature,M,user,,,,,2026-11-17T23:32:11Z,
