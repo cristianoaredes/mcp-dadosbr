@@ -1,0 +1,31 @@
+{
+  "id": "RUN-20261117-221052-ibge-mcp-app",
+  "design": "DES-0001",
+  "ticket": "TCK-0001",
+  "started_at": "2026-11-17T22:10:52Z",
+  "started_by": "ops",
+  "environment": "dev",
+  "mode": "live",
+  "status": "completed",
+  "current_step": 3,
+  "total_steps": 3,
+  "ended_at": "2026-11-17T22:24:45.794036+00:00",
+  "result": "261 testes e protocolo MCP no SHA exato em Node 22, 24 e 26 na VPS. Navegação visível via AppBridge e IBGE real. Escopo UI: CLI.",
+  "loop_iterations": 0,
+  "attempt_count": 0,
+  "lessons_consulted": [],
+  "loop_cost_usd": null,
+  "cost_source": "unknown",
+  "loop_strategy": "default",
+  "context_peak": 0,
+  "final_judge_delta": 50,
+  "operator": "codex",
+  "warmup": false,
+  "final_judge_delta_source": "judge",
+  "lesson_utility": {
+    "utility": 0.0,
+    "n_lessons": 0,
+    "lessons_consulted": [],
+    "signal": "no-lessons"
+  }
+}

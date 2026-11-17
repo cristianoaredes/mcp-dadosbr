@@ -15,3 +15,9 @@ O snapshot inicial contém workflows de CI, release por tag e Cloudflare. As def
 As definições da branch usam `self-hosted`, `linux`, `x64` e `dadosbr-ubuntu-24.04`. O CI é elegível em push para `main` e disparo manual em `main`. PRs públicos ficam sem gatilho automático nesta configuração. A publicação de desenvolvimento continua exigindo push para a `main`. Cloudflare é elegível em `main` e o workflow de release continua por tag `v*`.
 
 A API do repositório continua retornando Actions desativado e nenhum runner registrado. O YAML fica pronto antes da ativação do ambiente.
+
+## CI do Explorador IBGE
+
+Actions foi habilitado depois do Bootstrap. O [primeiro CI na VPS](https://github.com/cristianoaredes/mcp-dadosbr/actions/runs/44178962531) concluiu com sucesso após adicionar `libatomic1` à imagem do runner.
+
+O CI de `main` usa a label `dadosbr-ubuntu-24.04`. PRs originados no próprio repositório solicitam instâncias efêmeras com a label `dadosbr-pr-<run_id>`. O supervisor deve registrar as instâncias do PR com essa label e as labels padrão de Linux x64. A label de `main` também é usada pelo deploy, então fica fora das instâncias do PR. O CI de PR executa a matriz Node 22/24/26, valida os dois transportes do CLI e verifica a presença do HTML do Explorador no pacote npm.
