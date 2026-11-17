@@ -201,6 +201,12 @@ Na linha do município no Explorador do IBGE, selecione **Ver publicações** pa
 
 O CLI publica o recurso da interface em stdio e HTTP/SSE. A ferramenta continua disponibilizando o JSON textual para clientes sem MCP Apps, inclusive no Worker.
 
+### Indicadores do Banco Central
+
+Em clientes com MCP Apps, `bacen_taxas` abre gráficos da meta Selic, do IPCA, do dólar e do euro de venda, e do CDI. Escolha um período de 30, 90 ou 365 dias, consulte a tabela e acesse os metadados oficiais da série no SGS. O painel indica unidade, frequência e última data de referência.
+
+A chamada com `indicador` e `ultimos` preserva a resposta JSON textual. O parâmetro opcional `periodo_dias` consulta o intervalo até a data atual em São Paulo. O App é oferecido pelo CLI em stdio e HTTP/SSE e o Worker atende em texto.
+
 ### Desenvolvimento e contribuição
 
 ```bash

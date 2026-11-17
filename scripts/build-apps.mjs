@@ -10,7 +10,7 @@ const [searchForm, searchCss] = await Promise.all([
 ]);
 await mkdir(output, { recursive: true });
 
-async function buildApp(name) {
+async function buildApp(name, includeGazette = false) {
   const app = new URL(`../apps/${name}/`, import.meta.url);
   const [template, ownCss, bundle] = await Promise.all([
     readFile(new URL("index.html", app), "utf8"),
@@ -26,8 +26,10 @@ async function buildApp(name) {
     }),
   ]);
   const script = bundle.outputFiles[0].text;
-  const css = ownCss + "\n" + searchCss;
-  if (["<!-- app-style -->", "<!-- app-script -->", "<!-- gazette-search -->"].some((marker) => !template.includes(marker))
+  const css = includeGazette ? ownCss + "\n" + searchCss : ownCss;
+  const markers = ["<!-- app-style -->", "<!-- app-script -->"];
+  if (includeGazette) markers.push("<!-- gazette-search -->");
+  if (markers.some((marker) => !template.includes(marker))
     || /<\/script/i.test(script) || /<\/style/i.test(css)) {
     throw new Error(`The ${name} app template and bundle must support inline assets`);
   }
@@ -37,4 +39,4 @@ async function buildApp(name) {
     .replace("<!-- app-script -->", () => `<script>${script}</script>`);
   await writeFile(new URL(`${name}.html`, output), html);
 }
-await Promise.all(["ibge", "querido-diario"].map(buildApp));
+await Promise.all([buildApp("ibge", true), buildApp("querido-diario", true), buildApp("bacen")]);
