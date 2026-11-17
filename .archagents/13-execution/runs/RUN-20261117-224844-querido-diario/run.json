@@ -1,0 +1,39 @@
+{
+  "id": "RUN-20261117-224844-querido-diario",
+  "design": "DES-0002",
+  "ticket": "TCK-0002",
+  "started_at": "2026-11-17T22:48:44Z",
+  "started_by": "ops",
+  "environment": "dev",
+  "mode": "live",
+  "status": "completed",
+  "current_step": 3,
+  "total_steps": 3,
+  "ended_at": "2026-11-17T22:58:24+00:00",
+  "result": "265 testes, ambos os recursos em stdio e HTTP/SSE, Worker build, navegador com AppBridge e verificação independente.",
+  "loop_iterations": 0,
+  "attempt_count": 0,
+  "lessons_consulted": [
+    "Instrumentos de ciclo precisam de smoke-test periodico: retire-artifact.py passa",
+    "A fronteira de publicação é os.replace; falha posterior preserva o recurso criad",
+    "Origem, lock, staging e destino de uma transação concorrente devem permanecer an"
+  ],
+  "loop_cost_usd": null,
+  "cost_source": "unknown",
+  "loop_strategy": "default",
+  "context_peak": 0,
+  "final_judge_delta": 50,
+  "operator": "codex",
+  "warmup": false,
+  "final_judge_delta_source": "judge",
+  "lesson_utility": {
+    "utility": 1.0,
+    "n_lessons": 3,
+    "lessons_consulted": [
+      "Instrumentos de ciclo precisam de smoke-test periodico: retire-artifact.py passa",
+      "A fronteira de publicação é os.replace; falha posterior preserva o recurso criad",
+      "Origem, lock, staging e destino de uma transação concorrente devem permanecer an"
+    ],
+    "signal": "computed"
+  }
+}

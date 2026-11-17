@@ -6,8 +6,8 @@ design: DES-0002
 ticket: TCK-0002
 approved_at: 2026-11-17T22:48:44Z
 approved_by: codex
-executed_at: null
-executed_runs: []
+executed_at: "2026-11-17T22:58:24+00:00"
+executed_runs: [RUN-20261117-224844-querido-diario]
 dry_run_supported: true
 total_steps: 3
 destructive_steps: 0
@@ -45,4 +45,4 @@ commit_message_format: "[TCK-0002] passo N/3: <titulo>"
 
 ## Log de execucoes
 
-- *(sem execucoes ainda)*
+- 2026-11-17T22:58:24+00:00 · RUN-20261117-224844-querido-diario · build, teste local e navegador aprovados.
