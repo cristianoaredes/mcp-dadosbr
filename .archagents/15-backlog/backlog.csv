@@ -1,0 +1,2 @@
+id,slug,title,status,priority,type,effort,source,reopened_count,rollback_commit,hotfix_for,escaped_defect,created_at,done_at
+TCK-0001,explorador-de-localidades-do-ibge-com-mcp-apps,Explorador de localidades do IBGE com MCP Apps,done,medium,feature,M,user,,,,,2026-11-17T22:10:09Z,

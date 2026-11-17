@@ -173,5 +173,70 @@
         "lines_cited": "L47-L62"
       }
     ]
-  }
+  },
+  "metrics": {
+    "total_tickets": 1,
+    "done_tickets": 1,
+    "archived_tickets": 0,
+    "avg_cycle_time": 0.25,
+    "avg_cycle_time_coverage": {
+      "measured": 1,
+      "total": 1,
+      "ratio": 1.0
+    },
+    "success_rate": 0.0,
+    "success_rate_coverage": {
+      "measured": 0,
+      "total": 0,
+      "discarded_non_outcome": 0,
+      "ratio": 0.0,
+      "source": "learning_log + taxonomia TCK-0820"
+    },
+    "status_breakdown": {
+      "done": 1
+    }
+  },
+  "active_runs": [],
+  "malformed_runs": [],
+  "noncanonical_runs": [],
+  "zombie_runs": [],
+  "zombie_runs_coverage": "ok",
+  "health_score": 60.0,
+  "health_score_coverage": {
+    "formula": "ad-hoc: 0.4*backlog + 0.4*recent_success + 0.2*drift - zombie_debt_penalty (cap 20, ver TCK-2693)",
+    "approved_alternative": "lib/health_rubric (SPC-0086) — zero chamadores; trocar exige ADR",
+    "components": {
+      "backlog_health": {
+        "value": 100.0,
+        "weight": 0.4,
+        "measured": 1,
+        "total": 1,
+        "ratio": 1.0
+      },
+      "recent_success": {
+        "value": 0.0,
+        "weight": 0.4,
+        "measured": 0,
+        "total": 0,
+        "discarded_non_outcome": 0,
+        "ratio": 0.0,
+        "source": "learning_log (últimos 10) + taxonomia TCK-0820"
+      },
+      "drift_component": {
+        "value": 100,
+        "weight": 0.2,
+        "drift_entries": 0,
+        "source": "count_drift_entries()"
+      }
+    },
+    "zombie_debt_penalty": {
+      "value": 0.0,
+      "zombie_runs": 0,
+      "cap": 20.0,
+      "rate_per_run": 1.0,
+      "coverage": "ok",
+      "source": "zombie-run-scan.py (TCK-1447/TCK-2477) via .archagents/.zombie-runs-baseline.json"
+    }
+  },
+  "last_updated": "2026-11-17T22:25:25.227296Z"
 }
