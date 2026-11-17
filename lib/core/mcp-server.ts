@@ -13,19 +13,33 @@ import { TOOL_DEFINITIONS, executeTool, resetMetrics } from "./tools.js";
 import { Cache, ApiConfig } from "../types/index.js";
 import { formatErrorResponse } from "../shared/errors.js";
 
-const ibgeTool = "ibge_localidades";
 const appMimeType = "text/html;profile=mcp-app";
-const ibgeApp = {
-  uri: "ui://dadosbr/ibge-localidades.html",
-  name: "Explorador de localidades do IBGE",
-  description: "Explore regiões, estados e municípios e confira a fonte oficial.",
-  mimeType: appMimeType,
-  _meta: { ui: { prefersBorder: true } },
-};
-const ibgeAppFile = new URL(
-  import.meta.url.endsWith(".ts") ? "../../build/lib/apps/ibge.html" : "../apps/ibge.html",
-  import.meta.url,
-);
+const apps = [
+  {
+    tool: "ibge_localidades",
+    file: "ibge.html",
+    id: "ibge-localidades",
+    title: "Explorador de localidades do IBGE",
+    description: "Explore regiões, estados e municípios e confira a fonte oficial.",
+  },
+  {
+    tool: "querido_diario",
+    file: "querido-diario.html",
+    id: "querido-diario",
+    title: "Querido Diário",
+    description: "Pesquise publicações nos diários oficiais municipais.",
+  },
+].map(({ tool, file, id, title, description }) => ({
+  tool,
+  file: new URL((import.meta.url.endsWith(".ts") ? "../../build/lib/apps/" : "../apps/") + file, import.meta.url),
+  resource: {
+    uri: `ui://dadosbr/${id}.html`,
+    name: title,
+    description,
+    mimeType: appMimeType,
+    _meta: { ui: { prefersBorder: true } },
+  },
+}));
 
 export interface MCPServerOptions {
   apiConfig: ApiConfig;
@@ -45,25 +59,27 @@ export function createMCPServer(options: MCPServerOptions): Server {
 
   // Register list tools handler
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
-    tools: TOOL_DEFINITIONS.map((tool) => tool.name === ibgeTool
-      ? { ...tool, _meta: { ui: { resourceUri: ibgeApp.uri } } }
-      : tool),
+    tools: TOOL_DEFINITIONS.map((tool) => {
+      const app = apps.find((entry) => entry.tool === tool.name);
+      return app ? { ...tool, _meta: { ui: { resourceUri: app.resource.uri } } } : tool;
+    }),
   }));
 
   server.setRequestHandler(ListResourcesRequestSchema, async () => ({
-    resources: [ibgeApp],
+    resources: apps.map(({ resource }) => resource),
   }));
 
   server.setRequestHandler(ReadResourceRequestSchema, async ({ params }) => {
-    if (params.uri !== ibgeApp.uri) {
+    const app = apps.find(({ resource }) => resource.uri === params.uri);
+    if (!app) {
       throw new McpError(ErrorCode.InvalidParams, "Unknown resource URI");
     }
 
     return { contents: [{
-      uri: ibgeApp.uri,
-      mimeType: ibgeApp.mimeType,
-      text: await readFile(ibgeAppFile, "utf8"),
-      _meta: ibgeApp._meta,
+      uri: app.resource.uri,
+      mimeType: app.resource.mimeType,
+      text: await readFile(app.file, "utf8"),
+      _meta: app.resource._meta,
     }] };
   });
 
@@ -79,11 +95,15 @@ export function createMCPServer(options: MCPServerOptions): Server {
         const appMimeTypes = appCapability && "mimeTypes" in appCapability
           ? appCapability.mimeTypes
           : undefined;
-        const structuredContent = name === ibgeTool && result.source
-          && Array.isArray(appMimeTypes) && appMimeTypes.includes(appMimeType)
-          && Array.isArray(result.data)
-          ? { items: result.data, source: result.source }
-          : undefined;
+        let structuredContent;
+        if (result.source && Array.isArray(appMimeTypes) && appMimeTypes.includes(appMimeType)) {
+          if (name === "ibge_localidades" && Array.isArray(result.data)) {
+            structuredContent = { items: result.data, source: result.source };
+          }
+          if (name === "querido_diario" && result.data && typeof result.data === "object" && !Array.isArray(result.data)) {
+            structuredContent = { ...result.data, provenance: result.source };
+          }
+        }
         return {
           ...(structuredContent && { structuredContent }),
           content: [

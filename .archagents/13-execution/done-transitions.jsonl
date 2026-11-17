@@ -1,1 +1,2 @@
 {"forced": false, "from": "verifying", "lock": {"freshness": "fresh", "passes": true, "updated_at": "2026-11-17T22:22:41Z", "updated_by": "criteria-check"}, "ticket": "TCK-0001", "to": "done", "ts": "2026-11-17T22:25:24Z", "writer": "transition_ticket"}
+{"forced": false, "from": "verifying", "lock": {"freshness": "fresh", "passes": true, "updated_at": "2026-11-17T22:58:50Z", "updated_by": "criteria-check"}, "ticket": "TCK-0002", "to": "done", "ts": "2026-11-17T22:59:24Z", "writer": "transition_ticket"}

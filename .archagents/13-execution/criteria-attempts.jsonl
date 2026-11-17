@@ -1,1 +1,5 @@
 {"ts": "2026-11-17T22:22:41Z", "ticket": "TCK-0001", "verdict": "pass", "passed": 2, "total": 2}
+{"ts": "2026-11-17T22:53:25Z", "ticket": "TCK-0002", "verdict": "fail", "passed": 0, "total": 2, "failed_checks": ["npm run build && npm test && npm run test:transport", "npm run build:worker"]}
+{"ts": "2026-11-17T22:53:38Z", "ticket": "TCK-0002", "verdict": "pass", "passed": 2, "total": 2}
+{"ts": "2026-11-17T22:57:02Z", "ticket": "TCK-0002", "verdict": "pass", "passed": 2, "total": 2}
+{"ts": "2026-11-17T22:58:50Z", "ticket": "TCK-0002", "verdict": "pass", "passed": 2, "total": 2}

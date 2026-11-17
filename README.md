@@ -195,6 +195,12 @@ Em hosts compatíveis com [MCP Apps](https://modelcontextprotocol.io/extensions/
 
 O CLI oferece a interface por stdio e HTTP/SSE. A resposta JSON textual continua disponível em ambos. O Worker mantém a interface textual existente neste piloto. O recurso HTML autônomo é gerado pelo build e segue no pacote npm.
 
+### Diários oficiais municipais
+
+Na linha do município no Explorador do IBGE, selecione **Ver publicações** para consultar edições recentes no Querido Diário. Filtre por termo e período e abra a edição na fonte de arquivos do provedor. Também é possível chamar `querido_diario` diretamente com o código IBGE. A disponibilidade e a cobertura das publicações dependem da [API do Querido Diário](https://docs.queridodiario.ok.org.br/pt-br/latest/utilizando/api-publica.html).
+
+O CLI publica o recurso da interface em stdio e HTTP/SSE. A ferramenta continua disponibilizando o JSON textual para clientes sem MCP Apps, inclusive no Worker.
+
 ### Desenvolvimento e contribuição
 
 ```bash

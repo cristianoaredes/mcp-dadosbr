@@ -1,0 +1,21 @@
+:root {
+  color-scheme: light;
+  --canvas: #f3f6f3;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --canvas: #13201a;
+}
+
+body {
+  margin: 0;
+  background: var(--color-background-primary, var(--canvas));
+  font: 15px/1.5 system-ui, sans-serif;
+}
+
+.gazette-standalone {
+  padding: clamp(10px, 3vw, 26px);
+  max-width: 1040px;
+  margin: 0 auto;
+}
