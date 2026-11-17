@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Localidades do Brasil</title>
+  <!-- app-style -->
+</head>
+<body>
+  <main id="explorer" class="explorer">
+    <header class="hero">
+      <p class="eyebrow"><span class="marker" aria-hidden="true"></span> DadosBR · IBGE</p>
+      <h1>Localidades do Brasil</h1>
+      <p>Explore regiões, estados e municípios.</p>
+    </header>
+
+    <div class="panel">
+      <div class="filters" role="group" aria-label="Filtros de localidades">
+        <div class="field">
+          <label for="region">Região</label>
+          <select id="region" disabled>
+            <option value="">Todas as regiões</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="state">Estado (UF)</label>
+          <select id="state" disabled>
+            <option value="">Selecione um estado</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="municipality-search" id="search-label">Filtrar estados</label>
+          <input id="municipality-search" type="search" placeholder="Nome ou código IBGE" autocomplete="off" disabled>
+        </div>
+      </div>
+
+      <section class="results" aria-labelledby="results-heading" id="results" aria-busy="true">
+        <div class="results-heading">
+          <h2 id="results-heading">Estados</h2>
+          <p id="results-count" aria-live="polite"></p>
+        </div>
+        <div id="result-message" class="message">
+          <p id="results-status" role="status">Conectando ao servidor de localidades…</p>
+          <button type="button" id="retry" hidden>Tentar novamente</button>
+        </div>
+        <table id="localities" hidden aria-labelledby="results-heading">
+          <thead>
+            <tr>
+              <th id="name-column" scope="col">Estado</th>
+              <th id="uf-column" scope="col">UF</th>
+              <th class="code" scope="col">Código IBGE</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+        <nav id="pagination" class="pagination" aria-label="Páginas de localidades" hidden>
+          <button type="button" id="previous-page">Anterior</button>
+          <span id="page-label"></span>
+          <button type="button" id="next-page">Próxima</button>
+        </nav>
+      </section>
+
+      <footer class="provenance">
+        <button type="button" id="source-link">Fonte oficial · IBGE <span aria-hidden="true">↗</span></button>
+        <p id="source-date"></p>
+        <p id="source-status" class="source-status" role="status" hidden></p>
+      </footer>
+    </div>
+  </main>
+  <!-- app-script -->
+</body>
+</html>

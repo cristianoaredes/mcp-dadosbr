@@ -37,6 +37,7 @@ export interface LookupResult {
   ok: boolean;
   data?: unknown;
   error?: string;
+  source?: { url: string; fetchedAt: string };
 }
 
 // Metrics tracking

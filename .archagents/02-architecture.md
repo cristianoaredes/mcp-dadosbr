@@ -30,3 +30,7 @@ sequenceDiagram
 - `lib/core/mcp-server.ts:L22-L64`
 - `lib/workers/worker.ts:L68-L92`
 - `lib/tools/government.ts:L11-L32`
+
+## Explorador do IBGE no CLI
+
+`lib/core/mcp-server.ts` publica um recurso MCP Apps `ui://` associado à ferramenta `ibge_localidades`. O mesmo servidor atende stdio e HTTP/SSE. O build em `scripts/build-apps.mjs` gera o HTML autônomo distribuído com o pacote. A UI em `apps/ibge/main.ts` consulta a ferramenta pelo host. O Worker tem registro próprio e segue com resultado textual.

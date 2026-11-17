@@ -16,7 +16,7 @@
   ],
   "scripts": {
     "dev": "tsx lib/adapters/cli.ts",
-    "build": "tsc",
+    "build": "tsc && npm run build:apps",
     "build:worker": "tsc -p tsconfig.worker.json",
     "start": "node build/lib/adapters/cli.js",
     "test": "vitest run",
@@ -41,7 +41,9 @@
     "release:major": "standard-version --release-as major",
     "release:patch": "standard-version --release-as patch",
     "release:dry-run": "standard-version --dry-run",
-    "test:transport": "node test/integration/transports.mjs"
+    "test:transport": "node test/integration/transports.mjs",
+    "predev": "npm run build:apps",
+    "build:apps": "node scripts/build-apps.mjs"
   },
   "keywords": [
     "mcp",
@@ -77,7 +79,7 @@
   },
   "homepage": "https://github.com/cristianoaredes/mcp-dadosbr#readme",
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.21.1",
+    "@modelcontextprotocol/sdk": "^1.32.2",
     "@smithery/sdk": "^1.7.4",
     "agents": "^0.2.21",
     "async-mutex": "^0.5.0",
@@ -89,10 +91,12 @@
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20250927.0",
+    "@modelcontextprotocol/ext-apps": "1.7.5",
     "@types/express": "^4.17.21",
     "@types/node": "^22.0.0",
     "@vitest/ui": "^4.0.8",
     "c8": "^9.0.0",
+    "esbuild": "0.25.10",
     "msw": "^2.0.0",
     "standard-version": "^9.5.0",
     "tsx": "^4.0.0",

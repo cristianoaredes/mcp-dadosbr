@@ -23,13 +23,17 @@ async function executeIBGE(args: IBGEArgs): Promise<LookupResult> {
         case "municipios": url = `${IBGE_BASE}/municipios?orderBy=nome`; break;
         case "municipios_por_uf":
             if (!args.uf) return { ok: false, error: "UF is required for municipios_por_uf" };
-            url = `${IBGE_BASE}/estados/${args.uf}/municipios?orderBy=nome`; break;
+            url = `${IBGE_BASE}/estados/${encodeURIComponent(args.uf)}/municipios?orderBy=nome`; break;
         case "regioes": url = `${IBGE_BASE}/regioes`; break;
         default: return { ok: false, error: `Unknown tipo: ${args.tipo}` };
     }
     const result = await httpJson(url);
     if (!result.ok) return { ok: false, error: result.error || "IBGE API error" };
-    return { ok: true, data: result.data };
+    return {
+        ok: true,
+        data: result.data,
+        source: { url, fetchedAt: new Date().toISOString() },
+    };
 }
 
 registerTool({
