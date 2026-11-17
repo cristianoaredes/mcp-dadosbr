@@ -184,7 +184,7 @@ Todas as ferramentas sem "API Key" na tabela funcionam sem nenhuma chave.
 
 ### Requisitos
 
-- **Node.js 18+**
+- **Node.js 22.12+, 24 ou 26**
 - Chaves de API opcionais conforme tabela acima
 
 ---
@@ -194,9 +194,10 @@ Todas as ferramentas sem "API Key" na tabela funcionam sem nenhuma chave.
 ```bash
 git clone https://github.com/cristianoaredes/mcp-dadosbr.git
 cd mcp-dadosbr
-npm install
+npm ci
 npm run build
 npm test
+npm run test:transport
 ```
 
 ---
@@ -284,7 +285,7 @@ claude mcp add --transport stdio dadosbr \
 
 ### Requirements
 
-- **Node.js 18+**
+- **Node.js 22.12+, 24, or 26**
 - Optional API keys depending on which tools you need (see table below)
 
 ### Environment Variables
@@ -331,7 +332,7 @@ Then verify lawyer "João Silva" with oab_advogado in OAB/SP.
 ### Stats
 
 - **23 tools** · **257 tests** (100% passing) · **64 Google Dork templates** · **10 OSINT categories**
-- TypeScript strict mode · Node.js 18+ · Vitest · Express 5
+- TypeScript strict mode · Node.js 22.12+, 24, or 26 · Vitest · Express 5
 - Circuit breaker, LRU cache, request deduplication built-in
 
 ### Architecture overview
@@ -360,9 +361,10 @@ lib/
 ```bash
 git clone https://github.com/cristianoaredes/mcp-dadosbr.git
 cd mcp-dadosbr
-npm install
+npm ci
 npm run build
 npm test
+npm run test:transport
 ```
 
 ### License
