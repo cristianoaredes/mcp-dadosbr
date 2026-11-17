@@ -5,21 +5,41 @@
 import { registerTool } from "../core/registry.js";
 import { httpJson } from "../core/http-client.js";
 import { LookupResult } from "../types/index.js";
+import { BACEN_PERIODS, BACEN_SERIES, bacenWindow, isBacenIndicator, isBacenPeriod } from "../shared/bacen.js";
+import type { BacenIndicator, BacenPeriod } from "../shared/bacen.js";
 
 // ─── Banco Central ──────────────────────────────────────────────────────────
 
 const BACEN_API = "https://api.bcb.gov.br/dados/serie/bcdata.sgs";
-const BACEN_SERIES: Record<string, number> = { selic: 432, ipca: 433, dolar: 1, euro: 21619, cdi: 12 };
-
-interface BacenArgs { indicador: "selic" | "ipca" | "dolar" | "euro" | "cdi"; ultimos?: number; }
+interface BacenArgs { indicador: BacenIndicator; ultimos?: number; periodo_dias?: BacenPeriod; }
 
 async function executeBacen(args: BacenArgs): Promise<LookupResult> {
-    const { indicador, ultimos = 10 } = args;
-    const serieId = BACEN_SERIES[indicador];
-    if (!serieId) return { ok: false, error: `Unknown indicator: ${indicador}. Valid: selic, ipca, dolar, euro, cdi` };
+    const { indicador, ultimos = 10, periodo_dias } = args;
+    if (!isBacenIndicator(indicador)) return { ok: false, error: `Unknown indicator: ${indicador}. Valid: selic, ipca, dolar, euro, cdi` };
+    if (periodo_dias !== undefined && !isBacenPeriod(periodo_dias)) {
+        return { ok: false, error: "periodo_dias must be 30, 90 or 365" };
+    }
+    const serieId = BACEN_SERIES[indicador].id;
+    const window = periodo_dias === undefined ? undefined : bacenWindow(periodo_dias);
+    const query = new URLSearchParams({ formato: "json" });
+    if (window) {
+        query.set("dataInicial", window.start);
+        query.set("dataFinal", window.end);
+    }
+    const path = window ? "dados" : `dados/ultimos/${encodeURIComponent(ultimos)}`;
+    const url = `${BACEN_API}.${serieId}/${path}?${query}`;
     try {
-        const result = await httpJson(`${BACEN_API}.${serieId}/dados/ultimos/${ultimos}?formato=json`);
-        if (result.ok) return { ok: true, data: { indicador, serie_id: serieId, ultimos, results: result.data, source: "Banco Central do Brasil — SGS" } };
+        const result = await httpJson(url);
+        if (result.ok) return {
+            ok: true,
+            data: {
+                indicador, serie_id: serieId,
+                ...(window ? { periodo_dias, data_inicial: window.start, data_final: window.end } : { ultimos }),
+                results: result.data,
+                source: "Banco Central do Brasil — SGS",
+            },
+            source: { url, fetchedAt: new Date().toISOString() },
+        };
         return { ok: false, error: `Banco Central API error: ${result.error}` };
     } catch (err) {
         return { ok: false, error: `Banco Central error: ${err instanceof Error ? err.message : String(err)}` };
@@ -34,8 +54,9 @@ No API key required. Returns time series data.`,
     inputSchema: {
         type: "object",
         properties: {
-            indicador: { type: "string", enum: ["selic", "ipca", "dolar", "euro", "cdi"], description: "Financial indicator" },
+            indicador: { type: "string", enum: Object.keys(BACEN_SERIES), description: "Financial indicator" },
             ultimos: { type: "number", description: "Number of recent data points (default: 10)", default: 10 },
+            periodo_dias: { type: "integer", enum: [...BACEN_PERIODS], description: "Calendar-day window through today in São Paulo. Overrides ultimos when supplied." },
         },
         required: ["indicador"],
     },

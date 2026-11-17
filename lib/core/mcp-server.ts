@@ -29,6 +29,13 @@ const apps = [
     title: "Querido Diário",
     description: "Pesquise publicações nos diários oficiais municipais.",
   },
+  {
+    tool: "bacen_taxas",
+    file: "bacen.html",
+    id: "banco-central",
+    title: "Indicadores do Banco Central",
+    description: "Consulte séries históricas de juros, inflação e câmbio.",
+  },
 ].map(({ tool, file, id, title, description }) => ({
   tool,
   file: new URL((import.meta.url.endsWith(".ts") ? "../../build/lib/apps/" : "../apps/") + file, import.meta.url),
@@ -100,7 +107,8 @@ export function createMCPServer(options: MCPServerOptions): Server {
           if (name === "ibge_localidades" && Array.isArray(result.data)) {
             structuredContent = { items: result.data, source: result.source };
           }
-          if (name === "querido_diario" && result.data && typeof result.data === "object" && !Array.isArray(result.data)) {
+          if ((name === "querido_diario" || name === "bacen_taxas")
+            && result.data && typeof result.data === "object" && !Array.isArray(result.data)) {
             structuredContent = { ...result.data, provenance: result.source };
           }
         }
