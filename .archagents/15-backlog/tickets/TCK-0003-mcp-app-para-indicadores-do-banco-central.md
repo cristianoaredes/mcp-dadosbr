@@ -5,8 +5,8 @@ title: "MCP App para indicadores do Banco Central"
 source: user
 created_at: 2026-11-17T23:32:11Z
 created_by: ops
-updated_at: 2026-11-17T23:33:00Z
-status: executing
+updated_at: 2026-11-17T23:40:40Z
+status: done
 severity: medium
 category: feature
 effort: M
@@ -18,7 +18,8 @@ linked_designs:
   - DES-0003
 linked_runs:
   - RUN-20261117-233225-bacen
-linked_verifications: []
+linked_verifications:
+  - VER-20261117-234005-tck-0003
 linked_docs: []
 external_refs: []
 external_sync: []
@@ -52,3 +53,5 @@ test/integration/transports.mjs:57 só admite os recursos IBGE e Querido Diário
 - 2026-11-17T23:32:24Z - **triaged** - App de séries oficiais, compatibilidade textual e CI na VPS [depth_decision do routing-classifier: workflow lightweight, design lightweight, verify completo]
 - 2026-11-17T23:33:00Z - **designed** - Séries independentes com unidade, gráficos históricos e janela oficial
 - 2026-11-17T23:33:00Z - **executing** - Construir UI e contrato opcional de período
+- 2026-11-17T23:40:05Z - **verifying** - Candidato exercitado com cinco séries reais, protocolo, pacote e Worker
+- 2026-11-17T23:40:40Z - **done** - Critérios, prova no host e P10 concluídos; CI remoto é condição do merge

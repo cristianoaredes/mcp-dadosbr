@@ -1,0 +1,39 @@
+{
+  "id": "RUN-20261117-233225-bacen",
+  "design": "DES-0003",
+  "ticket": "TCK-0003",
+  "started_at": "2026-11-17T23:32:25Z",
+  "started_by": "ops",
+  "environment": "dev",
+  "mode": "live",
+  "status": "completed",
+  "current_step": 3,
+  "total_steps": 3,
+  "ended_at": "2026-11-17T23:40:05+00:00",
+  "result": "274 testes, três recursos MCP em stdio e HTTP/SSE, build Worker, cinco séries reais exibidas no Chrome via AppBridge.",
+  "loop_iterations": 0,
+  "attempt_count": 0,
+  "lessons_consulted": [
+    "Instrumentos de ciclo precisam de smoke-test periodico: retire-artifact.py passa",
+    "A fronteira de publicação é os.replace; falha posterior preserva o recurso criad",
+    "Origem, lock, staging e destino de uma transação concorrente devem permanecer an"
+  ],
+  "loop_cost_usd": null,
+  "cost_source": "unknown",
+  "loop_strategy": "default",
+  "context_peak": 0,
+  "final_judge_delta": 50,
+  "operator": "codex",
+  "warmup": false,
+  "final_judge_delta_source": "judge",
+  "lesson_utility": {
+    "utility": 1.0,
+    "n_lessons": 3,
+    "lessons_consulted": [
+      "Instrumentos de ciclo precisam de smoke-test periodico: retire-artifact.py passa",
+      "A fronteira de publicação é os.replace; falha posterior preserva o recurso criad",
+      "Origem, lock, staging e destino de uma transação concorrente devem permanecer an"
+    ],
+    "signal": "computed"
+  }
+}
