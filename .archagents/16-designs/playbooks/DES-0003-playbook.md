@@ -6,8 +6,8 @@ design: DES-0003
 ticket: TCK-0003
 approved_at: 2026-11-17T23:32:25Z
 approved_by: codex
-executed_at: null
-executed_runs: []
+executed_at: "2026-11-17T23:40:05+00:00"
+executed_runs: [RUN-20261117-233225-bacen]
 dry_run_supported: true
 total_steps: 3
 destructive_steps: 0
@@ -45,4 +45,4 @@ commit_message_format: "[TCK-0003] passo N/3: <titulo>"
 
 ## Log de execucoes
 
-- *(sem execucoes ainda)*
+- 2026-11-17T23:40:05+00:00 · RUN-20261117-233225-bacen · SGS real e checagens locais aprovados.
