@@ -3,13 +3,13 @@ name: CI/CD Pipeline
 on:
   push:
     branches: [main]
-  pull_request:
-    branches: [main]
+  workflow_dispatch:
 
 jobs:
   test:
+    if: github.ref == 'refs/heads/main'
     name: Test & Build
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, dadosbr-ubuntu-24.04]
 
     strategy:
       matrix:
@@ -50,8 +50,9 @@ jobs:
         run: npm run test:transport
 
   lint:
+    if: github.ref == 'refs/heads/main'
     name: Code Quality
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, dadosbr-ubuntu-24.04]
 
     steps:
       - name: Checkout code
@@ -98,8 +99,9 @@ jobs:
           fi
 
   cloudflare:
+    if: github.ref == 'refs/heads/main'
     name: Cloudflare Workers Build
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, dadosbr-ubuntu-24.04]
     needs: [test]  # Removed lint dependency - can run in parallel
 
     steps:
@@ -178,7 +180,7 @@ jobs:
 
   publish-dev:
     name: Publish Development Version
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, dadosbr-ubuntu-24.04]
     needs: [test, lint]  # Don't wait for cloudflare build
     # Only publish on push to main (not PRs) and only if NPM_TOKEN is available
     if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'cristianoaredes/mcp-dadosbr'
@@ -258,9 +260,9 @@ jobs:
 
   summary:
     name: CI Summary
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, dadosbr-ubuntu-24.04]
     needs: [test, lint, cloudflare, publish-dev]
-    if: always()
+    if: always() && github.ref == 'refs/heads/main'
 
     steps:
       - name: Generate CI summary

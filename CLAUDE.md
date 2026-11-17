@@ -1,3 +1,7 @@
+# Governança codebase-ops
+
+Leia [AGENTS.md](AGENTS.md) e o [índice do projeto](.archagents/README.md) antes de executar ações.
+
 # CLAUDE.md
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.

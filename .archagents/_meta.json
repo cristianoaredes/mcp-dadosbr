@@ -1,0 +1,177 @@
+{
+  "version": "1.0",
+  "generated_at": "2026-11-17T21:01:25.364842+00:00",
+  "bootstrapped_at": "2026-11-17T21:01:25.364842+00:00",
+  "generator": "codebase-ops-bootstrap",
+  "project_name": "mcp-dadosbr",
+  "stack": "TypeScript / Node.js / MCP",
+  "baseline_commit": "037dae4cb3eb1ba7aee5b8241e88a0052d3a178f",
+  "autonomy_level": "L2",
+  "sources": {
+    ".archagents/00-overview.md": [
+      {
+        "path": "package.json",
+        "sha1": "c60836728befa1ef0ef41ac41000463625ed6ef2",
+        "lines_cited": "L1-L37"
+      },
+      {
+        "path": "package.json",
+        "sha1": "c60836728befa1ef0ef41ac41000463625ed6ef2",
+        "lines_cited": "L98-L109"
+      }
+    ],
+    ".archagents/01-business-domain.md": [
+      {
+        "path": "lib/tools/core.ts",
+        "sha1": "ff910375d0364d73c7d63471837a753432e60bd2",
+        "lines_cited": "L45-L77"
+      },
+      {
+        "path": "lib/tools/government.ts",
+        "sha1": "4bc9cbf6da27885cc687465a30b4e32557c975f7",
+        "lines_cited": "L19-L55"
+      },
+      {
+        "path": "lib/tools/financial.ts",
+        "sha1": "f14cfc6fb8a3b383ce799da495918e8804dc2b34",
+        "lines_cited": "L13-L43"
+      }
+    ],
+    ".archagents/02-architecture.md": [
+      {
+        "path": "lib/adapters/cli.ts",
+        "sha1": "6e8fbe9e784b951ee6a829874b8eabbe2df76127",
+        "lines_cited": "L166-L245"
+      },
+      {
+        "path": "lib/core/mcp-server.ts",
+        "sha1": "5b0d59502859793866e560922d51ece5aea4db89",
+        "lines_cited": "L22-L64"
+      },
+      {
+        "path": "lib/workers/worker.ts",
+        "sha1": "fb988b445ab0f5dd36034eac55a81f3b8853a8e3",
+        "lines_cited": "L68-L92"
+      },
+      {
+        "path": "lib/tools/government.ts",
+        "sha1": "4bc9cbf6da27885cc687465a30b4e32557c975f7",
+        "lines_cited": "L11-L32"
+      }
+    ],
+    ".archagents/03-modules.md": [
+      {
+        "path": "lib/tools/index.ts",
+        "sha1": "1b2d9592886398b0e75d3ff69cf3f2906a14d494",
+        "lines_cited": "L1-L19"
+      },
+      {
+        "path": "lib/core/registry.ts",
+        "sha1": "db162d0c4758f2affc982fa95296f0cf57f1d665",
+        "lines_cited": "L8-L46"
+      },
+      {
+        "path": "lib/adapters/cli.ts",
+        "sha1": "6e8fbe9e784b951ee6a829874b8eabbe2df76127",
+        "lines_cited": "L1-L18"
+      },
+      {
+        "path": "lib/workers/worker.ts",
+        "sha1": "fb988b445ab0f5dd36034eac55a81f3b8853a8e3",
+        "lines_cited": "L63-L92"
+      }
+    ],
+    ".archagents/04-data-model.md": [
+      {
+        "path": "lib/core/registry.ts",
+        "sha1": "db162d0c4758f2affc982fa95296f0cf57f1d665",
+        "lines_cited": "L8-L30"
+      },
+      {
+        "path": "lib/core/mcp-server.ts",
+        "sha1": "5b0d59502859793866e560922d51ece5aea4db89",
+        "lines_cited": "L28-L65"
+      },
+      {
+        "path": "lib/tools/government.ts",
+        "sha1": "4bc9cbf6da27885cc687465a30b4e32557c975f7",
+        "lines_cited": "L35-L55"
+      }
+    ],
+    ".archagents/05-integrations.md": [
+      {
+        "path": "lib/tools/government.ts",
+        "sha1": "4bc9cbf6da27885cc687465a30b4e32557c975f7",
+        "lines_cited": "L9-L32"
+      },
+      {
+        "path": "lib/tools/government.ts",
+        "sha1": "4bc9cbf6da27885cc687465a30b4e32557c975f7",
+        "lines_cited": "L60-L74"
+      },
+      {
+        "path": "lib/tools/financial.ts",
+        "sha1": "f14cfc6fb8a3b383ce799da495918e8804dc2b34",
+        "lines_cited": "L9-L43"
+      }
+    ],
+    ".archagents/06-infra-devops.md": [
+      {
+        "path": ".github/workflows/ci.yml",
+        "sha1": "063df02d9425d18f29b17d2332d15fca629d15b0",
+        "lines_cited": "L1-L26"
+      },
+      {
+        "path": ".github/workflows/release.yml",
+        "sha1": "c538db15c115651ab7840a533fb35096080207cf",
+        "lines_cited": "L1-L12"
+      },
+      {
+        "path": ".github/workflows/cloudflare-deploy.yml",
+        "sha1": "1e19a50b4fb3c179512c973eb0b2a08dc4e75ac1",
+        "lines_cited": "L1-L23"
+      }
+    ],
+    ".archagents/07-security-compliance.md": [
+      {
+        "path": "lib/workers/auth.ts",
+        "sha1": "2cd5e73845b66d0389c9d2ed6c90a90540dbe828",
+        "lines_cited": "L22-L58"
+      },
+      {
+        "path": "lib/adapters/cli.ts",
+        "sha1": "6e8fbe9e784b951ee6a829874b8eabbe2df76127",
+        "lines_cited": "L95-L127"
+      },
+      {
+        "path": "lib/adapters/cli.ts",
+        "sha1": "6e8fbe9e784b951ee6a829874b8eabbe2df76127",
+        "lines_cited": "L165-L205"
+      }
+    ],
+    ".archagents/08-conventions.md": [
+      {
+        "path": "package.json",
+        "sha1": "c60836728befa1ef0ef41ac41000463625ed6ef2",
+        "lines_cited": "L5-L29"
+      },
+      {
+        "path": "test/integration/transports.mjs",
+        "sha1": "a910d8b8eec28d56e0d10218a5948b401988f62d",
+        "lines_cited": "L12-L61"
+      }
+    ],
+    ".archagents/10-runbooks.md": [
+      {
+        "path": "package.json",
+        "sha1": "c60836728befa1ef0ef41ac41000463625ed6ef2",
+        "lines_cited": "L17-L48"
+      },
+      {
+        "path": "test/integration/transports.mjs",
+        "sha1": "a910d8b8eec28d56e0d10218a5948b401988f62d",
+        "lines_cited": "L47-L62"
+      }
+    ]
+  }
+}
