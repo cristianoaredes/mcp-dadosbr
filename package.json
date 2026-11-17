@@ -40,7 +40,8 @@
     "release:minor": "standard-version --release-as minor",
     "release:major": "standard-version --release-as major",
     "release:patch": "standard-version --release-as patch",
-    "release:dry-run": "standard-version --dry-run"
+    "release:dry-run": "standard-version --dry-run",
+    "test:transport": "node test/integration/transports.mjs"
   },
   "keywords": [
     "mcp",
@@ -76,7 +77,6 @@
   },
   "homepage": "https://github.com/cristianoaredes/mcp-dadosbr#readme",
   "dependencies": {
-    "@genkit-ai/mcp": "^1.22.0",
     "@modelcontextprotocol/sdk": "^1.21.1",
     "@smithery/sdk": "^1.7.4",
     "agents": "^0.2.21",
@@ -90,7 +90,7 @@
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20250927.0",
     "@types/express": "^4.17.21",
-    "@types/node": "^20.0.0",
+    "@types/node": "^22.0.0",
     "@vitest/ui": "^4.0.8",
     "c8": "^9.0.0",
     "msw": "^2.0.0",
@@ -102,7 +102,7 @@
     "wrangler": "^4.40.2"
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": "^22.12.0 || ^24.0.0 || ^26.0.0"
   },
   "publishConfig": {
     "access": "public"

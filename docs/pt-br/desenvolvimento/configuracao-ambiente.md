@@ -28,13 +28,13 @@
 #### Node.js (Obrigatório)
 ```bash
 # Verificar versão instalada
-node --version  # Deve ser 18.0.0 ou superior
-npm --version   # Deve ser 8.0.0 ou superior
+node --version  # Use Node.js 22.12+, 24 ou 26
+npm --version   # Use o npm incluído na versão do Node.js
 
 # Instalar via nvm (recomendado)
 curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.0/install.sh | bash
-nvm install 20
-nvm use 20
+nvm install 24
+nvm use 24
 ```
 
 #### Git (Recomendado)
@@ -318,7 +318,7 @@ module.exports = {
 
 #### Dockerfile
 ```dockerfile
-FROM node:20-alpine
+FROM node:24-alpine
 
 # Instalar dependências do sistema
 RUN apk add --no-cache curl

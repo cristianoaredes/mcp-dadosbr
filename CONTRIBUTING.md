@@ -15,9 +15,11 @@ We welcome contributions from developers around the world! This guide will help 
 
 ### 🚀 Quick Start
 
+Use Node.js 22.12+, 24, or 26.
+
 1. **Fork** the repository
 2. **Clone** your fork: `git clone https://github.com/your-username/mcp-dadosbr.git`
-3. **Install** dependencies: `npm install`
+3. **Install** dependencies: `npm ci`
 4. **Build** the project: `npm run build`
 5. **Run** tests: `npm test`
 
@@ -44,7 +46,7 @@ We welcome contributions from developers around the world! This guide will help 
 
 - All new features must include tests
 - Run `npm test` before submitting
-- Test both stdio and HTTP transports
+- Run `npm run test:transport` after the build to check stdio and HTTP/SSE
 - Validate with real MCP clients when possible
 
 ### 🐛 Bug Reports
@@ -123,9 +125,11 @@ Damos as boas-vindas a contribuições de desenvolvedores do mundo todo! Este gu
 
 ### 🚀 Início Rápido
 
+Use Node.js 22.12+, 24 ou 26.
+
 1. **Faça um fork** do repositório
 2. **Clone** seu fork: `git clone https://github.com/seu-usuario/mcp-dadosbr.git`
-3. **Instale** dependências: `npm install`
+3. **Instale** dependências: `npm ci`
 4. **Construa** o projeto: `npm run build`
 5. **Execute** testes: `npm test`
 
@@ -152,7 +156,7 @@ Damos as boas-vindas a contribuições de desenvolvedores do mundo todo! Este gu
 
 - Todas as novas funcionalidades devem incluir testes
 - Execute `npm test` antes de submeter
-- Teste ambos os transportes stdio e HTTP
+- Execute `npm run test:transport` após o build para validar stdio e HTTP/SSE
 - Valide com clientes MCP reais quando possível
 
 ### 🐛 Relatórios de Bug

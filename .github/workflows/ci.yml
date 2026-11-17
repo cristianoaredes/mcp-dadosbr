@@ -13,7 +13,7 @@ jobs:
 
     strategy:
       matrix:
-        node-version: [18.x, 20.x]
+        node-version: [22.x, 24.x, 26.x]
       fail-fast: false  # Continue testing other versions if one fails
 
     steps:
@@ -46,51 +46,8 @@ jobs:
       - name: Run tests
         run: npm test
 
-      - name: Test stdio transport
-        run: |
-          echo "🧪 Testing stdio transport..."
-          RESPONSE=$(timeout 10s bash -c 'echo "{\"jsonrpc\": \"2.0\", \"id\": 1, \"method\": \"tools/list\"}" | npm start 2>&1' || echo "TIMEOUT")
-
-          if echo "$RESPONSE" | grep -q "tools/list"; then
-            echo "✅ Stdio transport test passed"
-          else
-            echo "⚠️ Stdio transport test inconclusive (this is non-critical)"
-            echo "Response: $RESPONSE"
-          fi
-
-      - name: Test HTTP transport
-        run: |
-          echo "🧪 Testing HTTP transport..."
-          MCP_TRANSPORT=http npm start &
-          SERVER_PID=$!
-
-          # Wait for server to start with timeout
-          echo "⏳ Waiting for server to start..."
-          for i in {1..10}; do
-            if curl -sf http://localhost:3000/health > /dev/null 2>&1; then
-              echo "✅ Server is ready"
-              break
-            fi
-            if [ $i -eq 10 ]; then
-              echo "❌ Server failed to start within 10 seconds"
-              kill $SERVER_PID 2>/dev/null || true
-              exit 1
-            fi
-            sleep 1
-          done
-
-          # Test MCP endpoint
-          if curl -sf -X POST http://localhost:3000/mcp \
-            -H "Content-Type: application/json" \
-            -d '{"jsonrpc": "2.0", "id": 1, "method": "tools/list"}' > /dev/null; then
-            echo "✅ HTTP transport test passed"
-          else
-            echo "❌ HTTP transport test failed"
-            kill $SERVER_PID 2>/dev/null || true
-            exit 1
-          fi
-
-          kill $SERVER_PID 2>/dev/null || true
+      - name: Test MCP stdio and HTTP/SSE
+        run: npm run test:transport
 
   lint:
     name: Code Quality
@@ -103,7 +60,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "20.x"
+          node-version: "24.x"
           cache: "npm"
 
       - name: Cache TypeScript build
@@ -152,7 +109,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "20.x"
+          node-version: "24.x"
           cache: "npm"
 
       - name: Cache worker build
@@ -233,7 +190,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "20.x"
+          node-version: "24.x"
           cache: "npm"
 
       - name: Install dependencies
@@ -313,7 +270,7 @@ jobs:
 
           # Test results
           if [[ "${{ needs.test.result }}" == "success" ]]; then
-            echo "✅ **Tests**: All passed (Node.js 18.x, 20.x)" >> $GITHUB_STEP_SUMMARY
+            echo "✅ **Tests**: All passed (Node.js 22.x, 24.x, 26.x)" >> $GITHUB_STEP_SUMMARY
           else
             echo "❌ **Tests**: Failed" >> $GITHUB_STEP_SUMMARY
           fi
