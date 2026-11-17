@@ -6,8 +6,9 @@ design: DES-0001
 ticket: TCK-0001
 approved_at: 2026-11-17T22:10:09Z
 approved_by: codex
-executed_at: null
-executed_runs: []
+executed_at: 2026-11-17T22:10:52Z
+executed_runs:
+  - RUN-20261117-221052-ibge-mcp-app
 dry_run_supported: true
 total_steps: 3
 destructive_steps: 0

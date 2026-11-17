@@ -5,8 +5,8 @@ title: "Explorador de localidades do IBGE com MCP Apps"
 source: user
 created_at: 2026-11-17T22:10:09Z
 created_by: ops
-updated_at: 2026-11-17T22:16:47Z
-status: verifying
+updated_at: 2026-11-17T22:25:24Z
+status: done
 severity: medium
 category: feature
 effort: M
@@ -18,7 +18,8 @@ linked_designs:
   - DES-0001
 linked_runs:
   - RUN-20261117-221052-ibge-mcp-app
-linked_verifications: []
+linked_verifications:
+  - VER-20261117-222512-tck-0001
 linked_docs: []
 external_refs: []
 external_sync: []
@@ -53,3 +54,4 @@ O piloto reprova se ibge_localidades deixar de devolver o JSON textual original,
 - 2026-11-17T22:10:52Z - **designed** - Contrato textual preservado, UI via metadata e recurso isolado
 - 2026-11-17T22:11:26Z - **executing** - Implementar piloto e critérios aprovados
 - 2026-11-17T22:16:47Z - **verifying** - Provas locais e navegação no host aprovadas; validar na VPS
+- 2026-11-17T22:25:24Z - **done** - Critérios, P10 independente, host visível e validação dedicada na VPS concluídos
