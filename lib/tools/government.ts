@@ -249,7 +249,7 @@ OSINT value: Identify government contract relationships and public spending by c
 
 // ─── Querido Diário ─────────────────────────────────────────────────────────
 
-const QUERIDO_DIARIO_API = "https://api.queridodiario.ok.org.br";
+const QUERIDO_DIARIO_API = "https://api.queridodiario.org.br";
 
 interface QueridoDiarioArgs { query: string; territory_id?: string; since?: string; until?: string; page?: number; size?: number; }
 
@@ -257,11 +257,17 @@ async function executeQueridoDiario(args: QueridoDiarioArgs): Promise<LookupResu
     const { query, territory_id, since, until, page = 0, size = 10 } = args;
     const params = new URLSearchParams({ querystring: query, offset: String(page * size), size: String(size) });
     if (territory_id) params.set("territory_ids", territory_id);
-    if (since) params.set("since", since);
-    if (until) params.set("until", until);
+    if (since) params.set("published_since", since);
+    if (until) params.set("published_until", until);
+    if (!query?.trim()) params.set("sort_by", "descending_date");
     try {
-        const result = await httpJson(`${QUERIDO_DIARIO_API}/gazettes?${params.toString()}`);
-        if (result.ok) return { ok: true, data: { query, results: result.data, source: "Querido Diário — Open Knowledge Brasil", note: "Municipal official gazettes. Territory IDs follow IBGE codes." } };
+        const url = `${QUERIDO_DIARIO_API}/gazettes?${params.toString()}`;
+        const result = await httpJson(url);
+        if (result.ok) return {
+            ok: true,
+            data: { query, results: result.data, source: "Querido Diário — Open Knowledge Brasil", note: "Municipal official gazettes. Territory IDs follow IBGE codes." },
+            source: { url, fetchedAt: new Date().toISOString() },
+        };
         return { ok: false, error: result.error || "Querido Diário API request failed" };
     } catch (err) {
         return { ok: false, error: `Querido Diário error: ${err instanceof Error ? err.message : String(err)}` };
@@ -271,12 +277,12 @@ async function executeQueridoDiario(args: QueridoDiarioArgs): Promise<LookupResu
 registerTool({
     name: "querido_diario",
     description: `Search Brazilian municipal official gazettes (Diários Oficiais).
-Powered by Open Knowledge Brasil. Covers 5,000+ municipalities. No API key required.
+Provided by Open Knowledge Brasil. Coverage depends on the municipality. No API key required.
 OSINT value: Find company mentions in government publications, contracts, sanctions, permits.`,
     inputSchema: {
         type: "object",
         properties: {
-            query: { type: "string", description: "Search text (company name, CNPJ, person, keyword)" },
+            query: { type: "string", description: "Search text (company name, CNPJ, person, keyword); use an empty string for recent editions" },
             territory_id: { type: "string", description: "IBGE territory code (e.g. '3550308' for São Paulo)" },
             since: { type: "string", description: "Start date (YYYY-MM-DD, optional)" },
             until: { type: "string", description: "End date (YYYY-MM-DD, optional)" },
