@@ -16,7 +16,7 @@ jobs:
   # Validate the release tag format
   validate:
     name: Validate Release Tag
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, dadosbr-ubuntu-24.04]
     outputs:
       version: ${{ steps.get_version.outputs.version }}
       is_prerelease: ${{ steps.check_prerelease.outputs.is_prerelease }}
@@ -66,7 +66,7 @@ jobs:
   # Run full test suite before release
   test:
     name: Test Suite
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, dadosbr-ubuntu-24.04]
     needs: validate
 
     strategy:
@@ -104,7 +104,7 @@ jobs:
   # Generate changelog and create GitHub Release
   release:
     name: Create GitHub Release
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, dadosbr-ubuntu-24.04]
     needs: [validate, test]
     outputs:
       upload_url: ${{ steps.create_release.outputs.upload_url }}
@@ -238,7 +238,7 @@ jobs:
   # Publish to npm registry
   publish:
     name: Publish to NPM
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, dadosbr-ubuntu-24.04]
     needs: [validate, test, release]
 
     steps:
@@ -304,7 +304,7 @@ jobs:
   # Deploy to Cloudflare Workers (production)
   deploy-cloudflare:
     name: Deploy to Cloudflare Workers
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, dadosbr-ubuntu-24.04]
     needs: [validate, test, release, publish]
     if: needs.validate.outputs.is_prerelease == 'false' # Only stable releases
 
@@ -378,7 +378,7 @@ jobs:
   # Create release summary
   summary:
     name: Release Summary
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, dadosbr-ubuntu-24.04]
     needs: [validate, test, release, publish, deploy-cloudflare]
     if: always()
 
