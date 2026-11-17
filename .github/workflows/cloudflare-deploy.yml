@@ -26,8 +26,9 @@ on:
 
 jobs:
   deploy:
+    if: github.ref == 'refs/heads/main'
     name: Deploy to Cloudflare Workers
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, dadosbr-ubuntu-24.04]
 
     steps:
       - name: Checkout code
@@ -125,7 +126,7 @@ jobs:
           echo "✅ All deployment tests passed"
 
       - name: Create deployment summary
-        if: always()
+        if: always() && github.ref == 'refs/heads/main'
         run: |
           WORKER_URL="${{ steps.get_url.outputs.worker_url }}"
 
@@ -164,7 +165,7 @@ jobs:
 
   notify:
     name: Notify deployment status
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, dadosbr-ubuntu-24.04]
     needs: deploy
     if: always()
 
