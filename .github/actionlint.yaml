@@ -1,3 +1,4 @@
 self-hosted-runner:
   labels:
     - dadosbr-ubuntu-24.04
+    - dadosbr-ibge-app-ci

@@ -53,6 +53,19 @@ async function listTools(transport, label) {
     const names = tools.map(({ name }) => name).sort();
     assert.deepEqual(names, expectedTools, `Unexpected MCP catalogue on ${label}`);
     console.log(`PASS ${label}: initialize, ping, tools/list (${names.length} tools)`);
+    const uri = "ui://dadosbr/ibge-localidades.html";
+    const mimeType = "text/html;profile=mcp-app";
+    assert.equal(tools.find(({ name }) => name === "ibge_localidades")?._meta?.ui?.resourceUri, uri);
+    assert.equal(tools.filter((tool) => tool._meta?.ui).length, 1);
+    const { resources } = await client.listResources({}, { timeout });
+    assert.equal(resources.find((resource) => resource.uri === uri)?.mimeType, mimeType);
+    const { contents } = await client.readResource({ uri }, { timeout });
+    assert.equal(contents[0]?.mimeType, mimeType);
+    assert.match(contents[0]?.text ?? "", /<!doctype html>/i);
+    assert.match(contents[0]?.text ?? "", /<script>[\s\S]+<\/script>/);
+    await assert.rejects(client.readResource({ uri: "ui://dadosbr/unknown" }, { timeout }), /Unknown resource URI/);
+    console.log(`PASS ${label}: bundled IBGE MCP App discovery and resources/read`);
+
   } finally {
     await client.close();
   }
