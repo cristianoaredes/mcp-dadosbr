@@ -189,6 +189,12 @@ Todas as ferramentas sem "API Key" na tabela funcionam sem nenhuma chave.
 
 ---
 
+### Explorador de localidades do IBGE
+
+Em hosts compatíveis com [MCP Apps](https://modelcontextprotocol.io/extensions/apps/overview), use `ibge_localidades` para abrir o explorador na conversa. Escolha uma região e uma UF, filtre municípios por nome ou código e confira a fonte do IBGE e o horário da consulta.
+
+O CLI oferece a interface por stdio e HTTP/SSE. A resposta JSON textual continua disponível em ambos. O Worker mantém a interface textual existente neste piloto. O recurso HTML autônomo é gerado pelo build e segue no pacote npm.
+
 ### Desenvolvimento e contribuição
 
 ```bash
