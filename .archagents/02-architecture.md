@@ -38,3 +38,7 @@ sequenceDiagram
 ### MCP App do Querido Diário
 
 O servidor Node registra `ui://dadosbr/querido-diario.html` para `querido_diario` em stdio e HTTP/SSE. O painel compartilhado também funciona dentro do Explorador e encaminha o identificador IBGE selecionado como `territory_id`. A API do provedor recebe `territory_ids`, `published_since` e `published_until`. O contrato textual permanece disponível no Node e no Worker; a negociação de MCP Apps acrescenta proveniência ao resultado estruturado.
+
+### MCP App do Banco Central
+
+O servidor Node associa `bacen_taxas` a `ui://dadosbr/banco-central.html`. O painel usa as cinco séries existentes do SGS e aceita períodos de 30, 90 ou 365 dias com consulta explícita até o dia corrente em São Paulo. O fluxo legado mantém o envelope textual de `ultimos`; clientes com a extensão recebem o mesmo conteúdo e a proveniência estruturada. O navegador oferece gráfico e tabela. O Worker mantém a resposta textual.

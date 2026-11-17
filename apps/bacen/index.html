@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Indicadores do Banco Central</title>
+  <!-- app-style -->
+</head>
+<body>
+  <main>
+    <header class="intro">
+      <p>DadosBR · Banco Central do Brasil</p>
+      <h1>Indicadores do Banco Central</h1>
+    </header>
+
+    <section class="panel" aria-label="Série econômica">
+      <div class="filters">
+        <label for="indicator">Indicador
+          <select id="indicator" disabled></select>
+        </label>
+        <label for="period">Período
+          <select id="period" disabled>
+            <option value="initial" disabled hidden>Consulta inicial</option>
+            <option value="30">30 dias</option>
+            <option value="90" selected>90 dias</option>
+            <option value="365">365 dias</option>
+          </select>
+        </label>
+      </div>
+
+      <div class="notice">
+        <p id="status" role="status">Conectando ao servidor…</p>
+        <button type="button" id="retry" hidden>Tentar novamente</button>
+      </div>
+
+      <section id="observations" aria-labelledby="series-title" hidden>
+        <div class="summary">
+          <div>
+            <h2 id="series-title"></h2>
+            <output id="latest" aria-label="Último valor publicado"></output>
+            <span id="unit"></span>
+            <p id="reference"></p>
+          </div>
+          <p id="frequency"></p>
+        </div>
+        <figure>
+          <canvas id="plot" role="img"></canvas>
+          <figcaption id="caption"></figcaption>
+        </figure>
+        <details>
+          <summary>Ver tabela de observações</summary>
+          <table>
+            <thead><tr><th scope="col">Referência</th><th scope="col" id="table-unit">Valor</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </details>
+        <footer>
+          <button id="source" type="button"></button>
+          <p id="retrieved"></p>
+          <p id="source-fallback" role="status" hidden></p>
+        </footer>
+      </section>
+    </section>
+  </main>
+  <!-- app-script -->
+</body>
+</html>

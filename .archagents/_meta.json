@@ -175,25 +175,25 @@
     ]
   },
   "metrics": {
-    "total_tickets": 2,
-    "done_tickets": 2,
+    "total_tickets": 3,
+    "done_tickets": 3,
     "archived_tickets": 0,
-    "avg_cycle_time": 0.22,
+    "avg_cycle_time": 0.19,
     "avg_cycle_time_coverage": {
-      "measured": 2,
-      "total": 2,
+      "measured": 3,
+      "total": 3,
       "ratio": 1.0
     },
     "success_rate": 0.0,
     "success_rate_coverage": {
       "measured": 0,
-      "total": 0,
-      "discarded_non_outcome": 0,
+      "total": 1,
+      "discarded_non_outcome": 1,
       "ratio": 0.0,
       "source": "learning_log + taxonomia TCK-0820"
     },
     "status_breakdown": {
-      "done": 2
+      "done": 3
     }
   },
   "active_runs": [],
@@ -209,16 +209,16 @@
       "backlog_health": {
         "value": 100.0,
         "weight": 0.4,
-        "measured": 2,
-        "total": 2,
+        "measured": 3,
+        "total": 3,
         "ratio": 1.0
       },
       "recent_success": {
         "value": 0.0,
         "weight": 0.4,
         "measured": 0,
-        "total": 0,
-        "discarded_non_outcome": 0,
+        "total": 1,
+        "discarded_non_outcome": 1,
         "ratio": 0.0,
         "source": "learning_log (últimos 10) + taxonomia TCK-0820"
       },
@@ -238,12 +238,17 @@
       "source": "zombie-run-scan.py (TCK-1447/TCK-2477) via .archagents/.zombie-runs-baseline.json"
     }
   },
-  "last_updated": "2026-11-17T22:59:25.030034Z",
+  "last_updated": "2026-11-17T23:40:40.909667Z",
   "learning_log": [
     {
       "run": "RUN-20261117-224844-querido-diario",
       "ticket": "TCK-0002",
       "learning": "Testar a busca por botão e teclado no iframe sandbox. Separar testes do contrato da verificação de disponibilidade real do provedor."
+    },
+    {
+      "ticket": "TCK-0003",
+      "run": "RUN-20261117-233225-bacen",
+      "learning": "Validar séries, unidades e janela na fonte oficial. Manter datas futuras fora da visualização e preservar o JSON legado."
     }
   ]
 }

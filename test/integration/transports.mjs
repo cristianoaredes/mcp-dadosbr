@@ -57,6 +57,7 @@ async function listTools(transport, label) {
     const apps = [
       ["ibge_localidades", "ui://dadosbr/ibge-localidades.html", "Localidades do Brasil"],
       ["querido_diario", "ui://dadosbr/querido-diario.html", "Querido Diário"],
+      ["bacen_taxas", "ui://dadosbr/banco-central.html", "Indicadores do Banco Central"],
     ];
     assert.equal(tools.filter((tool) => tool._meta?.ui).length, apps.length);
     const { resources } = await client.listResources({}, { timeout });
@@ -70,7 +71,7 @@ async function listTools(transport, label) {
       assert.match(contents[0]?.text ?? "", /<script>[\s\S]+<\/script>/);
     }
     await assert.rejects(client.readResource({ uri: "ui://dadosbr/unknown" }, { timeout }), /Unknown resource URI/);
-    console.log(`PASS ${label}: bundled IBGE and Querido Diário MCP Apps discovery and resources/read`);
+    console.log(`PASS ${label}: bundled IBGE, Querido Diário and Banco Central MCP Apps discovery and resources/read`);
 
   } finally {
     await client.close();
