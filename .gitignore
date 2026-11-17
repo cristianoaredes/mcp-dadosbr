@@ -102,3 +102,9 @@ jspm_packages/
 # MCP specific
 .mcprc.json.local
 *.mcprc.json.backup
+
+# codebase-ops: estado local
+.archagents/13-execution/snapshots/
+.archagents/.cache/
+.archagents/.index.db
+.archagents/_orchestration-events.jsonl
