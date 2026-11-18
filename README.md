@@ -14,7 +14,7 @@ Projeto open source desenvolvido com governança do [Codebase OPS by Orqo](https
 | **Diários municipais** · `querido_diario` | Buscar publicações por termo e período e abrir a edição original. A cobertura varia por município. | [API pública do Querido Diário](https://docs.queridodiario.ok.org.br/pt-br/latest/utilizando/api-publica.html) |
 | **Indicadores do Banco Central** · `bacen_taxas` | Consultar gráficos e tabelas de Selic, IPCA, CDI, dólar e euro em janelas de 30, 90 ou 365 dias. | [Sistema Gerenciador de Séries Temporais (SGS)](https://www3.bcb.gov.br/sgspub/) |
 | **Editais do PNCP** · `pncp_licitacoes` | Filtrar publicações por período, modalidade e CNPJ do órgão e abrir o edital no portal oficial. | [API de consultas do PNCP](https://pncp.gov.br/api/consulta/swagger-ui/index.html) |
-| **Ficha por CNPJ** · `cnpj_lookup` | Consultar razão social, situação cadastral, atividades econômicas (CNAEs), endereço e provedor. A data de atualização aparece quando o provedor a informa. | [OpenCNPJ](https://opencnpj.org/) por padrão ou outro [provedor configurado](docs/CONFIGURATION.md#custom-cnpj-api) |
+| **Ficha por CNPJ** · `cnpj_lookup` | Consultar razão social, situação cadastral, atividades econômicas (CNAEs), endereço e provedor. A data de atualização aparece quando o provedor a informa. | [OpenCNPJ](https://opencnpj.org/) por padrão ou outro [provedor compatível](lib/config/index.ts#L17) |
 
 Os cinco painéis fazem parte da versão atual do código-fonte e usam a extensão [MCP Apps](https://modelcontextprotocol.io/extensions/apps/overview). O servidor Node.js entrega os painéis via stdio e HTTP/SSE e também retorna os dados em JSON textual. O adaptador Cloudflare Worker oferece o retorno textual.
 
@@ -49,7 +49,7 @@ Em clientes que usam a configuração `mcpServers`, adicione o servidor e substi
 }
 ```
 
-Reinicie o cliente e faça uma das consultas acima. Consulte o [guia de integração](docs/MCP_CLIENT_INTEGRATION.md) para configurar outros clientes e transportes.
+Reinicie o cliente e faça uma das consultas acima. Se o seu cliente usa outro formato de configuração, cadastre um servidor local stdio com o mesmo comando e caminho.
 
 O [pacote publicado no npm](https://www.npmjs.com/package/@aredes.me/mcp-dadosbr) está na versão `0.4.1` e é anterior aos cinco painéis. Para usar essa versão em um cliente com stdio, configure `"command": "npx"` e `"args": ["-y", "@aredes.me/mcp-dadosbr@0.4.1"]`.
 
@@ -65,7 +65,7 @@ O servidor reúne 23 ferramentas. Além dos cinco painéis, o catálogo inclui c
 | `MCP_TRANSPORT` | `stdio` (padrão) ou `http` para HTTP/SSE. |
 | `MCP_HTTP_PORT` | Porta do transporte HTTP. O padrão é `3000`. |
 
-Veja a [configuração completa](docs/CONFIGURATION.md) e o [exemplo de configuração dos provedores](.mcprc.example.json).
+Para definir um provedor de CNPJ, informe uma URL HTTPS de um [host compatível](lib/config/index.ts#L17) na variável `CNPJ_API_BASE_URL`. Por exemplo, para o CNPJ.ws, use `https://publica.cnpj.ws/cnpj/`.
 
 ## Como o projeto foi desenvolvido
 
@@ -89,4 +89,4 @@ Leia o [guia de contribuição](CONTRIBUTING.md) ou abra uma [issue](https://git
 
 **MCP DadosBR brings Brazilian public data into AI conversations.** Its five interactive MCP Apps cover IBGE locations, municipal gazettes, Central Bank indicators, public procurement notices and company registration profiles. All five apps are available when you build from source and connect to an MCP Apps host. The Node.js server also returns text results over stdio or HTTP/SSE. The Cloudflare Worker adapter serves text results.
 
-Follow the [source setup](#instalação) and the [client integration guide](docs/MCP_CLIENT_INTEGRATION.md). Development is governed with [Codebase OPS by Orqo](https://orqo.pro/).
+Follow the [source setup](#instalação) to configure your client. Development is governed with [Codebase OPS by Orqo](https://orqo.pro/).
