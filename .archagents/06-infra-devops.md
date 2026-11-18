@@ -21,3 +21,7 @@ A API do repositório continua retornando Actions desativado e nenhum runner reg
 Actions foi habilitado depois do Bootstrap. O [primeiro CI na VPS](https://github.com/cristianoaredes/mcp-dadosbr/actions/runs/44178962531) concluiu com sucesso após adicionar `libatomic1` à imagem do runner.
 
 O CI de `main` usa a label `dadosbr-ubuntu-24.04`. PRs originados no próprio repositório solicitam instâncias efêmeras com a label `dadosbr-pr-<run_id>`. O supervisor deve registrar as instâncias do PR com essa label e as labels padrão de Linux x64. A label de `main` também é usada pelo deploy, então fica fora das instâncias do PR. O CI de PR executa a matriz Node 22/24/26, valida os dois transportes do CLI e verifica a presença do HTML do Explorador no pacote npm.
+
+## CI e publicação npm a partir da versão 0.5.0
+
+O CI de PR usa `dadosbr-pr-<run_id>` e o CI de main usa `dadosbr-ci-<run_id>`. O workflow manual Publish npm release usa `dadosbr-release-<run_id>`. Ele exige ID do CI aprovado em main para o SHA idêntico ao do release, instala o tarball candidato, publica o pacote e testa a versão pública. O job opcional dev exige disparo manual com `publish_dev` e a matriz, qualidade e build Worker aprovados. O workflow separado de deploy mantém o rótulo `dadosbr-ubuntu-24.04`.

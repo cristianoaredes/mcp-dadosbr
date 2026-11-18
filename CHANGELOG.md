@@ -18,6 +18,22 @@ All notable changes to MCP DadosBR will be documented in this file.
   - Type-safe Dart classes mirroring the TypeScript interfaces
   - See [Flutter Library Documentation](docs/FLUTTER_LIBRARY.md) for details
 
+## [0.5.0] - 2026-11-18
+
+### Added
+
+- Five packaged MCP Apps for IBGE locations, municipal gazettes, Central Bank indicators, PNCP notices, and CNPJ registration profiles.
+- Source and provider links for interactive queries, plus the existing text response for clients without MCP Apps.
+
+### Fixed
+
+- The CLI sends request metrics to stderr and keeps the stdio JSON-RPC stream intact after 100 calls.
+
+### Delivery
+
+- CI and npm release jobs use isolated, per-run labels on the dedicated VPS. The package release requires successful CI on the exact main commit and validates a clean installation.
+- The public README shows the five tools, their sources, and the project history with Codebase OPS by Orqo.
+
 ## [0.2.0] - 2025-09-30
 
 ### Added

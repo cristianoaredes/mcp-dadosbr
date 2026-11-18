@@ -51,7 +51,7 @@ Em clientes que usam a configuração `mcpServers`, adicione o servidor e substi
 
 Reinicie o cliente e faça uma das consultas acima. Se o seu cliente usa outro formato de configuração, cadastre um servidor local stdio com o mesmo comando e caminho.
 
-O [pacote publicado no npm](https://www.npmjs.com/package/@aredes.me/mcp-dadosbr) está na versão `0.4.1` e é anterior aos cinco painéis. Para usar essa versão em um cliente com stdio, configure `"command": "npx"` e `"args": ["-y", "@aredes.me/mcp-dadosbr@0.4.1"]`.
+O empacotamento dos cinco painéis começa na versão `0.5.0`. Com essa versão disponível no [npm](https://www.npmjs.com/package/@aredes.me/mcp-dadosbr/v/0.5.0), configure `"command": "npx"` e `"args": ["-y", "@aredes.me/mcp-dadosbr@0.5.0"]` no mesmo servidor `dadosbr`. Os [releases do GitHub](https://github.com/cristianoaredes/mcp-dadosbr/releases) também oferecem acesso ao pacote quando ele é publicado.
 
 ## Outras ferramentas e configuração
 

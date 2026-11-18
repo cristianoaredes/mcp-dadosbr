@@ -9,7 +9,8 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 
-const cli = fileURLToPath(new URL("../../build/lib/adapters/cli.js", import.meta.url));
+const cli = process.env.MCP_TEST_CLI
+  ?? fileURLToPath(new URL("../../build/lib/adapters/cli.js", import.meta.url));
 const env = { NODE_ENV: "production", MCP_TRANSPORT: "stdio" };
 const timeout = 5_000;
 
