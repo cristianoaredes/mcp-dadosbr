@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ficha por CNPJ</title>
+  <!-- app-style -->
+</head>
+<body>
+  <main>
+    <header><p>DadosBR · Cadastro empresarial</p><h1>Ficha por CNPJ</h1></header>
+    <div class="panel">
+      <div class="lookup" role="group" aria-label="Consulta por CNPJ">
+        <label for="cnpj">CNPJ
+          <input id="cnpj" type="text" inputmode="numeric" autocomplete="off" maxlength="18"
+            placeholder="00.000.000/0000-00" disabled>
+        </label>
+        <button id="search" type="button" disabled>Consultar</button>
+      </div>
+      <p id="message" role="status">Conectando ao servidor…</p>
+      <section id="profile" aria-labelledby="company" hidden>
+        <div class="identity">
+          <div><h2 id="company"></h2><p id="trade"></p><p id="registration"></p></div>
+          <div><p class="label">Situação cadastral</p><p id="situation"></p><p id="status-date"></p></div>
+        </div>
+        <div class="sections">
+          <section><h3>Atividades econômicas</h3>
+            <p class="label">Principal</p><p id="primary"></p>
+            <p class="label">Secundárias</p><p id="no-secondary"></p><ul id="secondary"></ul>
+          </section>
+          <section><h3>Endereço do estabelecimento</h3><div id="address"></div></section>
+        </div>
+        <footer><p class="label">Provedor dos dados</p><p id="provider"></p><p id="fetched"></p><p id="updated"></p></footer>
+      </section>
+    </div>
+  </main>
+  <!-- app-script -->
+</body>
+</html>
