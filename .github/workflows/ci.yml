@@ -248,8 +248,8 @@ jobs:
       - name: Configure NPM authentication
         run: |
           if [ -z "$NPM_TOKEN" ]; then
-            echo "⚠️  NPM_TOKEN not available, skipping publication"
-            exit 0
+            echo "::error::NPM_TOKEN is required when publish_dev is enabled"
+            exit 1
           fi
           echo "//registry.npmjs.org/:_authToken=$NPM_TOKEN" > ~/.npmrc
         env:
