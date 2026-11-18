@@ -1,447 +1,125 @@
-name: Release & Publish
+name: Publish npm release
 
-# Trigger on version tags (v1.0.0, v2.1.3, etc.)
 on:
-  push:
-    tags:
-      - "v*"
+  workflow_dispatch:
+    inputs:
+      ci_run_id:
+        description: Successful CI/CD Pipeline run on this main commit
+        required: true
+        type: string
 
-# Permissions for creating releases and publishing
 permissions:
-  contents: write
-  packages: write
-  id-token: write
+  contents: read
+  actions: read
+
+concurrency:
+  group: mcp-dadosbr-npm-release
+  cancel-in-progress: false
 
 jobs:
-  # Validate the release tag format
-  validate:
-    name: Validate Release Tag
-    runs-on: [self-hosted, linux, x64, dadosbr-ubuntu-24.04]
-    outputs:
-      version: ${{ steps.get_version.outputs.version }}
-      is_prerelease: ${{ steps.check_prerelease.outputs.is_prerelease }}
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0 # Full history for changelog generation
-
-      - name: Extract version from tag
-        id: get_version
-        run: |
-          # Remove 'v' prefix from tag (v1.0.0 -> 1.0.0)
-          VERSION=${GITHUB_REF#refs/tags/v}
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "📦 Release version: $VERSION"
-
-      - name: Check if prerelease
-        id: check_prerelease
-        run: |
-          VERSION=${{ steps.get_version.outputs.version }}
-          if [[ "$VERSION" =~ (alpha|beta|rc|preview) ]]; then
-            echo "is_prerelease=true" >> $GITHUB_OUTPUT
-            echo "🚧 This is a pre-release version"
-          else
-            echo "is_prerelease=false" >> $GITHUB_OUTPUT
-            echo "✅ This is a stable release"
-          fi
-
-      - name: Validate version in package.json
-        run: |
-          PACKAGE_VERSION=$(node -p "require('./package.json').version")
-          TAG_VERSION=${{ steps.get_version.outputs.version }}
-
-          if [ "$PACKAGE_VERSION" != "$TAG_VERSION" ]; then
-            echo "❌ Version mismatch!"
-            echo "   package.json: $PACKAGE_VERSION"
-            echo "   Git tag:      $TAG_VERSION"
-            echo ""
-            echo "Please update package.json version to match the tag."
-            exit 1
-          fi
-
-          echo "✅ Version validation passed: $PACKAGE_VERSION"
-
-  # Run full test suite before release
-  test:
-    name: Test Suite
-    runs-on: [self-hosted, linux, x64, dadosbr-ubuntu-24.04]
-    needs: validate
-
-    strategy:
-      matrix:
-        node-version: [22.x, 24.x, 26.x]
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js ${{ matrix.node-version }}
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ matrix.node-version }}
-          cache: "npm"
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Run unit tests
-        run: npm test
-
-      - name: Build Node.js target
-        run: npm run build
-
-      - name: Test MCP stdio and HTTP/SSE
-        run: npm run test:transport
-
-      - name: Run integration tests
-        run: npm run test:integration
-
-      - name: Build Cloudflare Workers target
-        run: npm run build:worker
-
-  # Generate changelog and create GitHub Release
-  release:
-    name: Create GitHub Release
-    runs-on: [self-hosted, linux, x64, dadosbr-ubuntu-24.04]
-    needs: [validate, test]
-    outputs:
-      upload_url: ${{ steps.create_release.outputs.upload_url }}
-      changelog: ${{ steps.changelog.outputs.changelog }}
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0 # Full history for changelog
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "24.x"
-          cache: "npm"
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Generate changelog
-        id: changelog
-        run: |
-          # Generate changelog from git commits
-          VERSION=${{ needs.validate.outputs.version }}
-          PREVIOUS_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
-
-          if [ -z "$PREVIOUS_TAG" ]; then
-            echo "## What's Changed" > RELEASE_NOTES.md
-            echo "" >> RELEASE_NOTES.md
-            git log --pretty=format:"* %s (%h)" --reverse >> RELEASE_NOTES.md
-          else
-            echo "## What's Changed" > RELEASE_NOTES.md
-            echo "" >> RELEASE_NOTES.md
-            git log ${PREVIOUS_TAG}..HEAD --pretty=format:"* %s (%h)" --reverse >> RELEASE_NOTES.md
-          fi
-
-          # Add full changelog link
-          echo "" >> RELEASE_NOTES.md
-          echo "" >> RELEASE_NOTES.md
-          echo "**Full Changelog**: https://github.com/${{ github.repository }}/compare/${PREVIOUS_TAG}...v${VERSION}" >> RELEASE_NOTES.md
-
-          # Set output
-          echo "changelog<<EOF" >> $GITHUB_OUTPUT
-          cat RELEASE_NOTES.md >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
-
-          echo "📝 Changelog generated successfully"
-
-      - name: Update CHANGELOG.md
-        run: |
-          VERSION=${{ needs.validate.outputs.version }}
-          PREVIOUS_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
-
-          # Create or update CHANGELOG.md
-          if [ ! -f CHANGELOG.md ]; then
-            echo "# Changelog" > CHANGELOG.md
-            echo "" >> CHANGELOG.md
-          fi
-
-          # Prepend new version to CHANGELOG.md
-          {
-            echo "## [$VERSION] - $(date +%Y-%m-%d)"
-            echo ""
-            if [ -z "$PREVIOUS_TAG" ]; then
-              git log --pretty=format:"* %s (%h)" --reverse
-            else
-              git log ${PREVIOUS_TAG}..HEAD --pretty=format:"* %s (%h)" --reverse
-            fi
-            echo ""
-            echo ""
-            cat CHANGELOG.md
-          } > CHANGELOG.md.new
-
-          mv CHANGELOG.md.new CHANGELOG.md
-
-          echo "✅ CHANGELOG.md updated"
-
-      - name: Update smithery.yaml version
-        run: |
-          VERSION=${{ needs.validate.outputs.version }}
-
-          # Update version in smithery.yaml
-          sed -i.bak "s/^version: .*/version: \"$VERSION\"/" smithery.yaml
-          rm -f smithery.yaml.bak
-
-          echo "✅ smithery.yaml updated to version $VERSION"
-
-      - name: Commit updated files
-        run: |
-          git config --local user.email "github-actions[bot]@users.noreply.github.com"
-          git config --local user.name "github-actions[bot]"
-
-          # Check if there are changes to commit
-          if git diff --quiet CHANGELOG.md smithery.yaml; then
-            echo "ℹ️  No changes to commit"
-          else
-            git add CHANGELOG.md smithery.yaml
-            git commit -m "docs: update CHANGELOG.md and smithery.yaml for v${{ needs.validate.outputs.version }}"
-            git push origin HEAD:main || echo "⚠️  Could not push updates (this is non-critical)"
-          fi
-
-      - name: Create GitHub Release
-        id: create_release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          # Check if release already exists and delete if needed
-          if gh release view ${{ github.ref_name }} > /dev/null 2>&1; then
-            echo "⚠️  Release ${{ github.ref_name }} already exists, deleting..."
-            gh release delete ${{ github.ref_name }} --yes
-          fi
-
-          # Create the release with gh CLI
-          PRERELEASE_FLAG=""
-          if [[ "${{ needs.validate.outputs.is_prerelease }}" == "true" ]]; then
-            PRERELEASE_FLAG="--prerelease"
-          fi
-
-          gh release create ${{ github.ref_name }} \
-            --title "Release ${{ needs.validate.outputs.version }}" \
-            --notes-file RELEASE_NOTES.md \
-            $PRERELEASE_FLAG \
-            CHANGELOG.md
-
-          echo "✅ GitHub Release created successfully"
-
-          # Set upload_url output for compatibility (even though we don't use it anymore)
-          echo "upload_url=https://uploads.github.com/repos/${{ github.repository }}/releases/$(gh release view ${{ github.ref_name }} --json id -q .id)/assets" >> $GITHUB_OUTPUT
-
-  # Publish to npm registry
   publish:
-    name: Publish to NPM
-    runs-on: [self-hosted, linux, x64, dadosbr-ubuntu-24.04]
-    needs: [validate, test, release]
+    name: Verify, publish and install npm package
+    if: github.ref == 'refs/heads/main' && github.repository == 'cristianoaredes/mcp-dadosbr'
+    runs-on: [self-hosted, linux, x64, "dadosbr-release-${{ github.run_id }}"]
+    timeout-minutes: 12
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: "24.x"
-          cache: "npm"
+          registry-url: https://registry.npmjs.org
 
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Build project
-        run: npm run build
-
-      - name: Publish to NPM
-        run: |
-          # Configure npm authentication
-          echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > ~/.npmrc
-
-          VERSION=${{ needs.validate.outputs.version }}
-          PACKAGE_NAME="@aredes.me/mcp-dadosbr"
-
-          if [[ "${{ needs.validate.outputs.is_prerelease }}" == "true" ]]; then
-            echo "📦 Publishing pre-release version with --tag next"
-            npm publish --access public --tag next
-          else
-            echo "📦 Publishing stable version"
-            
-            # Check if version is already published (e.g., as dev tag from CI/CD)
-            if npm view "$PACKAGE_NAME@$VERSION" version 2>/dev/null; then
-              echo "ℹ️  Version $VERSION already published, promoting to latest tag"
-              npm dist-tag add "$PACKAGE_NAME@$VERSION" latest
-              echo "✅ Successfully promoted $VERSION to latest tag"
-            else
-              echo "📦 Publishing new version $VERSION"
-              npm publish --access public
-            fi
-          fi
+      - name: Confirm successful CI of the exact main commit
         env:
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-
-      - name: Verify publication
+          GH_TOKEN: ${{ github.token }}
+          CI_RUN_ID: ${{ inputs.ci_run_id }}
         run: |
-          VERSION=${{ needs.validate.outputs.version }}
-          PACKAGE_NAME="@aredes.me/mcp-dadosbr"
+          node --input-type=module <<'JS'
+          const { GITHUB_API_URL, GITHUB_REPOSITORY, GITHUB_SHA, GH_TOKEN, CI_RUN_ID } = process.env;
+          if (!/^\d+$/.test(CI_RUN_ID)) throw new Error("Expected a numeric CI run ID");
+          const response = await fetch(`${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/actions/runs/${CI_RUN_ID}`, {
+            headers: { Authorization: `Bearer ${GH_TOKEN}`, Accept: "application/vnd.github+json" },
+            signal: AbortSignal.timeout(15_000),
+          });
+          if (!response.ok) throw new Error(`Could not read CI run: HTTP ${response.status}`);
+          const run = await response.json();
+          if (run.head_sha !== GITHUB_SHA || run.head_branch !== "main" ||
+              run.path?.split("@")[0] !== ".github/workflows/ci.yml" ||
+              !["push", "workflow_dispatch"].includes(run.event) ||
+              run.status !== "completed" || run.conclusion !== "success") {
+            throw new Error("Release requires successful CI on the exact main commit");
+          }
+          console.log(`Verified CI run ${run.id} at ${GITHUB_SHA}`);
+          JS
 
-          echo "⏳ Waiting for NPM registry to update..."
-          sleep 10
-
-          # Try to fetch the package info
-          if npm view $PACKAGE_NAME@$VERSION version > /dev/null 2>&1; then
-            echo "✅ Package successfully published to NPM"
-            echo "📦 View at: https://www.npmjs.com/package/$PACKAGE_NAME/v/$VERSION"
-          else
-            echo "⚠️  Package may still be processing on NPM"
-            echo "   Check manually: https://www.npmjs.com/package/$PACKAGE_NAME"
-          fi
-
-  # Deploy to Cloudflare Workers (production)
-  deploy-cloudflare:
-    name: Deploy to Cloudflare Workers
-    runs-on: [self-hosted, linux, x64, dadosbr-ubuntu-24.04]
-    needs: [validate, test, release, publish]
-    if: needs.validate.outputs.is_prerelease == 'false' # Only stable releases
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
         with:
-          node-version: "24.x"
-          cache: "npm"
+          persist-credentials: false
 
-      - name: Cache worker build
-        uses: actions/cache@v4
-        with:
-          path: |
-            build/
-            tsconfig.tsbuildinfo
-          key: ${{ runner.os }}-worker-build-${{ hashFiles('lib/**/*.ts', 'tsconfig.worker.json') }}
-          restore-keys: |
-            ${{ runner.os }}-worker-build-
-            ${{ runner.os }}-build-
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Build worker
-        run: npm run build:worker
-
-      - name: Deploy to Cloudflare Workers
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          environment: "production"
-          workingDirectory: "."
-          command: deploy --env production
-
-      - name: Verify deployment
+      - name: Build and install candidate tarball
+        id: package
         run: |
-          WORKER_URL="https://mcp-dadosbr.aredes.me"
+          npm ci
+          npm run build
+          npm pack --json --pack-destination "$RUNNER_TEMP" > "$RUNNER_TEMP/pack.json"
 
-          echo "🧪 Verifying deployment at $WORKER_URL"
-          echo "⏳ Waiting for deployment to propagate..."
+          version=$(node -p "require(process.env.RUNNER_TEMP + '/pack.json')[0].version")
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          tarball="$RUNNER_TEMP/$(node -p "require(process.env.RUNNER_TEMP + '/pack.json')[0].filename")"
+          npm install --prefix "$RUNNER_TEMP/candidate" --no-audit --no-fund "$tarball"
+          MCP_TEST_CLI="$RUNNER_TEMP/candidate/node_modules/@aredes.me/mcp-dadosbr/build/lib/adapters/cli.js" npm run test:transport
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tarball=$tarball" >> "$GITHUB_OUTPUT"
 
-          # Poll for deployment readiness (max 60 seconds)
-          for i in {1..12}; do
-            if curl -sf "$WORKER_URL/health" > /dev/null 2>&1; then
-              echo "✅ Health check passed"
-              break
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mcp-dadosbr-${{ steps.package.outputs.version }}
+          path: ${{ steps.package.outputs.tarball }}
+          if-no-files-found: error
+
+      - name: Publish verified tarball
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          VERSION: ${{ steps.package.outputs.version }}
+          TARBALL: ${{ steps.package.outputs.tarball }}
+        run: |
+          package="@aredes.me/mcp-dadosbr"
+          candidate=$(node -p "require(process.env.RUNNER_TEMP + '/pack.json')[0].integrity")
+          latest=$(npm view "$package@latest" version)
+          node - "$VERSION" "$latest" <<'JS'
+          const [candidate, latest] = process.argv.slice(2);
+          if (![candidate, latest].every((version) => /^\d+\.\d+\.\d+$/.test(version))) {
+            throw new Error("Expected stable versions for the candidate and latest tag");
+          }
+          const latestParts = latest.split(".").map(Number);
+          const differences = candidate.split(".").map((part, index) => Number(part) - latestParts[index]);
+          const firstDifference = differences.find((value) => value !== 0) ?? 0;
+          if (firstDifference < 0) {
+            throw new Error(`Refusing to replace latest ${latest} with older version ${candidate}`);
+          }
+          JS
+          published=$(npm view "$package@$VERSION" dist.integrity 2>/dev/null || true)
+          if [[ -n "$published" ]]; then
+            [[ "$published" == "$candidate" ]] || {
+              echo "::error::Registry tarball differs from the validated candidate"
+              exit 1
+            }
+            if [[ "$latest" != "$VERSION" ]]; then
+              npm whoami >/dev/null
+              npm dist-tag add "$package@$VERSION" latest
             fi
-            if [ $i -eq 12 ]; then
-              echo "⚠️ Deployment verification timed out - manual check required"
-              exit 0  # Non-critical failure
-            fi
-            echo "⏳ Attempt $i/12 - waiting 5 seconds..."
-            sleep 5
-          done
-
-          # Test MCP endpoint
-          if curl -sf -X POST "$WORKER_URL/mcp" \
-            -H "Content-Type: application/json" \
-            -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' > /dev/null 2>&1; then
-            echo "✅ MCP endpoint verified"
-            echo "🌐 Production deployment successful!"
-            echo "🔗 Live at: $WORKER_URL"
           else
-            echo "⚠️ MCP endpoint verification failed - manual check required"
+            npm whoami >/dev/null
+            npm publish "$TARBALL" --access public --tag latest
           fi
 
-  # Create release summary
-  summary:
-    name: Release Summary
-    runs-on: [self-hosted, linux, x64, dadosbr-ubuntu-24.04]
-    needs: [validate, test, release, publish, deploy-cloudflare]
-    if: always()
-
-    steps:
-      - name: Generate summary
+      - name: Validate clean installation from npm
+        env:
+          VERSION: ${{ steps.package.outputs.version }}
         run: |
-          echo "## 🚀 Release v${{ needs.validate.outputs.version }}" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-
-          # Validation
-          if [[ "${{ needs.validate.result }}" == "success" ]]; then
-            echo "✅ **Validation**: Passed" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "❌ **Validation**: Failed" >> $GITHUB_STEP_SUMMARY
-          fi
-
-          # Tests
-          if [[ "${{ needs.test.result }}" == "success" ]]; then
-            echo "✅ **Tests**: All passed" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "❌ **Tests**: Failed" >> $GITHUB_STEP_SUMMARY
-          fi
-
-          # GitHub Release
-          if [[ "${{ needs.release.result }}" == "success" ]]; then
-            echo "✅ **GitHub Release**: Created" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "❌ **GitHub Release**: Failed" >> $GITHUB_STEP_SUMMARY
-          fi
-
-          # NPM Publication
-          if [[ "${{ needs.publish.result }}" == "success" ]]; then
-            echo "✅ **NPM**: Published" >> $GITHUB_STEP_SUMMARY
-            echo "   - Package: [@aredes.me/mcp-dadosbr](https://www.npmjs.com/package/@aredes.me/mcp-dadosbr)" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "❌ **NPM**: Failed" >> $GITHUB_STEP_SUMMARY
-          fi
-
-          # Cloudflare Deployment
-          if [[ "${{ needs.deploy-cloudflare.result }}" == "success" ]]; then
-            echo "✅ **Cloudflare Workers**: Deployed" >> $GITHUB_STEP_SUMMARY
-            echo "   - Live: [mcp-dadosbr.aredes.me](https://mcp-dadosbr.aredes.me)" >> $GITHUB_STEP_SUMMARY
-          elif [[ "${{ needs.deploy-cloudflare.result }}" == "skipped" ]]; then
-            echo "⏭️  **Cloudflare Workers**: Skipped (pre-release)" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "❌ **Cloudflare Workers**: Failed" >> $GITHUB_STEP_SUMMARY
-          fi
-
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "---" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Next Steps:**" >> $GITHUB_STEP_SUMMARY
-          echo "1. Verify the package on [NPM](https://www.npmjs.com/package/@aredes.me/mcp-dadosbr)" >> $GITHUB_STEP_SUMMARY
-          echo "2. Test installation: \`npm install -g @aredes.me/mcp-dadosbr@${{ needs.validate.outputs.version }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "3. Check deployment: [https://mcp-dadosbr.aredes.me](https://mcp-dadosbr.aredes.me)" >> $GITHUB_STEP_SUMMARY
-          echo "4. Update documentation if needed" >> $GITHUB_STEP_SUMMARY
-
-      - name: Notify on failure
-        if: |
-          needs.validate.result == 'failure' ||
-          needs.test.result == 'failure' ||
-          needs.release.result == 'failure' ||
-          needs.publish.result == 'failure'
-        run: |
-          echo "❌ Release failed! Check the logs above for details."
-          exit 1
+          package="@aredes.me/mcp-dadosbr"
+          [[ "$(npm view "$package@latest" version)" == "$VERSION" ]]
+          candidate=$(node -p "require(process.env.RUNNER_TEMP + '/pack.json')[0].integrity")
+          [[ "$(npm view "$package@$VERSION" dist.integrity)" == "$candidate" ]]
+          npm install --prefix "$RUNNER_TEMP/from-npm" --no-audit --no-fund "$package@$VERSION"
+          MCP_TEST_CLI="$RUNNER_TEMP/from-npm/node_modules/$package/build/lib/adapters/cli.js" npm run test:transport
