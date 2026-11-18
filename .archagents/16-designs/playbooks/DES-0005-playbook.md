@@ -6,8 +6,8 @@ design: DES-0005
 ticket: TCK-0005
 approved_at: 2026-11-18T02:01:50Z
 approved_by: codex
-executed_at: null
-executed_runs: []
+executed_at: "2026-11-18T02:07:35+00:00"
+executed_runs: [RUN-20261118-020150-cnpj]
 dry_run_supported: true
 total_steps: 3
 destructive_steps: 0
@@ -45,4 +45,4 @@ commit_message_format: "[TCK-0005] passo N/3: <titulo>"
 
 ## Log de execucoes
 
-- *(sem execucoes ainda)*
+- 2026-11-18T02:07:35+00:00 · RUN-20261118-020150-cnpj · ficha real e checagens locais aprovadas.

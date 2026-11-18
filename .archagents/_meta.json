@@ -175,25 +175,25 @@
     ]
   },
   "metrics": {
-    "total_tickets": 4,
-    "done_tickets": 4,
+    "total_tickets": 5,
+    "done_tickets": 5,
     "archived_tickets": 0,
-    "avg_cycle_time": 0.18,
+    "avg_cycle_time": 0.17,
     "avg_cycle_time_coverage": {
-      "measured": 4,
-      "total": 4,
+      "measured": 5,
+      "total": 5,
       "ratio": 1.0
     },
     "success_rate": 0.0,
     "success_rate_coverage": {
       "measured": 0,
-      "total": 2,
-      "discarded_non_outcome": 2,
+      "total": 3,
+      "discarded_non_outcome": 3,
       "ratio": 0.0,
       "source": "learning_log + taxonomia TCK-0820"
     },
     "status_breakdown": {
-      "done": 4
+      "done": 5
     }
   },
   "active_runs": [],
@@ -209,16 +209,16 @@
       "backlog_health": {
         "value": 100.0,
         "weight": 0.4,
-        "measured": 4,
-        "total": 4,
+        "measured": 5,
+        "total": 5,
         "ratio": 1.0
       },
       "recent_success": {
         "value": 0.0,
         "weight": 0.4,
         "measured": 0,
-        "total": 2,
-        "discarded_non_outcome": 2,
+        "total": 3,
+        "discarded_non_outcome": 3,
         "ratio": 0.0,
         "source": "learning_log (últimos 10) + taxonomia TCK-0820"
       },
@@ -238,7 +238,7 @@
       "source": "zombie-run-scan.py (TCK-1447/TCK-2477) via .archagents/.zombie-runs-baseline.json"
     }
   },
-  "last_updated": "2026-11-18T00:09:03.166401Z",
+  "last_updated": "2026-11-18T02:08:35.174418Z",
   "learning_log": [
     {
       "run": "RUN-20261117-224844-querido-diario",
@@ -254,6 +254,11 @@
       "ticket": "TCK-0004",
       "run": "RUN-20261117-235945-pncp",
       "learning": "Separar o contrato oficial de filtros PNCP da busca por termo do portal. Tratar HTTP 204 como estado vazio e compor links no domínio oficial."
+    },
+    {
+      "ticket": "TCK-0005",
+      "run": "RUN-20261118-020150-cnpj",
+      "learning": "Distinguir a atualização informada pelo provedor e a consulta efetivamente feita pelo servidor."
     }
   ]
 }

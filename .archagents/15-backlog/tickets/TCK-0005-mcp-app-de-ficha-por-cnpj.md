@@ -5,8 +5,8 @@ title: "MCP App de ficha por CNPJ"
 source: user
 created_at: 2026-11-18T02:01:50Z
 created_by: ops
-updated_at: 2026-11-18T02:01:51Z
-status: executing
+updated_at: 2026-11-18T02:08:34Z
+status: done
 severity: medium
 category: feature
 effort: M
@@ -18,7 +18,8 @@ linked_designs:
   - DES-0005
 linked_runs:
   - RUN-20261118-020150-cnpj
-linked_verifications: []
+linked_verifications:
+  - VER-20261118-020735-tck-0005
 linked_docs: []
 external_refs: []
 external_sync: []
@@ -52,3 +53,5 @@ test/integration/transports.mjs:57 ainda não registra recurso de cnpj_lookup. A
 - 2026-11-18T02:01:50Z - **triaged** - Ficha cadastral e compatibilidade de provedores [depth_decision do routing-classifier: workflow lightweight, design lightweight, verify completo]
 - 2026-11-18T02:01:51Z - **designed** - Projeção de dados do lookup e interface MCP
 - 2026-11-18T02:01:51Z - **executing** - Implementar ficha e cobertura de compatibilidade
+- 2026-11-18T02:07:35Z - **verifying** - Provas de navegador, contrato e pacote aprovadas
+- 2026-11-18T02:08:34Z - **done** - Critérios locais e P10 aprovados; CI remoto condiciona o merge
