@@ -36,6 +36,13 @@ const apps = [
     title: "Indicadores do Banco Central",
     description: "Consulte séries históricas de juros, inflação e câmbio.",
   },
+  {
+    tool: "pncp_licitacoes",
+    file: "pncp.html",
+    id: "editais-pncp",
+    title: "Editais do PNCP",
+    description: "Consulte publicações por período, modalidade e órgão.",
+  },
 ].map(({ tool, file, id, title, description }) => ({
   tool,
   file: new URL((import.meta.url.endsWith(".ts") ? "../../build/lib/apps/" : "../apps/") + file, import.meta.url),
@@ -107,7 +114,7 @@ export function createMCPServer(options: MCPServerOptions): Server {
           if (name === "ibge_localidades" && Array.isArray(result.data)) {
             structuredContent = { items: result.data, source: result.source };
           }
-          if ((name === "querido_diario" || name === "bacen_taxas")
+          if ((name === "querido_diario" || name === "bacen_taxas" || name === "pncp_licitacoes")
             && result.data && typeof result.data === "object" && !Array.isArray(result.data)) {
             structuredContent = { ...result.data, provenance: result.source };
           }
