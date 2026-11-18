@@ -5,6 +5,7 @@
 import { registerTool } from "../core/registry.js";
 import { httpJson } from "../core/http-client.js";
 import { LookupResult } from "../types/index.js";
+import { PNCP_ORIGIN, pncpCnpj, pncpDate, positiveInteger } from "../shared/pncp.js";
 
 // ─── IBGE Localidades ───────────────────────────────────────────────────────
 
@@ -209,19 +210,61 @@ Requires TRANSPARENCIA_API_KEY — falls back to manual check URLs without it.`,
 
 // ─── PNCP ───────────────────────────────────────────────────────────────────
 
-const PNCP_API = "https://pncp.gov.br/api/consulta/v1";
+const PNCP_PUBLICACOES = PNCP_ORIGIN + "/api/consulta/v1/contratacoes/publicacao";
+const PNCP_SOURCE = "Portal Nacional de Contratações Públicas (PNCP)";
 
-interface PncpArgs { query: string; cnpj_orgao?: string; data_inicial?: string; data_final?: string; pagina?: number; }
+interface PncpArgs {
+    query: string;
+    cnpj_orgao?: string;
+    data_inicial?: string;
+    data_final?: string;
+    modalidade_id?: number;
+    pagina?: number;
+}
+
+async function executePncpPublication(args: PncpArgs): Promise<LookupResult> {
+    const { query = "", modalidade_id, pagina = 1 } = args;
+    if (query !== "") return { ok: false, error: "Use query vazia para consultar publicações por filtros." };
+    const from = pncpDate(args.data_inicial);
+    const to = pncpDate(args.data_final);
+    if (!from || !to || from > to) {
+        return { ok: false, error: "Informe um período válido de publicação, com data inicial até a final." };
+    }
+    if (!positiveInteger(modalidade_id) || !positiveInteger(pagina)) {
+        return { ok: false, error: "Modalidade e página devem ser números inteiros positivos." };
+    }
+    const cnpj = pncpCnpj(args.cnpj_orgao);
+    if (args.cnpj_orgao && !cnpj) return { ok: false, error: "Informe um CNPJ de órgão válido." };
+
+    const params = new URLSearchParams({
+        dataInicial: from.replaceAll("-", ""),
+        dataFinal: to.replaceAll("-", ""),
+        codigoModalidadeContratacao: String(modalidade_id),
+        pagina: String(pagina),
+        tamanhoPagina: "10",
+    });
+    if (cnpj) params.set("cnpj", cnpj);
+    const url = `${PNCP_PUBLICACOES}?${params}`;
+    const emptyPage = { data: [], totalRegistros: 0, totalPaginas: 0, numeroPagina: pagina, paginasRestantes: 0, empty: true };
+    const result = await httpJson(url, undefined, undefined, { noContent: emptyPage });
+    if (!result.ok) return { ok: false, error: `Falha na consulta ao PNCP: ${result.error}` };
+    return {
+        ok: true,
+        data: { query, results: result.data, source: PNCP_SOURCE, legal_basis: "Lei 14.133/2021" },
+        source: { url, fetchedAt: new Date().toISOString() },
+    };
+}
 
 async function executePncp(args: PncpArgs): Promise<LookupResult> {
+    if (args.modalidade_id !== undefined) return executePncpPublication(args);
     const { query, cnpj_orgao, data_inicial, data_final, pagina = 1 } = args;
     const params = new URLSearchParams({ q: query, pagina: String(pagina), tamanhoPagina: "10" });
     if (cnpj_orgao) params.set("cnpjOrgao", cnpj_orgao);
     if (data_inicial) params.set("dataInicial", data_inicial);
     if (data_final) params.set("dataFinal", data_final);
     try {
-        const result = await httpJson(`${PNCP_API}/contratacoes/publicacao?${params.toString()}`);
-        if (result.ok) return { ok: true, data: { query, results: result.data, source: "Portal Nacional de Contratações Públicas (PNCP)", legal_basis: "Lei 14.133/2021" } };
+        const result = await httpJson(`${PNCP_PUBLICACOES}?${params.toString()}`);
+        if (result.ok) return { ok: true, data: { query, results: result.data, source: PNCP_SOURCE, legal_basis: "Lei 14.133/2021" } };
         return { ok: true, data: { query, note: "PNCP API may be temporarily unavailable.", search_url: `https://pncp.gov.br/app/editais?q=${encodeURIComponent(query)}` } };
     } catch {
         return { ok: true, data: { query, note: "PNCP API connection failed.", search_url: `https://pncp.gov.br/app/editais?q=${encodeURIComponent(query)}` } };
@@ -230,16 +273,17 @@ async function executePncp(args: PncpArgs): Promise<LookupResult> {
 
 registerTool({
     name: "pncp_licitacoes",
-    description: `Search Brazilian public procurement contracts via PNCP (Portal Nacional de Contratações Públicas).
-Based on Lei 14.133/2021. Covers federal, state, and municipal procurements. No API key required.
-OSINT value: Identify government contract relationships and public spending by company.`,
+    description: `Browse published procurement notices via the PNCP (Portal Nacional de Contratações Públicas).
+To filter notices, pass modalidade_id, both publication dates, optional cnpj_orgao, and query as an empty string.
+For the legacy portal keyword search, provide query without modalidade_id. No API key required.`,
     inputSchema: {
         type: "object",
         properties: {
-            query: { type: "string", description: "Search term (company name, product, or CNPJ)" },
-            cnpj_orgao: { type: "string", description: "CNPJ of the contracting body (optional)" },
-            data_inicial: { type: "string", description: "Start date (DD/MM/YYYY, optional)" },
-            data_final: { type: "string", description: "End date (DD/MM/YYYY, optional)" },
+            query: { type: "string", description: "Portal search term, or empty string for filtered publications" },
+            cnpj_orgao: { type: "string", description: "Contracting body's CNPJ (optional)" },
+            data_inicial: { type: "string", description: "Publication start date (YYYY-MM-DD, DD/MM/YYYY or YYYYMMDD), required with modalidade_id" },
+            data_final: { type: "string", description: "Publication end date (YYYY-MM-DD, DD/MM/YYYY or YYYYMMDD), required with modalidade_id" },
+            modalidade_id: { type: "integer", minimum: 1, description: "PNCP contracting modality ID, e.g. 6 for Pregão Eletrônico" },
             pagina: { type: "number", description: "Page number (default: 1)", default: 1 },
         },
         required: ["query"],

@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Editais do PNCP</title>
+  <!-- app-style -->
+</head>
+<body>
+  <main>
+    <header class="hero">
+      <p>DadosBR · Contratações públicas</p>
+      <h1>Editais do PNCP</h1>
+    </header>
+
+    <section class="panel" aria-label="Consulta de editais">
+      <div class="filters" role="group" aria-label="Filtros de publicação">
+        <label for="org">CNPJ do órgão <span>(opcional)</span>
+          <input id="org" type="text" maxlength="24" autocomplete="off" placeholder="Ex. 00.394.460/0001-41" disabled>
+        </label>
+        <label for="modality">Modalidade
+          <select id="modality" disabled></select>
+        </label>
+        <label for="start">Publicados desde
+          <input id="start" type="date" disabled>
+        </label>
+        <label for="end">Publicados até
+          <input id="end" type="date" disabled>
+        </label>
+        <button id="search" type="button" disabled>Buscar editais</button>
+      </div>
+
+      <div id="results" aria-busy="false">
+        <div class="results-heading">
+          <p id="status" role="status">Conectando ao servidor…</p>
+          <button id="retry" type="button" hidden>Tentar novamente</button>
+          <button id="legacy-search" type="button" hidden>Pesquisar termo no PNCP ↗</button>
+        </div>
+        <ol id="notices" aria-label="Editais encontrados"></ol>
+        <nav id="pagination" aria-label="Páginas de editais" hidden>
+          <button id="previous" type="button">Anterior</button>
+          <span id="page-label"></span>
+          <button id="next" type="button">Próxima</button>
+        </nav>
+      </div>
+
+      <footer>
+        <button id="source" type="button">Fonte · PNCP ↗</button>
+        <p id="retrieved"></p>
+        <p id="link-status" role="status" hidden></p>
+      </footer>
+    </section>
+  </main>
+  <!-- app-script -->
+</body>
+</html>

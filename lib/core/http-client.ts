@@ -64,7 +64,8 @@ async function executeWithRetry(
 export async function httpJson(
   url: string,
   authHeaders?: Record<string, string>,
-  timeoutMs = TIMEOUTS.HTTP_REQUEST_MS
+  timeoutMs = TIMEOUTS.HTTP_REQUEST_MS,
+  options?: { noContent: unknown },
 ): Promise<HttpResponse> {
   return await executeWithRetry(async () => {
     return await circuitBreaker.execute(async () => {
@@ -96,7 +97,8 @@ export async function httpJson(
           source: url,
         };
       }
-      return { ok: true, data: await response.json(), source: url };
+      const data = response.status === 204 && options ? options.noContent : await response.json();
+      return { ok: true, data, source: url };
     } catch (error: unknown) {
       const err = error as Error & { name?: string };
       if (err.name === "AbortError") {
