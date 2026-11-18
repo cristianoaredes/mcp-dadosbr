@@ -1,0 +1,2 @@
+{"action": "Teste com 101 chamadas reproduziu erro de parsing de JSON quando console.log escreveu a métrica no stdout", "files": ["test/integration/transports.mjs"], "gate_status": "flow", "step": 1, "ts": "2026-11-18T03:19:47Z", "type": "action"}
+{"action": "Métrica em stderr, regressão verde, 286 testes e build Worker aprovados", "files": ["lib/core/tools.ts"], "gate_status": "flow", "step": 2, "ts": "2026-11-18T03:19:47Z", "type": "action"}

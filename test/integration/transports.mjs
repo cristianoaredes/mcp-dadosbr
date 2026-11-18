@@ -9,7 +9,8 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 
-const cli = fileURLToPath(new URL("../../build/lib/adapters/cli.js", import.meta.url));
+const cli = process.env.MCP_TEST_CLI
+  ?? fileURLToPath(new URL("../../build/lib/adapters/cli.js", import.meta.url));
 const env = { NODE_ENV: "production", MCP_TRANSPORT: "stdio" };
 const timeout = 5_000;
 
@@ -42,6 +43,8 @@ const expectedTools = [
 
 async function listTools(transport, label) {
   const client = new Client({ name: "dadosbr-ci", version: "1.0.0" });
+  const transportErrors = [];
+  client.onerror = (error) => transportErrors.push(error.message);
   try {
     await client.connect(transport, { timeout });
     const server = client.getServerVersion();
@@ -74,6 +77,21 @@ async function listTools(transport, label) {
     }
     await assert.rejects(client.readResource({ uri: "ui://dadosbr/unknown" }, { timeout }), /Unknown resource URI/);
     console.log(`PASS ${label}: bundled IBGE, Querido Diário, Banco Central, PNCP and CNPJ MCP Apps discovery and resources/read`);
+
+    if (label === "stdio") {
+      // Cross the 100-request metrics threshold using an offline, synthetic input.
+      for (let call = 1; call <= 101; call++) {
+        const result = await client.callTool(
+          { name: "cpf_validate", arguments: { cpf: "00000000000" } },
+          undefined,
+          { timeout },
+        );
+        assert.ok(!result.isError, `CPF tool failed at call ${call}`);
+        assert.equal(JSON.parse(result.content[0].text).valid, false);
+      }
+      assert.deepEqual(transportErrors, [], "stdio must carry only MCP protocol messages");
+      console.log("PASS stdio: 101 tool calls with no protocol errors");
+    }
 
   } finally {
     await client.close();
