@@ -207,6 +207,12 @@ Em clientes com MCP Apps, `bacen_taxas` abre gráficos da meta Selic, do IPCA, d
 
 A chamada com `indicador` e `ultimos` preserva a resposta JSON textual. O parâmetro opcional `periodo_dias` consulta o intervalo até a data atual em São Paulo. O App é oferecido pelo CLI em stdio e HTTP/SSE e o Worker atende em texto.
 
+### Editais do PNCP
+
+Em clientes com MCP Apps, `pncp_licitacoes` abre uma consulta de publicações por período, modalidade e CNPJ opcional do órgão. Os resultados são paginados e cada edital com identificadores válidos oferece um link permanente em `pncp.gov.br`. O painel usa o catálogo oficial de modalidades e a [API de consultas do PNCP](https://pncp.gov.br/api/consulta/swagger-ui/index.html).
+
+Para usar os filtros via texto, envie `query: ""`, `modalidade_id`, `data_inicial`, `data_final` e, se necessário, `cnpj_orgao` e `pagina`. A busca legada com `query` sem modalidade mantém seu retorno textual e o encaminhamento ao portal quando aplicável. O CLI serve a interface em stdio e HTTP/SSE. O Worker mantém o retorno textual.
+
 ### Desenvolvimento e contribuição
 
 ```bash
