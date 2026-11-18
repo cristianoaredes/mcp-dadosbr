@@ -1,0 +1,2 @@
+{"action": "README reescrito com os cinco Apps, referências aos provedores, início rápido a partir do código-fonte e histórico público da governança Orqo", "files": ["README.md"], "gate_status": "flow", "step": 1, "ts": "2026-11-18T03:04:27Z", "type": "action"}
+{"action": "Validados JSON, 13 referências locais, 286 testes, 23 ferramentas e 5 recursos em stdio e HTTP/SSE, build Worker e conteúdo dos tarballs local e publicado.", "files": ["README.md"], "gate_status": "flow", "step": 2, "ts": "2026-11-18T03:05:07Z", "type": "action"}
