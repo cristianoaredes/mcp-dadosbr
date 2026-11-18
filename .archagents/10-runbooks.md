@@ -11,6 +11,8 @@ Execute `npm ci`, `npm run build`, `npm test`, `npm run test:transport` e `npm r
 
 ## Runner próprio
 
-Use runner Linux x64 dedicado ao DadosBR, com rótulo adicional `dadosbr-ubuntu-24.04`, em ambiente isolado da VPS. Cada job que usar um runner efêmero consome uma instância. Provisione capacidade para a matriz e os jobs dependentes, inclusive resumos. Mantenha a configuração e tokens de registro fora do repositório.
+Use runner Linux x64 dedicado ao DadosBR, em ambiente isolado da VPS. Confira repositório, evento, workflow, SHA e rótulo na API antes de iniciar cada instância. Os rótulos são `dadosbr-pr-<run_id>` para PR, `dadosbr-ci-<run_id>` para CI de main e `dadosbr-release-<run_id>` para release npm. Cada job usa uma instância efêmera. Mantenha configuração e tokens de registro fora do repositório.
 
-Após integrar os workflows e ativar o Actions, dispare o CI manualmente para `main` e registre URL, SHA, runner atribuído e conclusão. O disparo manual do CI deixa a etapa de publicação no npm inelegível. Valide publicação e deploy em seus fluxos próprios.
+Após integrar, acompanhe o CI de push em `main` ou dispare o CI manualmente com `publish_dev` desmarcado. Registre URL, SHA, runner atribuído e conclusão.
+
+Para publicar, dispare o workflow `Publish npm release` em `main` com o ID do CI verde para o SHA da versão. O secret de Actions `NPM_TOKEN` deve permitir publicação no pacote. Compare a integridade do tarball com o registro npm e confirme a instalação limpa e os cinco recursos. Associe o GitHub Release ao mesmo SHA. O deploy do Worker tem workflow próprio.
