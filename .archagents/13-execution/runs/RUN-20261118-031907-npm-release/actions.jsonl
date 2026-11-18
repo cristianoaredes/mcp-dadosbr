@@ -1,0 +1,2 @@
+{"action": "Preparados pacote 0.5.0 e CI por execução; workflow npm exige CI verde exato e valida instalação candidata", "files": [".github/workflows/ci.yml", ".github/workflows/release.yml", "package.json", "README.md"], "gate_status": "flow", "step": 1, "ts": "2026-11-18T03:25:47Z", "type": "action"}
+{"action": "Tarball instalado em diretório limpo expôs cinco Apps em ambos os transportes; gate de SHA rejeitou seis estados incompatíveis e semver protege latest", "files": [], "gate_status": "flow", "step": 2, "ts": "2026-11-18T03:30:11Z", "type": "action"}

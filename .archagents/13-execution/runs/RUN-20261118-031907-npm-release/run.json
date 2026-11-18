@@ -1,0 +1,39 @@
+{
+  "id": "RUN-20261118-031907-npm-release",
+  "design": "DES-0008",
+  "ticket": "TCK-0008",
+  "started_at": "2026-11-18T03:19:07Z",
+  "started_by": "ops",
+  "environment": "dev",
+  "mode": "live",
+  "status": "completed",
+  "current_step": 2,
+  "total_steps": 2,
+  "ended_at": "2026-11-18T03:30:11+00:00",
+  "result": "Candidata npm 0.5.0 empacotada e testada; release depende do CI de main",
+  "loop_iterations": 0,
+  "attempt_count": 0,
+  "lessons_consulted": [
+    "Instrumentos de ciclo precisam de smoke-test periodico: retire-artifact.py passa",
+    "A fronteira de publicação é os.replace; falha posterior preserva o recurso criad",
+    "Origem, lock, staging e destino de uma transação concorrente devem permanecer an"
+  ],
+  "loop_cost_usd": null,
+  "cost_source": "unknown",
+  "loop_strategy": "default",
+  "context_peak": 0,
+  "final_judge_delta": 32,
+  "operator": "codex",
+  "warmup": false,
+  "final_judge_delta_source": "judge",
+  "lesson_utility": {
+    "utility": 0.64,
+    "n_lessons": 3,
+    "lessons_consulted": [
+      "Instrumentos de ciclo precisam de smoke-test periodico: retire-artifact.py passa",
+      "A fronteira de publicação é os.replace; falha posterior preserva o recurso criad",
+      "Origem, lock, staging e destino de uma transação concorrente devem permanecer an"
+    ],
+    "signal": "computed"
+  }
+}

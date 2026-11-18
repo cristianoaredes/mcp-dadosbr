@@ -9,3 +9,7 @@
 {"ts": "2026-11-18T00:08:39Z", "ticket": "TCK-0004", "verdict": "pass", "passed": 2, "total": 2}
 {"ts": "2026-11-18T02:05:32Z", "ticket": "TCK-0005", "verdict": "pass", "passed": 2, "total": 2}
 {"ts": "2026-11-18T02:07:42Z", "ticket": "TCK-0005", "verdict": "pass", "passed": 2, "total": 2}
+{"ts": "2026-11-18T03:19:59Z", "ticket": "TCK-0007", "verdict": "pass", "passed": 1, "total": 1}
+{"ts": "2026-11-18T03:25:49Z", "ticket": "TCK-0008", "verdict": "pass", "passed": 2, "total": 2}
+{"ts": "2026-11-18T03:28:15Z", "ticket": "TCK-0008", "verdict": "pass", "passed": 2, "total": 2}
+{"ts": "2026-11-18T03:30:14Z", "ticket": "TCK-0008", "verdict": "pass", "passed": 2, "total": 2}
