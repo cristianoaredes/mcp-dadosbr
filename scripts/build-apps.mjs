@@ -39,4 +39,4 @@ async function buildApp(name, includeGazette = false) {
     .replace("<!-- app-script -->", () => `<script>${script}</script>`);
   await writeFile(new URL(`${name}.html`, output), html);
 }
-await Promise.all([buildApp("ibge", true), buildApp("querido-diario", true), buildApp("bacen"), buildApp("pncp")]);
+await Promise.all([buildApp("ibge", true), buildApp("querido-diario", true), buildApp("bacen"), buildApp("pncp"), buildApp("cnpj")]);

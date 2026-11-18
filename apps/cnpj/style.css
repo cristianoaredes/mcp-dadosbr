@@ -1,0 +1,59 @@
+:root {
+  color-scheme: light;
+  --canvas: #eff5f0;
+  --panel: #fcfefa;
+  --text: #192f26;
+  --muted: #4f6459;
+  --line: #c9d9cf;
+  --accent: #0a674c;
+  --on-accent: #fff;
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --canvas: #13221c;
+  --panel: #1c3027;
+  --text: #eff9f2;
+  --muted: #bccfc2;
+  --line: #496358;
+  --accent: #a0efc3;
+  --on-accent: #173126;
+}
+[hidden] { display: none !important; }
+body {
+  background: var(--color-background-primary, var(--canvas));
+  color: var(--color-text-primary, var(--text));
+  margin: 0;
+  font: 15px/1.5 system-ui, sans-serif;
+}
+main { max-width: 880px; margin: auto; padding: clamp(10px, 3vw, 24px); }
+header { padding: clamp(15px, 4vw, 28px); border-radius: 16px 16px 0 0; background: #132e25; color: #f1faf5; }
+header p { color: #b8e9d1; font-size: .86rem; font-weight: 650; }
+h1, h2, h3, p { margin: 0; }
+h1 { font-size: clamp(1.5rem, 4vw, 2.1rem); line-height: 1.14; }
+h2 { font-size: clamp(1.2rem, 3vw, 1.62rem); line-height: 1.2; }
+h3 { font-size: 1.03rem; margin-bottom: 7px; }
+.panel { padding: clamp(12px, 3vw, 22px); background: var(--color-background-secondary, var(--panel)); border: 1px solid var(--line); border-radius: 0 0 16px 16px; }
+.lookup { display: flex; align-items: end; flex-wrap: wrap; gap: 8px 12px; }
+.lookup label { font-weight: 650; flex: 0 1 252px; min-width: 0; }
+input, button {
+  box-sizing: border-box; border: 1px solid var(--line); border-radius: 8px;
+  min-height: 40px; padding: 7px 10px; font: inherit;
+}
+input { display: block; width: 100%; margin-top: 4px; background: var(--color-background-primary, var(--panel)); color: inherit; }
+button { background: var(--accent); color: var(--on-accent); border-color: var(--accent); cursor: pointer; font-weight: 700; }
+button:disabled { opacity: .55; cursor: default; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+#message, .identity, .sections, footer { margin-top: 16px; }
+#message:empty, #trade:empty, #status-date:empty, #fetched:empty, #updated:empty, ul:empty { display: none; }
+#profile { overflow-wrap: anywhere; }
+.identity, .sections {
+  display: grid; gap: 14px 18px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 210px), 1fr));
+  border-top: 1px solid var(--line); padding-top: 14px;
+}
+.label, #registration, #trade, #status-date, footer p { color: var(--color-text-secondary, var(--muted)); }
+.label, footer p, #status-date { font-size: .87rem; }
+.label { font-weight: 650; }
+#situation { color: var(--accent); font-weight: 750; }
+#primary { margin-bottom: 8px; }
+ul { margin: 0; padding-left: 18px; }
+footer { border-top: 1px solid var(--line); padding-top: 10px; }
