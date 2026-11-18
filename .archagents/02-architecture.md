@@ -46,3 +46,7 @@ O servidor Node associa `bacen_taxas` a `ui://dadosbr/banco-central.html`. O pai
 ### MCP App de editais do PNCP
 
 O servidor Node registra `ui://dadosbr/editais-pncp.html` por `pncp_licitacoes`. O modo de publicações transmite CNPJ opcional, período e modalidade à API de Consulta e usa o domínio do PNCP para os links dos editais. Respostas 204 são páginas vazias somente nesse modo. O caminho legado conserva o JSON e a busca do portal. Clientes do Worker recebem texto.
+
+### MCP App de ficha por CNPJ
+
+O servidor Node associa `cnpj_lookup` a `ui://dadosbr/ficha-cnpj.html`. A projeção seleciona situação, CNAEs, endereço e proveniência da resposta existente do provedor. O JSON textual e a validação original de CNPJ numérico são preservados. O Worker oferece retorno textual.

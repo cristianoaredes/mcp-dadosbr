@@ -213,6 +213,10 @@ Em clientes com MCP Apps, `pncp_licitacoes` abre uma consulta de publicações p
 
 Para usar os filtros via texto, envie `query: ""`, `modalidade_id`, `data_inicial`, `data_final` e, se necessário, `cnpj_orgao` e `pagina`. A busca legada com `query` sem modalidade mantém seu retorno textual e o encaminhamento ao portal quando aplicável. O CLI serve a interface em stdio e HTTP/SSE. O Worker mantém o retorno textual.
 
+### Ficha por CNPJ
+
+Em hosts com MCP Apps, `cnpj_lookup` abre uma ficha com razão social, situação cadastral, CNAEs, endereço e o provedor que respondeu à consulta. A atualização informada pelo provedor aparece separada do horário de consulta, quando disponível. O CLI serve a interface em stdio e HTTP/SSE. Chamadas existentes e o Worker mantêm a resposta JSON textual.
+
 ### Desenvolvimento e contribuição
 
 ```bash

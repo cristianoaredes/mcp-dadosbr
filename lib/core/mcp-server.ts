@@ -12,6 +12,7 @@ import { SERVER_NAME, SERVER_VERSION } from "../config/index.js";
 import { TOOL_DEFINITIONS, executeTool, resetMetrics } from "./tools.js";
 import { Cache, ApiConfig } from "../types/index.js";
 import { formatErrorResponse } from "../shared/errors.js";
+import { readCnpjProfile } from "../shared/cnpj-profile.js";
 
 const appMimeType = "text/html;profile=mcp-app";
 const apps = [
@@ -42,6 +43,13 @@ const apps = [
     id: "editais-pncp",
     title: "Editais do PNCP",
     description: "Consulte publicações por período, modalidade e órgão.",
+  },
+  {
+    tool: "cnpj_lookup",
+    file: "cnpj.html",
+    id: "ficha-cnpj",
+    title: "Ficha por CNPJ",
+    description: "Consulte situação cadastral, CNAEs, endereço e provedor dos dados.",
   },
 ].map(({ tool, file, id, title, description }) => ({
   tool,
@@ -110,6 +118,10 @@ export function createMCPServer(options: MCPServerOptions): Server {
           ? appCapability.mimeTypes
           : undefined;
         let structuredContent;
+        if (name === "cnpj_lookup" && Array.isArray(appMimeTypes) && appMimeTypes.includes(appMimeType)) {
+          const profile = readCnpjProfile(result.data);
+          if (profile) structuredContent = { profile };
+        }
         if (result.source && Array.isArray(appMimeTypes) && appMimeTypes.includes(appMimeType)) {
           if (name === "ibge_localidades" && Array.isArray(result.data)) {
             structuredContent = { items: result.data, source: result.source };
