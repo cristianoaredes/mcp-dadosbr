@@ -27,7 +27,8 @@ let metrics: Metrics = {
 function logPerformanceMetrics(): void {
   const uptime = (Date.now() - metrics.startTime) / 1000;
   const avgTime = metrics.requests > 0 ? metrics.totalTime / metrics.requests : 0;
-  console.log(
+  // The Node stdio transport reserves stdout for JSON-RPC.
+  console.error(
     `[metrics] requests=${metrics.requests} cache_hits=${metrics.cacheHits} errors=${metrics.errors} avg_time=${avgTime.toFixed(0)}ms uptime=${uptime.toFixed(0)}s tools=${getToolCount()}`
   );
 }
