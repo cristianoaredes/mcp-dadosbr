@@ -1,412 +1,92 @@
-# MCP DadosBR — Brazilian Data MCP Server for Claude, Cursor & AI Assistants
+# MCP DadosBR
 
-[![smithery badge](https://smithery.ai/badge/@cristianoaredes/mcp-dadosbr)](https://smithery.ai/server/@cristianoaredes/mcp-dadosbr)
-[![npm version](https://badge.fury.io/js/@aredes.me%2Fmcp-dadosbr.svg)](https://www.npmjs.com/package/@aredes.me/mcp-dadosbr)
-[![npm downloads](https://img.shields.io/npm/dm/@aredes.me/mcp-dadosbr.svg)](https://www.npmjs.com/package/@aredes.me/mcp-dadosbr)
-[![TypeScript](https://img.shields.io/badge/TypeScript-007ACC?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+**Consulte dados públicos brasileiros na conversa com seu assistente de IA.**
 
-**The most complete Brazilian OSINT toolkit as a Model Context Protocol (MCP) server.** Query CNPJ, CEP, court records, government contracts, financial indicators, and more — directly from Claude Desktop, Cursor, Windsurf, Claude Code, or any MCP-compatible AI assistant.
+Explore municípios, leia publicações oficiais, acompanhe indicadores econômicos e consulte editais e fichas cadastrais. O MCP DadosBR conecta seu cliente MCP às APIs de dados e oferece painéis interativos na conversa quando o cliente suporta MCP Apps.
 
-_[Português](#português) | [English](#english)_
+Projeto open source desenvolvido com governança do [Codebase OPS by Orqo](https://orqo.pro/). [English overview](#english)
 
----
+## O que você pode explorar
 
-## Português
+| MCP App | O que você pode fazer | Fonte dos dados |
+| --- | --- | --- |
+| **Localidades do IBGE** · `ibge_localidades` | Navegar por região e UF, buscar municípios por nome ou código e seguir para as publicações do município selecionado. | [API de Localidades do IBGE](https://servicodados.ibge.gov.br/api/v1/localidades/estados) |
+| **Diários municipais** · `querido_diario` | Buscar publicações por termo e período e abrir a edição original. A cobertura varia por município. | [API pública do Querido Diário](https://docs.queridodiario.ok.org.br/pt-br/latest/utilizando/api-publica.html) |
+| **Indicadores do Banco Central** · `bacen_taxas` | Consultar gráficos e tabelas de Selic, IPCA, CDI, dólar e euro em janelas de 30, 90 ou 365 dias. | [Sistema Gerenciador de Séries Temporais (SGS)](https://www3.bcb.gov.br/sgspub/) |
+| **Editais do PNCP** · `pncp_licitacoes` | Filtrar publicações por período, modalidade e CNPJ do órgão e abrir o edital no portal oficial. | [API de consultas do PNCP](https://pncp.gov.br/api/consulta/swagger-ui/index.html) |
+| **Ficha por CNPJ** · `cnpj_lookup` | Consultar razão social, situação cadastral, atividades econômicas (CNAEs), endereço e provedor. A data de atualização aparece quando o provedor a informa. | [OpenCNPJ](https://opencnpj.org/) por padrão ou outro [provedor configurado](docs/CONFIGURATION.md#custom-cnpj-api) |
 
-### O que é isso?
+Os cinco painéis fazem parte da versão atual do código-fonte e usam a extensão [MCP Apps](https://modelcontextprotocol.io/extensions/apps/overview). O servidor Node.js entrega os painéis via stdio e HTTP/SSE e também retorna os dados em JSON textual. O adaptador Cloudflare Worker oferece o retorno textual.
 
-MCP DadosBR é um servidor MCP que conecta assistentes de IA a dados públicos brasileiros. Com ele, Claude, Cursor, Windsurf e outros assistentes podem consultar CNPJs, endereços por CEP, processos judiciais, contratos governamentais, indicadores financeiros do Banco Central e muito mais — sem sair da conversa.
+## Experimente em uma conversa
 
-São **23 ferramentas OSINT** organizadas em 6 domínios: governo, jurídico, empresas, financeiro, saúde e inteligência estratégica.
+- **Descubra publicações municipais.** Peça “Abra o Explorador do IBGE para Alagoas”. Selecione Batalha, clique em **Ver publicações** e busque por “orçamento”.
+- **Consulte uma ficha cadastral.** Peça “Abra a ficha do CNPJ 00.394.460/0001-41 e mostre a situação cadastral, as atividades e o provedor que respondeu”.
+- **Confira uma série econômica.** Peça “Abra o painel do Banco Central e mostre a Selic dos últimos 90 dias com a fonte da série”.
+- **Encontre um edital.** Peça “Abra o painel do PNCP e filtre os editais de pregão eletrônico publicados nos últimos 30 dias”.
 
-### Instalação rápida
+## Instalação
 
-```bash
-npx @aredes.me/mcp-dadosbr
-```
-
-### Configuração (qualquer cliente MCP)
-
-Adicione ao arquivo de configuração do seu cliente MCP:
-
-```json
-{
-  "mcpServers": {
-    "dadosbr": {
-      "command": "npx",
-      "args": ["@aredes.me/mcp-dadosbr"],
-      "env": {
-        "TAVILY_API_KEY": "tvly-your-key",
-        "PERPLEXITY_API_KEY": "pplx-your-key",
-        "TRANSPARENCIA_API_KEY": "your-key",
-        "DATAJUD_API_KEY": "your-key"
-      }
-    }
-  }
-}
-```
-
-<details>
-<summary>Localização do arquivo de configuração por cliente</summary>
-
-| Cliente | Localização |
-|---|---|
-| Claude Desktop | `~/Library/Application Support/Claude/claude_desktop_config.json` |
-| Cursor | `.cursor/mcp.json` no projeto |
-| Windsurf | `~/.windsurf/config.json` |
-| Continue.dev | `~/.continue/config.json` |
-| Gemini CLI | `~/.config/gemini/mcp_config.json` |
-| Zed | `~/.config/zed/settings.json` (campo `context_servers`) |
-| Cline / Roo Cline | VS Code Settings → Extensions → Cline → MCP Servers |
-
-**Claude Code CLI:**
-```bash
-claude mcp add --transport stdio dadosbr \
-  --env TAVILY_API_KEY=tvly-xxx \
-  --env TRANSPARENCIA_API_KEY=xxx \
-  --env DATAJUD_API_KEY=xxx \
-  -- npx -y @aredes.me/mcp-dadosbr
-```
-</details>
-
----
-
-### 23 Ferramentas OSINT
-
-#### Governo e Transparência
-
-| Ferramenta | O que faz | API Key |
-|---|---|---|
-| `ibge_localidades` | Estados, municípios e regiões do IBGE | — |
-| `transparencia_lookup` | Contratos, convênios e licitações federais | `TRANSPARENCIA_API_KEY` |
-| `ceis_cnep_lookup` | Empresas sancionadas (CEIS/CNEP) | `TRANSPARENCIA_API_KEY` |
-| `pncp_licitacoes` | Portal Nacional de Contratações Públicas | — |
-| `querido_diario` | Diários oficiais municipais (Open Knowledge) | — |
-
-#### Jurídico e Compliance
-
-| Ferramenta | O que faz | API Key |
-|---|---|---|
-| `datajud_processos` | Processos judiciais em todos os tribunais brasileiros | `DATAJUD_API_KEY` |
-| `oab_advogado` | Consulta de advogados no CNA/OAB | — |
-| `bnmp_mandados` | Mandados de prisão (BNMP/CNJ) | — |
-| `procurados_lookup` | Pessoas procuradas (MJSP/Interpol) | — |
-| `lista_suja_lookup` | Lista suja do trabalho escravo (MTE) | — |
-
-#### Empresas e Pessoas
-
-| Ferramenta | O que faz | API Key |
-|---|---|---|
-| `cnpj_lookup` | Dados cadastrais completos por CNPJ | — |
-| `cep_lookup` | Endereço completo por CEP | — |
-| `cpf_validate` | Validação matemática de CPF | — |
-| `domain_whois` | WHOIS de domínios .br (Registro.br) | — |
-| `consumidor_reclamacoes` | Reclamações no Consumidor.gov.br | — |
-| `company_deep_profile` | Perfil completo orquestrado com 6 fontes | Múltiplas |
-
-#### Financeiro
-
-| Ferramenta | O que faz | API Key |
-|---|---|---|
-| `bacen_taxas` | SELIC, IPCA, Dólar, Euro, CDI (Banco Central) | — |
-| `fipe_veiculos` | Tabela FIPE de veículos | — |
-
-#### Saúde
-
-| Ferramenta | O que faz | API Key |
-|---|---|---|
-| `cnes_saude` | Estabelecimentos de saúde (CNES/DataSUS) | — |
-
-#### Inteligência Estratégica
-
-| Ferramenta | O que faz | API Key |
-|---|---|---|
-| `cnpj_search` | Busca web com Google Dorks via Tavily | `TAVILY_API_KEY` |
-| `cnpj_intelligence` | Busca inteligente multi-categoria | `TAVILY_API_KEY` |
-| `strategic_osint_prompt` | Templates de análise (due diligence, fraude, ESG) | — |
-| `sequentialthinking` | Raciocínio estruturado passo a passo | — |
-
----
-
-### Exemplos de uso
-
-**Due Diligence completa de empresa:**
-```
-Faça uma investigação completa do CNPJ 00.000.000/0001-91:
-1. Use cnpj_lookup para dados cadastrais
-2. Use transparencia_lookup para contratos governamentais
-3. Use datajud_processos para processos judiciais
-4. Use lista_suja_lookup para verificar trabalho escravo
-5. Use company_deep_profile para o perfil consolidado
-```
-
-**Detecção de fraude:**
-```
-Use strategic_osint_prompt com template "fraud_detection" para o CNPJ 11.222.333/0001-81.
-Execute cada ferramenta indicada no prompt gerado.
-```
-
-**Consulta financeira:**
-```
-Quais são as taxas atuais do Banco Central?
-Use bacen_taxas para SELIC, IPCA e câmbio do Dólar.
-```
-
-**Pesquisa jurídica:**
-```
-Use datajud_processos para buscar processos contra "Empresa XYZ" no TJSP.
-Depois use oab_advogado para verificar "João Silva" na OAB/SP.
-```
-
-**Inteligência territorial:**
-```
-Use ibge_localidades para listar municípios de MG,
-depois use cnes_saude para encontrar hospitais em Belo Horizonte.
-```
-
----
-
-### Variáveis de ambiente
-
-| Variável | Necessária para | Como obter |
-|---|---|---|
-| `TAVILY_API_KEY` | Ferramentas de busca web | [tavily.com](https://tavily.com) |
-| `PERPLEXITY_API_KEY` | Busca alternativa (se Tavily não configurado) | [perplexity.ai](https://docs.perplexity.ai/) |
-| `TRANSPARENCIA_API_KEY` | Dados de transparência federal | [portaldatransparencia.gov.br/api-de-dados](http://portaldatransparencia.gov.br/api-de-dados) |
-| `DATAJUD_API_KEY` | Processos judiciais | [datajud-wiki.cnj.jus.br](https://datajud-wiki.cnj.jus.br/) |
-| `MCP_TRANSPORT` | — | `stdio` (padrão) ou `http` |
-| `MCP_HTTP_PORT` | — | Porta HTTP (padrão: `3000`) |
-
-Todas as ferramentas sem "API Key" na tabela funcionam sem nenhuma chave.
-
----
-
-### Requisitos
-
-- **Node.js 22.12+, 24 ou 26**
-- Chaves de API opcionais conforme tabela acima
-
----
-
-### Explorador de localidades do IBGE
-
-Em hosts compatíveis com [MCP Apps](https://modelcontextprotocol.io/extensions/apps/overview), use `ibge_localidades` para abrir o explorador na conversa. Escolha uma região e uma UF, filtre municípios por nome ou código e confira a fonte do IBGE e o horário da consulta.
-
-O CLI oferece a interface por stdio e HTTP/SSE. A resposta JSON textual continua disponível em ambos. O Worker mantém a interface textual existente neste piloto. O recurso HTML autônomo é gerado pelo build e segue no pacote npm.
-
-### Diários oficiais municipais
-
-Na linha do município no Explorador do IBGE, selecione **Ver publicações** para consultar edições recentes no Querido Diário. Filtre por termo e período e abra a edição na fonte de arquivos do provedor. Também é possível chamar `querido_diario` diretamente com o código IBGE. A disponibilidade e a cobertura das publicações dependem da [API do Querido Diário](https://docs.queridodiario.ok.org.br/pt-br/latest/utilizando/api-publica.html).
-
-O CLI publica o recurso da interface em stdio e HTTP/SSE. A ferramenta continua disponibilizando o JSON textual para clientes sem MCP Apps, inclusive no Worker.
-
-### Indicadores do Banco Central
-
-Em clientes com MCP Apps, `bacen_taxas` abre gráficos da meta Selic, do IPCA, do dólar e do euro de venda, e do CDI. Escolha um período de 30, 90 ou 365 dias, consulte a tabela e acesse os metadados oficiais da série no SGS. O painel indica unidade, frequência e última data de referência.
-
-A chamada com `indicador` e `ultimos` preserva a resposta JSON textual. O parâmetro opcional `periodo_dias` consulta o intervalo até a data atual em São Paulo. O App é oferecido pelo CLI em stdio e HTTP/SSE e o Worker atende em texto.
-
-### Editais do PNCP
-
-Em clientes com MCP Apps, `pncp_licitacoes` abre uma consulta de publicações por período, modalidade e CNPJ opcional do órgão. Os resultados são paginados e cada edital com identificadores válidos oferece um link permanente em `pncp.gov.br`. O painel usa o catálogo oficial de modalidades e a [API de consultas do PNCP](https://pncp.gov.br/api/consulta/swagger-ui/index.html).
-
-Para usar os filtros via texto, envie `query: ""`, `modalidade_id`, `data_inicial`, `data_final` e, se necessário, `cnpj_orgao` e `pagina`. A busca legada com `query` sem modalidade mantém seu retorno textual e o encaminhamento ao portal quando aplicável. O CLI serve a interface em stdio e HTTP/SSE. O Worker mantém o retorno textual.
-
-### Ficha por CNPJ
-
-Em hosts com MCP Apps, `cnpj_lookup` abre uma ficha com razão social, situação cadastral, CNAEs, endereço e o provedor que respondeu à consulta. A atualização informada pelo provedor aparece separada do horário de consulta, quando disponível. O CLI serve a interface em stdio e HTTP/SSE. Chamadas existentes e o Worker mantêm a resposta JSON textual.
-
-### Desenvolvimento e contribuição
+Para testar os cinco painéis, use o código-fonte com Node.js **22.12 ou posterior na linha 22**, **24** ou **26**. Use um cliente com suporte a MCP Apps para interagir com os painéis. As cinco consultas funcionam sem credenciais na configuração padrão.
 
 ```bash
 git clone https://github.com/cristianoaredes/mcp-dadosbr.git
 cd mcp-dadosbr
 npm ci
 npm run build
-npm test
-npm run test:transport
 ```
 
----
+Em clientes que usam a configuração `mcpServers`, adicione o servidor e substitua o caminho pelo caminho absoluto da sua cópia:
 
-### Licença
+```json
+{
+  "mcpServers": {
+    "dadosbr": {
+      "command": "node",
+      "args": ["/caminho/absoluto/mcp-dadosbr/build/lib/adapters/cli.js"]
+    }
+  }
+}
+```
 
-MIT — veja [LICENSE](LICENSE).
+Reinicie o cliente e faça uma das consultas acima. Consulte o [guia de integração](docs/MCP_CLIENT_INTEGRATION.md) para configurar outros clientes e transportes.
 
-Dados fornecidos por: [OpenCNPJ](https://opencnpj.org/), [OpenCEP](https://opencep.com/), [IBGE](https://servicodados.ibge.gov.br/), [Portal da Transparência](https://portaldatransparencia.gov.br/), [CNJ Datajud](https://datajud-wiki.cnj.jus.br/), [Banco Central](https://www.bcb.gov.br/), [BrasilAPI](https://brasilapi.com.br/), [CNES/DataSUS](https://cnes.datasus.gov.br/)
+O [pacote publicado no npm](https://www.npmjs.com/package/@aredes.me/mcp-dadosbr) está na versão `0.4.1` e é anterior aos cinco painéis. Para usar essa versão em um cliente com stdio, configure `"command": "npx"` e `"args": ["-y", "@aredes.me/mcp-dadosbr@0.4.1"]`.
 
-Feito por [Cristiano Arêdes](https://github.com/cristianoaredes) · [LinkedIn](https://www.linkedin.com/in/cristianoaredes/) · cristiano@aredes.me
+## Outras ferramentas e configuração
 
----
+O servidor reúne 23 ferramentas. Além dos cinco painéis, o catálogo inclui consultas de CEP, transparência federal, sanções, dados judiciais, estabelecimentos de saúde, tabela FIPE, validação de CPF e pesquisa na web. Veja o [registro de ferramentas](lib/tools/index.ts), a [documentação](docs/README.md) e os [exemplos de uso](docs/USAGE_EXAMPLES.md).
+
+| Variável opcional | Uso |
+| --- | --- |
+| `TRANSPARENCIA_API_KEY` | Consultas ao Portal da Transparência e a CEIS/CNEP. |
+| `DATAJUD_API_KEY` | Consultas de processos no DataJud. |
+| `TAVILY_API_KEY` ou `PERPLEXITY_API_KEY` | Busca web em `cnpj_search` e `cnpj_intelligence`. |
+| `MCP_TRANSPORT` | `stdio` (padrão) ou `http` para HTTP/SSE. |
+| `MCP_HTTP_PORT` | Porta do transporte HTTP. O padrão é `3000`. |
+
+Veja a [configuração completa](docs/CONFIGURATION.md) e o [exemplo de configuração dos provedores](.mcprc.example.json).
+
+## Como o projeto foi desenvolvido
+
+O DadosBR já existia quando adotou o Codebase OPS. O [PR do bootstrap](https://github.com/cristianoaredes/mcp-dadosbr/pull/12) registra a estrutura inicial de governança e a configuração do CI. Os [artefatos em `.archagents/`](.archagents/README.md) ligam os pedidos a decisões, execuções e verificações.
+
+A [entrega da ficha por CNPJ](https://github.com/cristianoaredes/mcp-dadosbr/pull/18) mostra o ciclo em um caso concreto, do ticket e do design até o parecer independente e os checks do GitHub Actions. [Conheça o Codebase OPS by Orqo](https://orqo.pro/).
+
+## Contribua
+
+Depois de instalar e compilar o projeto, rode:
+
+```bash
+npm test
+npm run test:transport
+npm run build:worker
+```
+
+Leia o [guia de contribuição](CONTRIBUTING.md) ou abra uma [issue](https://github.com/cristianoaredes/mcp-dadosbr/issues/new). Código sob [licença MIT](LICENSE). Projeto iniciado por [Cristiano Arêdes](https://github.com/cristianoaredes).
 
 ## English
 
-### What is this?
+**MCP DadosBR brings Brazilian public data into AI conversations.** Its five interactive MCP Apps cover IBGE locations, municipal gazettes, Central Bank indicators, public procurement notices and company registration profiles. All five apps are available when you build from source and connect to an MCP Apps host. The Node.js server also returns text results over stdio or HTTP/SSE. The Cloudflare Worker adapter serves text results.
 
-MCP DadosBR is a Model Context Protocol (MCP) server that gives AI assistants direct access to Brazilian public data. Connect Claude Desktop, Cursor, Windsurf, Claude Code, or any MCP-compatible client to query CNPJ company records, CEP postal addresses, court proceedings, government contracts, Central Bank financial rates, healthcare facilities, and more — all from within the conversation.
-
-**23 OSINT tools** across 6 domains: government transparency, legal/compliance, companies, financial, health, and strategic intelligence.
-
-### Quick install
-
-```bash
-npx @aredes.me/mcp-dadosbr
-```
-
-### Configuration (any MCP client)
-
-```json
-{
-  "mcpServers": {
-    "dadosbr": {
-      "command": "npx",
-      "args": ["@aredes.me/mcp-dadosbr"],
-      "env": {
-        "TAVILY_API_KEY": "tvly-your-key",
-        "PERPLEXITY_API_KEY": "pplx-your-key",
-        "TRANSPARENCIA_API_KEY": "your-key",
-        "DATAJUD_API_KEY": "your-key"
-      }
-    }
-  }
-}
-```
-
-<details>
-<summary>Config file location by client</summary>
-
-| Client | Location |
-|---|---|
-| Claude Desktop | `~/Library/Application Support/Claude/claude_desktop_config.json` |
-| Cursor | `.cursor/mcp.json` in the project |
-| Windsurf | `~/.windsurf/config.json` |
-| Continue.dev | `~/.continue/config.json` |
-| Gemini CLI | `~/.config/gemini/mcp_config.json` |
-| Zed | `~/.config/zed/settings.json` (`context_servers` field) |
-| Cline / Roo Cline | VS Code Settings → Extensions → Cline → MCP Servers |
-
-**Claude Code CLI:**
-```bash
-claude mcp add --transport stdio dadosbr \
-  --env TAVILY_API_KEY=tvly-xxx \
-  --env TRANSPARENCIA_API_KEY=xxx \
-  --env DATAJUD_API_KEY=xxx \
-  -- npx -y @aredes.me/mcp-dadosbr
-```
-</details>
-
----
-
-### 23 OSINT Tools
-
-| Domain | Tools | Description |
-|---|---|---|
-| Government | `ibge_localidades` · `transparencia_lookup` · `ceis_cnep_lookup` · `pncp_licitacoes` · `querido_diario` | IBGE geography, federal contracts, sanctioned companies, public procurement, municipal gazettes |
-| Legal | `datajud_processos` · `oab_advogado` · `bnmp_mandados` · `procurados_lookup` · `lista_suja_lookup` | Court proceedings across all Brazilian courts, lawyer verification, arrest warrants, wanted persons, slave labor blacklist |
-| Company | `cnpj_lookup` · `cep_lookup` · `cpf_validate` · `domain_whois` · `consumidor_reclamacoes` · `company_deep_profile` | Company registration, address lookup, CPF validation, .br domain WHOIS, consumer complaints, 6-source deep profile |
-| Financial | `bacen_taxas` · `fipe_veiculos` | Brazilian Central Bank rates (SELIC, IPCA, USD, EUR, CDI), FIPE vehicle pricing table |
-| Health | `cnes_saude` | Healthcare facility search via CNES/DataSUS |
-| Intelligence | `cnpj_search` · `cnpj_intelligence` · `strategic_osint_prompt` · `sequentialthinking` | Web search with Google Dorks, multi-source intelligence, strategic analysis templates (due diligence, fraud, ESG), structured reasoning |
-
----
-
-### Requirements
-
-- **Node.js 22.12+, 24, or 26**
-- Optional API keys depending on which tools you need (see table below)
-
-### Environment Variables
-
-| Variable | Required for | How to get |
-|---|---|---|
-| `TAVILY_API_KEY` | Web search tools (`cnpj_search`, `cnpj_intelligence`) | [tavily.com](https://tavily.com) |
-| `PERPLEXITY_API_KEY` | Alternative search (used if Tavily not set) | [perplexity.ai](https://docs.perplexity.ai/) |
-| `TRANSPARENCIA_API_KEY` | Government transparency data | [Portal da Transparência API](http://portaldatransparencia.gov.br/api-de-dados) |
-| `DATAJUD_API_KEY` | Court proceedings | [Datajud Wiki](https://datajud-wiki.cnj.jus.br/) |
-
-All tools without an API key in the table above work with zero configuration.
-
----
-
-### Example prompts
-
-**Full company due diligence:**
-```
-Run a full due diligence on CNPJ 00.000.000/0001-91:
-cnpj_lookup → transparencia_lookup → datajud_processos → lista_suja_lookup → company_deep_profile
-```
-
-**Fraud detection:**
-```
-Use strategic_osint_prompt with template "fraud_detection" for CNPJ 11.222.333/0001-81.
-Then run each tool indicated in the generated prompt.
-```
-
-**Brazilian Central Bank rates:**
-```
-What are the current Brazilian Central Bank rates?
-Use bacen_taxas for SELIC, IPCA, and USD exchange rate.
-```
-
-**Legal research:**
-```
-Search for lawsuits against "Company XYZ" using datajud_processos in TJSP.
-Then verify lawyer "João Silva" with oab_advogado in OAB/SP.
-```
-
----
-
-### Stats
-
-- **23 tools** · **257 tests** (100% passing) · **64 Google Dork templates** · **10 OSINT categories**
-- TypeScript strict mode · Node.js 22.12+, 24, or 26 · Vitest · Express 5
-- Circuit breaker, LRU cache, request deduplication built-in
-
-### Architecture overview
-
-```
-lib/
-├── adapters/          # CLI, Cloudflare Workers, Smithery
-├── config/            # Configuration and timeouts
-├── core/              # Registry, search, intelligence, dork-templates
-├── infrastructure/    # Cache, circuit breaker, rate limiting
-├── tools/             # Domain-organized tools
-│   ├── core.ts        #   CNPJ, CEP, search, intelligence, thinking
-│   ├── government.ts  #   IBGE, Transparência, CEIS/CNEP, PNCP, Querido Diário
-│   ├── legal.ts       #   Datajud, OAB, BNMP, Procurados, Lista Suja
-│   ├── company.ts     #   CPF, WHOIS, Consumidor, Deep Profile
-│   ├── financial.ts   #   Banco Central, FIPE
-│   ├── health.ts      #   CNES/DataSUS
-│   └── osint.ts       #   Strategic prompts
-└── types/             # TypeScript type definitions
-```
-
----
-
-### Contributing
-
-```bash
-git clone https://github.com/cristianoaredes/mcp-dadosbr.git
-cd mcp-dadosbr
-npm ci
-npm run build
-npm test
-npm run test:transport
-```
-
-### License
-
-MIT — see [LICENSE](LICENSE).
-
-Data sources: [OpenCNPJ](https://opencnpj.org/), [OpenCEP](https://opencep.com/), [IBGE](https://servicodados.ibge.gov.br/), [Portal da Transparência](https://portaldatransparencia.gov.br/), [CNJ Datajud](https://datajud-wiki.cnj.jus.br/), [Banco Central do Brasil](https://www.bcb.gov.br/), [BrasilAPI](https://brasilapi.com.br/), [CNES/DataSUS](https://cnes.datasus.gov.br/)
-
-Built by [Cristiano Arêdes](https://github.com/cristianoaredes) · [LinkedIn](https://www.linkedin.com/in/cristianoaredes/) · cristiano@aredes.me
-
----
-
-### Links
-
-- **npm**: https://www.npmjs.com/package/@aredes.me/mcp-dadosbr
-- **Smithery**: https://smithery.ai/server/@cristianoaredes/mcp-dadosbr
-- **GitHub**: https://github.com/cristianoaredes/mcp-dadosbr
+Follow the [source setup](#instalação) and the [client integration guide](docs/MCP_CLIENT_INTEGRATION.md). Development is governed with [Codebase OPS by Orqo](https://orqo.pro/).
