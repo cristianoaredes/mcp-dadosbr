@@ -1,0 +1,39 @@
+{
+  "id": "RUN-20261118-030006-readme-orqo",
+  "design": "DES-0006",
+  "ticket": "TCK-0006",
+  "started_at": "2026-11-18T03:00:06Z",
+  "started_by": "ops",
+  "environment": "dev",
+  "mode": "live",
+  "status": "completed",
+  "current_step": 2,
+  "total_steps": 2,
+  "ended_at": "2026-11-18T03:06:16+00:00",
+  "result": "README reescrito e validado localmente",
+  "loop_iterations": 0,
+  "attempt_count": 0,
+  "lessons_consulted": [
+    "Instrumentos de ciclo precisam de smoke-test periodico: retire-artifact.py passa",
+    "A fronteira de publicação é os.replace; falha posterior preserva o recurso criad",
+    "Origem, lock, staging e destino de uma transação concorrente devem permanecer an"
+  ],
+  "loop_cost_usd": null,
+  "cost_source": "unknown",
+  "loop_strategy": "default",
+  "context_peak": 0,
+  "final_judge_delta": 32,
+  "operator": "codex",
+  "warmup": false,
+  "final_judge_delta_source": "judge",
+  "lesson_utility": {
+    "utility": 0.64,
+    "n_lessons": 3,
+    "lessons_consulted": [
+      "Instrumentos de ciclo precisam de smoke-test periodico: retire-artifact.py passa",
+      "A fronteira de publicação é os.replace; falha posterior preserva o recurso criad",
+      "Origem, lock, staging e destino de uma transação concorrente devem permanecer an"
+    ],
+    "signal": "computed"
+  }
+}

@@ -3,3 +3,4 @@
 {"forced": false, "from": "verifying", "lock": {"freshness": "fresh", "passes": true, "updated_at": "2026-11-17T23:40:12Z", "updated_by": "criteria-check"}, "ticket": "TCK-0003", "to": "done", "ts": "2026-11-17T23:40:40Z", "writer": "transition_ticket"}
 {"forced": false, "from": "verifying", "lock": {"freshness": "fresh", "passes": true, "updated_at": "2026-11-18T00:08:39Z", "updated_by": "criteria-check"}, "ticket": "TCK-0004", "to": "done", "ts": "2026-11-18T00:09:02Z", "writer": "transition_ticket"}
 {"forced": false, "from": "verifying", "lock": {"freshness": "fresh", "passes": true, "updated_at": "2026-11-18T02:07:42Z", "updated_by": "criteria-check"}, "ticket": "TCK-0005", "to": "done", "ts": "2026-11-18T02:08:34Z", "writer": "transition_ticket"}
+{"forced": false, "from": "verifying", "lock": null, "ticket": "TCK-0006", "to": "done", "ts": "2026-11-18T03:08:24Z", "writer": "transition_ticket"}
