@@ -4,3 +4,5 @@
 {"forced": false, "from": "verifying", "lock": {"freshness": "fresh", "passes": true, "updated_at": "2026-11-18T00:08:39Z", "updated_by": "criteria-check"}, "ticket": "TCK-0004", "to": "done", "ts": "2026-11-18T00:09:02Z", "writer": "transition_ticket"}
 {"forced": false, "from": "verifying", "lock": {"freshness": "fresh", "passes": true, "updated_at": "2026-11-18T02:07:42Z", "updated_by": "criteria-check"}, "ticket": "TCK-0005", "to": "done", "ts": "2026-11-18T02:08:34Z", "writer": "transition_ticket"}
 {"forced": false, "from": "verifying", "lock": null, "ticket": "TCK-0006", "to": "done", "ts": "2026-11-18T03:08:24Z", "writer": "transition_ticket"}
+{"forced": false, "from": "verifying", "lock": {"freshness": "fresh", "passes": true, "updated_at": "2026-11-18T03:19:59Z", "updated_by": "criteria-check"}, "ticket": "TCK-0007", "to": "done", "ts": "2026-11-18T03:20:28Z", "writer": "transition_ticket"}
+{"forced": false, "from": "verifying", "lock": {"freshness": "fresh", "passes": true, "updated_at": "2026-11-18T03:30:14Z", "updated_by": "criteria-check"}, "ticket": "TCK-0008", "to": "done", "ts": "2026-11-18T03:30:14Z", "writer": "transition_ticket"}

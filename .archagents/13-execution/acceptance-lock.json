@@ -43,5 +43,23 @@
     "tree": "28008d7afa6f6a4abe6f63e1e8425804f12cc711",
     "updated_at": "2026-11-18T02:07:42Z",
     "updated_by": "criteria-check"
+  },
+  "TCK-0007": {
+    "content_digest": "sha256:6aca9bcf3d1469fff9c41c5f1c5c70ac4be54ee3280901d2acb33c75edf675ed",
+    "criteria_digest": "sha256:2744b996ac6c315c4380d493f24561a6b560e77d8c46936082dda1eccfbf556e",
+    "head": "d59989c94f6ccf0bcbc5cb238648ae6555048bc1",
+    "passes": true,
+    "tree": "dc86074f7a3d22c493d5118c200df5d5b06ef36e",
+    "updated_at": "2026-11-18T03:19:59Z",
+    "updated_by": "criteria-check"
+  },
+  "TCK-0008": {
+    "content_digest": "sha256:046de3b1fd8f83e5f841322dd350a17c09d2182dfe72f634027e450eb4882fc1",
+    "criteria_digest": "sha256:f70726aa8e6a224bd156e7f55b28fa6abd0d9411a983c880affa01d96e7ebe59",
+    "head": "db50d26c60a4f7bfdc47085902f37f932878e7e5",
+    "passes": true,
+    "tree": "3d0a9ab475c6a262762b48113a06c78eb8953eee",
+    "updated_at": "2026-11-18T03:30:14Z",
+    "updated_by": "criteria-check"
   }
 }
