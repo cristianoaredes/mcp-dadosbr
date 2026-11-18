@@ -64,7 +64,7 @@ jobs:
         run: |
           npm pack --dry-run --json | node -e '
             const [pkg] = JSON.parse(require("node:fs").readFileSync(0, "utf8"))
-            for (const name of ["ibge", "querido-diario", "bacen", "pncp"]) {
+            for (const name of ["ibge", "querido-diario", "bacen", "pncp", "cnpj"]) {
               const app = pkg.files.find(({ path }) => path === "build/lib/apps/" + name + ".html")
               if (!app?.size) throw new Error(name + " app missing from npm package")
               console.log("Packaged MCP App:", name, app.size, "bytes")
