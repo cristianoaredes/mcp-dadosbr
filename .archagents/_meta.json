@@ -175,25 +175,25 @@
     ]
   },
   "metrics": {
-    "total_tickets": 3,
-    "done_tickets": 3,
+    "total_tickets": 4,
+    "done_tickets": 4,
     "archived_tickets": 0,
-    "avg_cycle_time": 0.19,
+    "avg_cycle_time": 0.18,
     "avg_cycle_time_coverage": {
-      "measured": 3,
-      "total": 3,
+      "measured": 4,
+      "total": 4,
       "ratio": 1.0
     },
     "success_rate": 0.0,
     "success_rate_coverage": {
       "measured": 0,
-      "total": 1,
-      "discarded_non_outcome": 1,
+      "total": 2,
+      "discarded_non_outcome": 2,
       "ratio": 0.0,
       "source": "learning_log + taxonomia TCK-0820"
     },
     "status_breakdown": {
-      "done": 3
+      "done": 4
     }
   },
   "active_runs": [],
@@ -209,16 +209,16 @@
       "backlog_health": {
         "value": 100.0,
         "weight": 0.4,
-        "measured": 3,
-        "total": 3,
+        "measured": 4,
+        "total": 4,
         "ratio": 1.0
       },
       "recent_success": {
         "value": 0.0,
         "weight": 0.4,
         "measured": 0,
-        "total": 1,
-        "discarded_non_outcome": 1,
+        "total": 2,
+        "discarded_non_outcome": 2,
         "ratio": 0.0,
         "source": "learning_log (últimos 10) + taxonomia TCK-0820"
       },
@@ -238,7 +238,7 @@
       "source": "zombie-run-scan.py (TCK-1447/TCK-2477) via .archagents/.zombie-runs-baseline.json"
     }
   },
-  "last_updated": "2026-11-17T23:40:40.909667Z",
+  "last_updated": "2026-11-18T00:09:03.166401Z",
   "learning_log": [
     {
       "run": "RUN-20261117-224844-querido-diario",
@@ -249,6 +249,11 @@
       "ticket": "TCK-0003",
       "run": "RUN-20261117-233225-bacen",
       "learning": "Validar séries, unidades e janela na fonte oficial. Manter datas futuras fora da visualização e preservar o JSON legado."
+    },
+    {
+      "ticket": "TCK-0004",
+      "run": "RUN-20261117-235945-pncp",
+      "learning": "Separar o contrato oficial de filtros PNCP da busca por termo do portal. Tratar HTTP 204 como estado vazio e compor links no domínio oficial."
     }
   ]
 }

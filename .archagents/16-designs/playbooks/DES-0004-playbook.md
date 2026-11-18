@@ -6,8 +6,8 @@ design: DES-0004
 ticket: TCK-0004
 approved_at: 2026-11-17T23:59:45Z
 approved_by: codex
-executed_at: null
-executed_runs: []
+executed_at: "2026-11-18T00:08:32+00:00"
+executed_runs: [RUN-20261117-235945-pncp]
 dry_run_supported: true
 total_steps: 3
 destructive_steps: 0
@@ -45,4 +45,4 @@ commit_message_format: "[TCK-0004] passo N/3: <titulo>"
 
 ## Log de execucoes
 
-- *(sem execucoes ainda)*
+- 2026-11-18T00:08:32+00:00 · RUN-20261117-235945-pncp · consulta oficial e checagens locais aprovadas.

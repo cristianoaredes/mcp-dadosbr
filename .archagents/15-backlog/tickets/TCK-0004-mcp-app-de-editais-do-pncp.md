@@ -5,8 +5,8 @@ title: "MCP App de editais do PNCP"
 source: user
 created_at: 2026-11-17T23:59:44Z
 created_by: ops
-updated_at: 2026-11-18T00:00:21Z
-status: executing
+updated_at: 2026-11-18T00:09:02Z
+status: done
 severity: medium
 category: feature
 effort: M
@@ -18,7 +18,8 @@ linked_designs:
   - DES-0004
 linked_runs:
   - RUN-20261117-235945-pncp
-linked_verifications: []
+linked_verifications:
+  - VER-20261118-000832-tck-0004
 linked_docs: []
 external_refs: []
 external_sync: []
@@ -52,3 +53,5 @@ Em test/integration/transports.mjs:57 ainda não há UI do PNCP. Reprova se órg
 - 2026-11-17T23:59:44Z - **triaged** - Painel de publicações e preservação de chamadas existentes [depth_decision do routing-classifier: workflow lightweight, design lightweight, verify completo]
 - 2026-11-18T00:00:20Z - **designed** - Modo filtrado documentado e fallback preservado
 - 2026-11-18T00:00:21Z - **executing** - Implementar consulta oficial e painel
+- 2026-11-18T00:08:32Z - **verifying** - Protocolo, empacotamento e AppBridge com API pública exercitados
+- 2026-11-18T00:09:02Z - **done** - Critérios locais e P10 concluídos; CI remoto condiciona o merge
