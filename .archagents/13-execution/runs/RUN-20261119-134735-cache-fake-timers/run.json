@@ -1,0 +1,30 @@
+{
+  "id": "RUN-20261119-134735-cache-fake-timers",
+  "design": "DES-0011",
+  "ticket": "TCK-0011",
+  "started_at": "2026-11-19T13:47:35Z",
+  "started_by": "ops",
+  "environment": "dev",
+  "mode": "live",
+  "status": "completed",
+  "current_step": 2,
+  "total_steps": 2,
+  "ended_at": "2026-11-19T13:49:21Z",
+  "result": "37/37 testes em cache.test.ts em 7ms com fake timers e 0 setTimeout; 286/286 na suíte completa e criteria-check 2/2 PASS",
+  "loop_iterations": 1,
+  "attempt_count": 1,
+  "lessons_consulted": [],
+  "loop_cost_usd": null,
+  "cost_source": "unknown",
+  "loop_strategy": "default",
+  "context_peak": 0,
+  "final_judge_delta": 46,
+  "warmup": false,
+  "final_judge_delta_source": "judge",
+  "lesson_utility": {
+    "utility": 0.0,
+    "n_lessons": 0,
+    "lessons_consulted": [],
+    "signal": "no-lessons"
+  }
+}

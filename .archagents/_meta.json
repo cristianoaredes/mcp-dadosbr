@@ -270,25 +270,25 @@
     ]
   },
   "metrics": {
-    "total_tickets": 10,
-    "done_tickets": 10,
+    "total_tickets": 11,
+    "done_tickets": 11,
     "archived_tickets": 0,
-    "avg_cycle_time": 0.19,
+    "avg_cycle_time": 0.22,
     "avg_cycle_time_coverage": {
-      "measured": 10,
-      "total": 10,
+      "measured": 11,
+      "total": 11,
       "ratio": 1.0
     },
     "success_rate": 0.0,
     "success_rate_coverage": {
       "measured": 0,
-      "total": 5,
-      "discarded_non_outcome": 5,
+      "total": 6,
+      "discarded_non_outcome": 6,
       "ratio": 0.0,
       "source": "learning_log + taxonomia TCK-0820"
     },
     "status_breakdown": {
-      "done": 10
+      "done": 11
     }
   },
   "active_runs": [],
@@ -304,16 +304,16 @@
       "backlog_health": {
         "value": 100.0,
         "weight": 0.4,
-        "measured": 10,
-        "total": 10,
+        "measured": 11,
+        "total": 11,
         "ratio": 1.0
       },
       "recent_success": {
         "value": 0.0,
         "weight": 0.4,
         "measured": 0,
-        "total": 5,
-        "discarded_non_outcome": 5,
+        "total": 6,
+        "discarded_non_outcome": 6,
         "ratio": 0.0,
         "source": "learning_log (últimos 10) + taxonomia TCK-0820"
       },
@@ -333,7 +333,7 @@
       "source": "zombie-run-scan.py (TCK-1447/TCK-2477) via .archagents/.zombie-runs-baseline.json"
     }
   },
-  "last_updated": "2026-11-19T06:23:30.969688Z",
+  "last_updated": "2026-11-19T13:55:18.150494Z",
   "learning_log": [
     {
       "run": "RUN-20261117-224844-querido-diario",
@@ -364,6 +364,11 @@
       "ticket": "TCK-0010",
       "run": "RUN-20261119-061512-release-0-6-0-agpl3",
       "learning": "Mudança de licença permissiva (MIT) para copyleft de rede (AGPL-3.0-only) em SemVer 0.x.y exige bump minor (0.6.0) para impedir auto-upgrade silencioso via ^0.5.0; espelhar npm pack + instalação em diretório limpo + guarda SemVer localmente reduz surpresas no workflow Publish npm release."
+    },
+    {
+      "ticket": "TCK-0011",
+      "run": "RUN-20261119-134735-cache-fake-timers",
+      "learning": "Testes de TTL baseados em setTimeout com folga de ~30 ms falham sob contenção de CPU em runners paralelos; substituir esperas reais por vi.useFakeTimers()/vi.setSystemTime()/vi.advanceTimersByTime() (com vi.useRealTimers() em afterEach) elimina o flake e reduz a suíte de ~1,1 s para ~7 ms sem alterar a semântica de lib/core/cache.ts."
     }
   ]
 }

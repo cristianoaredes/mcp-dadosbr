@@ -1,0 +1,2 @@
+{"action": "Substituir todos os setTimeout reais em test/unit/cache.test.ts por vi.useFakeTimers() + vi.advanceTimersByTime()", "files": ["test/unit/cache.test.ts"], "gate_status": "flow", "step": 1, "ts": "2026-11-19T13:50:09Z", "type": "action"}
+{"action": "Executar vitest run cache.test.ts (37/37 em 7ms) e criteria-check.py (2/2 PASS, 286/286 testes)", "files": ["test/unit/cache.test.ts"], "gate_status": "flow", "step": 2, "ts": "2026-11-19T13:50:09Z", "type": "action"}
