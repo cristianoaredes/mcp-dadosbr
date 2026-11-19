@@ -103,6 +103,10 @@ jspm_packages/
 .mcprc.json.local
 *.mcprc.json.backup
 
+# Python bytecode
+__pycache__/
+*.py[cod]
+
 # codebase-ops: estado local
 .archagents/13-execution/snapshots/
 .archagents/.cache/

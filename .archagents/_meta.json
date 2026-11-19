@@ -270,25 +270,25 @@
     ]
   },
   "metrics": {
-    "total_tickets": 11,
-    "done_tickets": 11,
+    "total_tickets": 12,
+    "done_tickets": 12,
     "archived_tickets": 0,
-    "avg_cycle_time": 0.22,
+    "avg_cycle_time": 0.24,
     "avg_cycle_time_coverage": {
-      "measured": 11,
-      "total": 11,
+      "measured": 12,
+      "total": 12,
       "ratio": 1.0
     },
     "success_rate": 0.0,
     "success_rate_coverage": {
       "measured": 0,
-      "total": 6,
-      "discarded_non_outcome": 6,
+      "total": 7,
+      "discarded_non_outcome": 7,
       "ratio": 0.0,
       "source": "learning_log + taxonomia TCK-0820"
     },
     "status_breakdown": {
-      "done": 11
+      "done": 12
     }
   },
   "active_runs": [],
@@ -304,16 +304,16 @@
       "backlog_health": {
         "value": 100.0,
         "weight": 0.4,
-        "measured": 11,
-        "total": 11,
+        "measured": 12,
+        "total": 12,
         "ratio": 1.0
       },
       "recent_success": {
         "value": 0.0,
         "weight": 0.4,
         "measured": 0,
-        "total": 6,
-        "discarded_non_outcome": 6,
+        "total": 7,
+        "discarded_non_outcome": 7,
         "ratio": 0.0,
         "source": "learning_log (últimos 10) + taxonomia TCK-0820"
       },
@@ -333,7 +333,7 @@
       "source": "zombie-run-scan.py (TCK-1447/TCK-2477) via .archagents/.zombie-runs-baseline.json"
     }
   },
-  "last_updated": "2026-11-19T13:55:18.150494Z",
+  "last_updated": "2026-11-19T18:12:46.343321Z",
   "learning_log": [
     {
       "run": "RUN-20261117-224844-querido-diario",
@@ -369,6 +369,11 @@
       "ticket": "TCK-0011",
       "run": "RUN-20261119-134735-cache-fake-timers",
       "learning": "Testes de TTL baseados em setTimeout com folga de ~30 ms falham sob contenção de CPU em runners paralelos; substituir esperas reais por vi.useFakeTimers()/vi.setSystemTime()/vi.advanceTimersByTime() (com vi.useRealTimers() em afterEach) elimina o flake e reduz a suíte de ~1,1 s para ~7 ms sem alterar a semântica de lib/core/cache.ts."
+    },
+    {
+      "ticket": "TCK-0012",
+      "run": "RUN-20261119-174741-ephemeral-runner-supervisor",
+      "learning": "Em repositórios públicos com self-hosted runners em Docker sobre host dual-stack, regras apenas IPv4 deixam bypass via fe80::/64 contra sockets [::]:22 (exige disable_ipv6 sysctl + ip6tables DROP); além disso, default labels (self-hosted/linux/x64) exigem approval_policy=all_external_contributors somado a guarda pré-spawn contra label-subset hijacking."
     }
   ]
 }
