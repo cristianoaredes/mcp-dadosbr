@@ -18,6 +18,17 @@ All notable changes to MCP DadosBR will be documented in this file.
   - Type-safe Dart classes mirroring the TypeScript interfaces
   - See [Flutter Library Documentation](docs/FLUTTER_LIBRARY.md) for details
 
+## [0.6.0] - 2026-11-19
+
+### Changed (License)
+
+- **Relicensed from MIT to GNU AGPL-3.0 (`AGPL-3.0-only`)**: replaced `LICENSE` with the verbatim official GNU Affero General Public License v3.0 text, updated `package.json`, `package-lock.json`, and `smithery.yaml` to `AGPL-3.0-only`, and preserved third-party acknowledgments in `NOTICE.md` (included in the npm package). Releases up to `0.5.0` remain under the MIT License; `AGPL-3.0-only` applies starting with `0.6.0`.
+
+### Documentation
+
+- Rewrote `README.md` following the [orqo.pro](https://orqo.pro/) editorial standard (`MCP DadosBR by Orqo`) with the five interactive MCP Apps, full 23-tool domain catalog, execution perimeter comparison (Node `stdio`/`HTTP+SSE` vs. Cloudflare Worker), SSRF allowlist, verified environment variables and defaults, architecture diagram, explicit boundaries (*O que não faz*), FAQ, AGPL-3.0 guidance, governance history (`Codebase OPS by Orqo`), and English overview.
+- Synchronized `.archagents/` AS-IS documentation and source hashes against the `v0.5.0`–`0.6.0` codebase.
+
 ## [0.5.0] - 2026-11-18
 
 ### Added
