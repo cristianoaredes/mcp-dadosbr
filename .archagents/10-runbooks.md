@@ -11,7 +11,12 @@ Execute `npm ci`, `npm run build` (inclui `npm run build:apps`), `npm test`, `np
 
 ## Runner próprio
 
-Use runner Linux x64 dedicado ao DadosBR, em ambiente isolado da VPS. Confira repositório, evento, workflow, SHA e rótulo na API antes de iniciar cada instância. Os rótulos são `dadosbr-pr-<run_id>` para PR, `dadosbr-ci-<run_id>` para CI de main e `dadosbr-release-<run_id>` para release npm. Cada job usa uma instância efêmera. Mantenha configuração e tokens de registro fora do repositório.
+Use o supervisor efêmero Docker (`infra/runner/README.md`) em VPS Linux isolada:
+
+- **Ativação / atualização de credencial:** grave o Fine-Grained PAT escopado apenas a `cristianoaredes/mcp-dadosbr` (`Actions: Read-only`, `Administration: Read and write`, `Metadata: Read-only`) em `/etc/dadosbr-runner/env` (`0600 root:root`) diretamente na VPS e execute `systemctl restart dadosbr-runner-supervisor.service`. Rotacione o PAT antes da expiração (recomendado: 90 dias).
+- **Diagnóstico:** `systemctl status dadosbr-runner-supervisor.service`, `journalctl -u dadosbr-runner-supervisor.service -n 100 --no-pager` e `/opt/dadosbr-runner/setup-network-isolation.sh --status`.
+- **Rollback / desativação:** `systemctl disable --now dadosbr-runner-supervisor.service && /opt/dadosbr-runner/setup-network-isolation.sh --teardown`.
+- **Escopo automático:** `dadosbr-pr-<run_id>` (PR interno), `dadosbr-ci-<run_id>` (`main`) e `dadosbr-release-<run_id>` (`release.yml` em `main`). `cloudflare-deploy.yml` (`dadosbr-ubuntu-24.04`) permanece fora do supervisor automático. Mantenha configuração e tokens fora do repositório.
 
 Após integrar, acompanhe o CI de push em `main` ou dispare o CI manualmente com `publish_dev` desmarcado. Registre URL, SHA, runner atribuído e conclusão.
 
