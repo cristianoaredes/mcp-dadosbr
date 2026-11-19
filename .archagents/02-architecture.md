@@ -1,8 +1,8 @@
 # Arquitetura AS-IS
 
-Base inicial: `037dae4c`.
+Base revisada: `79aa712` (`v0.5.0`; base inicial: `037dae4c`).
 
-O CLI conecta o servidor MCP por stdio ou HTTP/SSE. Há um adapter separado no Cloudflare Worker. O servidor central consulta um registro de ferramentas por domínio.
+O CLI conecta o servidor MCP por stdio ou HTTP/SSE (com métricas de execução emitidas em `stderr` para manter `stdout` exclusivo de JSON-RPC no transporte stdio). Há um adapter separado no Cloudflare Worker. O servidor central consulta um registro de ferramentas por domínio e expõe cinco recursos MCP Apps (`ui://dadosbr/*.html`) no runtime Node.
 
 ```mermaid
 flowchart LR
@@ -24,12 +24,14 @@ sequenceDiagram
   MCP-->>Host: Resultado no protocolo MCP
 ```
 
-## Fontes no snapshot inicial
+## Fontes
 
 - `lib/adapters/cli.ts:L166-L245`
-- `lib/core/mcp-server.ts:L22-L64`
+- `lib/core/mcp-server.ts:L17-L143`
+- `lib/core/tools.ts:L27-L47`
 - `lib/workers/worker.ts:L68-L92`
-- `lib/tools/government.ts:L11-L32`
+- `lib/tools/government.ts:L12-L38`
+- `scripts/build-apps.mjs:L1-L42`
 
 ## Explorador do IBGE no CLI
 

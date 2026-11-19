@@ -1,13 +1,13 @@
 # Operação local
 
-Base inicial: `037dae4c`.
+Base revisada: `79aa712` (`v0.5.0`; base inicial: `037dae4c`).
 
-Execute `npm ci`, `npm run build`, `npm test`, `npm run test:transport` e `npm run build:worker`. O smoke exige handshake, ping e catálogo MCP. O deploy deve seguir autorização e evidência do ambiente de destino.
+Execute `npm ci`, `npm run build` (inclui `npm run build:apps`), `npm test`, `npm run test:transport` e `npm run build:worker`. O smoke exige handshake, ping, catálogo de 23 ferramentas, os 5 recursos MCP Apps e 101 chamadas `stdio` sem erro de protocolo. O deploy deve seguir autorização e evidência do ambiente de destino.
 
-## Fontes no snapshot inicial
+## Fontes
 
-- `package.json:L17-L48`
-- `test/integration/transports.mjs:L47-L62`
+- `package.json:L18-L48`
+- `test/integration/transports.mjs:L44-L99`
 
 ## Runner próprio
 

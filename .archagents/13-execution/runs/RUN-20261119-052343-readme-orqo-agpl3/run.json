@@ -1,0 +1,30 @@
+{
+  "id": "RUN-20261119-052343-readme-orqo-agpl3",
+  "design": "DES-0009",
+  "ticket": "TCK-0009",
+  "started_at": "2026-11-19T05:23:43Z",
+  "started_by": "ops",
+  "environment": "dev",
+  "mode": "live",
+  "status": "completed",
+  "current_step": 3,
+  "total_steps": 3,
+  "ended_at": "2026-11-19T05:30:30Z",
+  "result": "Licença migrada para AGPL-3.0-only com LICENSE verbatim e NOTICE.md; README.md reescrito no padrão orqo.pro; 286 testes, transportes stdio/HTTP-SSE, build Worker e criteria-check 2/2 aprovados",
+  "loop_iterations": 1,
+  "attempt_count": 1,
+  "lessons_consulted": [],
+  "loop_cost_usd": null,
+  "cost_source": "unknown",
+  "loop_strategy": "default",
+  "context_peak": 0,
+  "final_judge_delta": 36,
+  "warmup": false,
+  "final_judge_delta_source": "judge",
+  "lesson_utility": {
+    "utility": 0.0,
+    "n_lessons": 0,
+    "lessons_consulted": [],
+    "signal": "no-lessons"
+  }
+}
