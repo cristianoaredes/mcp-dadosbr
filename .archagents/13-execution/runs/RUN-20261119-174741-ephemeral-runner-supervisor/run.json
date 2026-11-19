@@ -1,0 +1,30 @@
+{
+  "id": "RUN-20261119-174741-ephemeral-runner-supervisor",
+  "design": "DES-0012",
+  "ticket": "TCK-0012",
+  "started_at": "2026-11-19T17:47:41Z",
+  "started_by": "ops",
+  "environment": "dev",
+  "mode": "live",
+  "status": "completed",
+  "current_step": 4,
+  "total_steps": 4,
+  "ended_at": "2026-11-19T18:08:35Z",
+  "result": "23/23 testes Python (sem __pycache__), 286/286 Vitest, criteria-check 3/3 PASS, todos os 6 defeitos do Pass 1 remediados e sonda live IPv4+IPv6 aprovada na VPS",
+  "loop_iterations": 2,
+  "attempt_count": 2,
+  "lessons_consulted": [],
+  "loop_cost_usd": null,
+  "cost_source": "unknown",
+  "loop_strategy": "default",
+  "context_peak": 0,
+  "final_judge_delta": 41,
+  "warmup": false,
+  "final_judge_delta_source": "judge",
+  "lesson_utility": {
+    "utility": 0.0,
+    "n_lessons": 0,
+    "lessons_consulted": [],
+    "signal": "no-lessons"
+  }
+}
