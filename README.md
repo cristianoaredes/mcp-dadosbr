@@ -148,7 +148,7 @@ O que muda entre os modos é onde o servidor executa e se o cliente recebe os pa
 
 **Pré-requisito:** Node.js **22.12 ou posterior na linha 22**, **24** ou **26** (`engines.node` em [`package.json`](package.json#L110)).
 
-### 1. Início rápido via npm (recomendado — versão `0.5.0` inclui os 5 MCP Apps)
+### 1. Início rápido via npm (recomendado — a partir da `0.5.0` inclui os 5 MCP Apps)
 
 Em clientes que utilizam `mcpServers` (Claude Desktop, Cursor, Windsurf, Claude Code e compatíveis), adicione:
 
@@ -163,7 +163,7 @@ Em clientes que utilizam `mcpServers` (Claude Desktop, Cursor, Windsurf, Claude 
 }
 ```
 
-> Para fixar a versão com os cinco painéis empacotados, use `"@aredes.me/mcp-dadosbr@0.5.0"`. O pacote publicado no [npm](https://www.npmjs.com/package/@aredes.me/mcp-dadosbr) e o [release v0.5.0 no GitHub](https://github.com/cristianoaredes/mcp-dadosbr/releases/tag/v0.5.0) distribuem os cinco HTMLs em `build/lib/apps/`.
+> O pacote publicado no [npm](https://www.npmjs.com/package/@aredes.me/mcp-dadosbr) e os [releases no GitHub](https://github.com/cristianoaredes/mcp-dadosbr/releases) distribuem os cinco HTMLs em `build/lib/apps/` a partir da versão `0.5.0` (com a candidata `0.6.0` inaugurando a distribuição npm sob `AGPL-3.0-only` após publicação). Para fixar uma versão específica, use `"@aredes.me/mcp-dadosbr@<versão>"`.
 
 ### 2. A partir do código-fonte (desenvolvimento, auditoria ou customização)
 
@@ -337,7 +337,7 @@ Em resumo prático *(não substitui o texto jurídico da licença)*:
 - **Você pode** usar, estudar, modificar, redistribuir e hospedar o MCP DadosBR livremente.
 - **Você deve** preservar os avisos de direitos autorais e licença ([LICENSE](LICENSE) e [NOTICE.md](NOTICE.md)).
 - **Copyleft de rede (Seção 13):** se você modificar o código e disponibilizar o servidor modificado para interação pela rede, deve fornecer o código-fonte correspondente sob a mesma licença GNU AGPL-3.0.
-- **Histórico:** versões publicadas até `0.5.0` permaneceram sob a licença MIT; a migração para `AGPL-3.0-only` aplica-se prospectivamente a partir desta revisão.
+- **Histórico:** versões publicadas até `0.5.0` permaneceram sob a licença MIT; a partir da versão `0.6.0`, o pacote é distribuído sob `AGPL-3.0-only`.
 
 ---
 
@@ -384,7 +384,7 @@ Leia o [guia de contribuição](CONTRIBUTING.md) ou abra uma [issue](https://git
   Version `0.5.0` on [npm](https://www.npmjs.com/package/@aredes.me/mcp-dadosbr) bundles all five MCP Apps. To build from source, run `npm ci && npm run build` and point `args` to `build/lib/adapters/cli.js`.
 - **What it does not do:** it does not guarantee third-party API uptime or municipal gazette coverage, never fabricates provider `updatedAt` timestamps, does not query federal tax databases for `cpf_validate` (local mod-11 check only), never bypasses CAPTCHAs, rejects non-allowlisted CNPJ/CEP hosts (SSRF protection), and serves interactive HTML apps only on the Node.js runtime (the Cloudflare Worker returns JSON text).
 - **Governed in the open:** built with **[Codebase OPS by Orqo](https://orqo.pro/en/)** — every ticket, design, execution run, and independent verification lives in [`.archagents/`](.archagents/README.md).
-- **License:** [GNU AGPL-3.0-only](LICENSE) (network copyleft; releases up to `0.5.0` were distributed under MIT). Third-party acknowledgments live in [NOTICE.md](NOTICE.md).
+- **License:** [GNU AGPL-3.0-only](LICENSE) (network copyleft; releases up to `0.5.0` were distributed under MIT, and `AGPL-3.0-only` applies starting with `0.6.0`). Third-party acknowledgments live in [NOTICE.md](NOTICE.md).
 
 ---
 

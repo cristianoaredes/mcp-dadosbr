@@ -1,0 +1,30 @@
+{
+  "id": "RUN-20261119-061512-release-0-6-0-agpl3",
+  "design": "DES-0010",
+  "ticket": "TCK-0010",
+  "started_at": "2026-11-19T06:15:12Z",
+  "started_by": "ops",
+  "environment": "dev",
+  "mode": "live",
+  "status": "completed",
+  "current_step": 3,
+  "total_steps": 3,
+  "ended_at": "2026-11-19T06:17:04Z",
+  "result": "Candidata npm 0.6.0 (AGPL-3.0-only) preparada, empacotada e validada em instalação limpa (23 ferramentas, 5 MCP Apps, 101 chamadas stdio/HTTP-SSE, 286 testes, build Worker, criteria-check 2/2 PASS)",
+  "loop_iterations": 1,
+  "attempt_count": 1,
+  "lessons_consulted": [],
+  "loop_cost_usd": null,
+  "cost_source": "unknown",
+  "loop_strategy": "default",
+  "context_peak": 0,
+  "final_judge_delta": 43,
+  "warmup": false,
+  "final_judge_delta_source": "judge",
+  "lesson_utility": {
+    "utility": 0.0,
+    "n_lessons": 0,
+    "lessons_consulted": [],
+    "signal": "no-lessons"
+  }
+}

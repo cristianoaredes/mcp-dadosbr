@@ -5,23 +5,23 @@
   "generator": "codebase-ops-bootstrap",
   "project_name": "mcp-dadosbr",
   "stack": "TypeScript / Node.js / MCP",
-  "baseline_commit": "79aa71275ca55cf0e5adc97e2baa0ea228fd0d33",
+  "baseline_commit": "9e74ba5baed5803d7cd668f15ab182a1e0c3f062",
   "autonomy_level": "L2",
   "sources": {
     ".archagents/00-overview.md": [
       {
         "path": "package.json",
-        "sha1": "5f8ef5a0a382bf93000403cdbab8b0628ed8e122",
+        "sha1": "ecf86b08666fef537ffe4cc35c313937a2abe29e",
         "lines_cited": "L1-L48"
       },
       {
         "path": "package.json",
-        "sha1": "5f8ef5a0a382bf93000403cdbab8b0628ed8e122",
+        "sha1": "ecf86b08666fef537ffe4cc35c313937a2abe29e",
         "lines_cited": "L72-L74"
       },
       {
         "path": "package.json",
-        "sha1": "5f8ef5a0a382bf93000403cdbab8b0628ed8e122",
+        "sha1": "ecf86b08666fef537ffe4cc35c313937a2abe29e",
         "lines_cited": "L109-L114"
       },
       {
@@ -242,7 +242,7 @@
     ".archagents/08-conventions.md": [
       {
         "path": "package.json",
-        "sha1": "5f8ef5a0a382bf93000403cdbab8b0628ed8e122",
+        "sha1": "ecf86b08666fef537ffe4cc35c313937a2abe29e",
         "lines_cited": "L5-L48"
       },
       {
@@ -259,7 +259,7 @@
     ".archagents/10-runbooks.md": [
       {
         "path": "package.json",
-        "sha1": "5f8ef5a0a382bf93000403cdbab8b0628ed8e122",
+        "sha1": "ecf86b08666fef537ffe4cc35c313937a2abe29e",
         "lines_cited": "L18-L48"
       },
       {
@@ -270,25 +270,25 @@
     ]
   },
   "metrics": {
-    "total_tickets": 9,
-    "done_tickets": 9,
+    "total_tickets": 10,
+    "done_tickets": 10,
     "archived_tickets": 0,
     "avg_cycle_time": 0.19,
     "avg_cycle_time_coverage": {
-      "measured": 9,
-      "total": 9,
+      "measured": 10,
+      "total": 10,
       "ratio": 1.0
     },
     "success_rate": 0.0,
     "success_rate_coverage": {
       "measured": 0,
-      "total": 4,
-      "discarded_non_outcome": 4,
+      "total": 5,
+      "discarded_non_outcome": 5,
       "ratio": 0.0,
       "source": "learning_log + taxonomia TCK-0820"
     },
     "status_breakdown": {
-      "done": 9
+      "done": 10
     }
   },
   "active_runs": [],
@@ -304,16 +304,16 @@
       "backlog_health": {
         "value": 100.0,
         "weight": 0.4,
-        "measured": 9,
-        "total": 9,
+        "measured": 10,
+        "total": 10,
         "ratio": 1.0
       },
       "recent_success": {
         "value": 0.0,
         "weight": 0.4,
         "measured": 0,
-        "total": 4,
-        "discarded_non_outcome": 4,
+        "total": 5,
+        "discarded_non_outcome": 5,
         "ratio": 0.0,
         "source": "learning_log (últimos 10) + taxonomia TCK-0820"
       },
@@ -333,7 +333,7 @@
       "source": "zombie-run-scan.py (TCK-1447/TCK-2477) via .archagents/.zombie-runs-baseline.json"
     }
   },
-  "last_updated": "2026-11-19T05:42:38.887393Z",
+  "last_updated": "2026-11-19T06:23:30.969688Z",
   "learning_log": [
     {
       "run": "RUN-20261117-224844-querido-diario",
@@ -359,6 +359,11 @@
       "ticket": "TCK-0009",
       "run": "RUN-20261119-052343-readme-orqo-agpl3",
       "learning": "Confrontar cada afirmação do README (provedores implementados, variáveis de ambiente, escopo de proveniência e sintaxe Mermaid) contra o código-fonte em verificação independente evita propagar comentários obsoletos; separar atribuições de terceiros em NOTICE.md preserva a detecção SPDX verbatim da GNU AGPL-3.0."
+    },
+    {
+      "ticket": "TCK-0010",
+      "run": "RUN-20261119-061512-release-0-6-0-agpl3",
+      "learning": "Mudança de licença permissiva (MIT) para copyleft de rede (AGPL-3.0-only) em SemVer 0.x.y exige bump minor (0.6.0) para impedir auto-upgrade silencioso via ^0.5.0; espelhar npm pack + instalação em diretório limpo + guarda SemVer localmente reduz surpresas no workflow Publish npm release."
     }
   ]
 }
