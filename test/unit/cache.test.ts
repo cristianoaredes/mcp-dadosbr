@@ -5,12 +5,15 @@ describe('MemoryCache', () => {
   let cache: MemoryCache;
 
   beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
     // Small cache with short TTL for testing
     cache = new MemoryCache(3, 100); // 3 entries, 100ms TTL
   });
 
   afterEach(() => {
     cache.clear();
+    vi.useRealTimers();
   });
 
   describe('Basic operations', () => {
@@ -58,48 +61,48 @@ describe('MemoryCache', () => {
   });
 
   describe('TTL (Time To Live)', () => {
-    it('should expire entries after TTL', async () => {
+    it('should expire entries after TTL', () => {
       cache.set('key1', 'value1');
       expect(cache.get('key1')).toBe('value1');
 
-      // Wait for TTL to expire
-      await new Promise(resolve => setTimeout(resolve, 150));
+      // Advance past TTL
+      vi.advanceTimersByTime(150);
 
       expect(cache.get('key1')).toBeNull();
     });
 
-    it('should not expire entries before TTL', async () => {
+    it('should not expire entries before TTL', () => {
       cache.set('key1', 'value1');
 
-      // Wait less than TTL
-      await new Promise(resolve => setTimeout(resolve, 50));
+      // Advance less than TTL
+      vi.advanceTimersByTime(50);
 
       expect(cache.get('key1')).toBe('value1');
     });
 
-    it('should handle multiple entries with different expiration times', async () => {
+    it('should handle multiple entries with different expiration times', () => {
       cache.set('key1', 'value1');
-      await new Promise(resolve => setTimeout(resolve, 50));
+      vi.advanceTimersByTime(50);
       cache.set('key2', 'value2');
-      await new Promise(resolve => setTimeout(resolve, 50));
+      vi.advanceTimersByTime(50);
       cache.set('key3', 'value3');
 
-      // At this point: key1 ~100ms old, key2 ~50ms old, key3 ~0ms old
-      await new Promise(resolve => setTimeout(resolve, 20));
+      // At this point: key1 = 100ms old, key2 = 50ms old, key3 = 0ms old
+      vi.advanceTimersByTime(20);
 
-      // key1 should be expired, others still valid
+      // key1 = 120ms (expired), key2 = 70ms (valid), key3 = 20ms (valid)
       expect(cache.get('key1')).toBeNull();
       expect(cache.get('key2')).toBe('value2');
       expect(cache.get('key3')).toBe('value3');
     });
 
-    it('should reset TTL when overwriting a key', async () => {
+    it('should reset TTL when overwriting a key', () => {
       cache.set('key1', 'value1');
-      await new Promise(resolve => setTimeout(resolve, 80));
+      vi.advanceTimersByTime(80);
 
       // Overwrite before expiration
       cache.set('key1', 'value2');
-      await new Promise(resolve => setTimeout(resolve, 50));
+      vi.advanceTimersByTime(50);
 
       // Should still be valid (new TTL)
       expect(cache.get('key1')).toBe('value2');
@@ -246,12 +249,12 @@ describe('MemoryCache', () => {
       expect(entries).toContainEqual(['key3', 'value3']);
     });
 
-    it('should not return expired entries', async () => {
+    it('should not return expired entries', () => {
       cache.set('key1', 'value1');
       cache.set('key2', 'value2');
 
-      // Wait for expiration
-      await new Promise(resolve => setTimeout(resolve, 150));
+      // Advance past expiration
+      vi.advanceTimersByTime(150);
 
       const entries = cache.entries();
       expect(entries).toHaveLength(0);
@@ -262,14 +265,14 @@ describe('MemoryCache', () => {
       expect(entries).toEqual([]);
     });
 
-    it('should cleanup expired entries when called', async () => {
+    it('should cleanup expired entries when called', () => {
       cache.set('key1', 'value1');
-      await new Promise(resolve => setTimeout(resolve, 50));
+      vi.advanceTimersByTime(50);
       cache.set('key2', 'value2');
 
-      await new Promise(resolve => setTimeout(resolve, 80));
+      vi.advanceTimersByTime(80);
 
-      // key1 expired, key2 still valid
+      // key1 = 130ms (expired), key2 = 80ms (valid)
       const entries = cache.entries();
 
       expect(entries).toHaveLength(1);
@@ -307,11 +310,11 @@ describe('MemoryCache', () => {
       singleCache.clear();
     });
 
-    it('should handle very short TTL', async () => {
+    it('should handle very short TTL', () => {
       const shortCache = new MemoryCache(3, 10); // 10ms TTL
 
       shortCache.set('key1', 'value1');
-      await new Promise(resolve => setTimeout(resolve, 20));
+      vi.advanceTimersByTime(20);
 
       expect(shortCache.get('key1')).toBeNull();
 
@@ -356,11 +359,11 @@ describe('MemoryCache', () => {
   });
 
   describe('Memory management', () => {
-    it('should clean up expired entries on get', async () => {
+    it('should clean up expired entries on get', () => {
       cache.set('key1', 'value1');
       cache.set('key2', 'value2');
 
-      await new Promise(resolve => setTimeout(resolve, 150));
+      vi.advanceTimersByTime(150);
 
       // This get should trigger cleanup of key1
       expect(cache.get('key1')).toBeNull();
@@ -377,6 +380,8 @@ describe('KVCache', () => {
   let mockKV: any;
 
   beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
     // Create mock KV storage
     const storage = new Map<string, string>();
     mockKV = {
@@ -386,6 +391,10 @@ describe('KVCache', () => {
     };
 
     kvCache = new KVCache(mockKV, 100); // 100ms TTL
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   describe('Basic operations', () => {
@@ -426,8 +435,8 @@ describe('KVCache', () => {
       await kvCache.set('key1', 'value1');
       expect(await kvCache.get('key1')).toBe('value1');
 
-      // Wait for TTL to expire
-      await new Promise(resolve => setTimeout(resolve, 150));
+      // Advance past TTL
+      vi.advanceTimersByTime(150);
 
       expect(await kvCache.get('key1')).toBeNull();
     });
@@ -435,8 +444,8 @@ describe('KVCache', () => {
     it('should not expire entries before TTL', async () => {
       await kvCache.set('key1', 'value1');
 
-      // Wait less than TTL
-      await new Promise(resolve => setTimeout(resolve, 50));
+      // Advance less than TTL
+      vi.advanceTimersByTime(50);
 
       expect(await kvCache.get('key1')).toBe('value1');
     });
