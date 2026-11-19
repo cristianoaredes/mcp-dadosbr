@@ -1,0 +1,7 @@
+# Ship do TCK-0010
+
+- **Ticket:** `TCK-0010` (`done`) · **Design:** `DES-0010` (`approved`) · **Run:** `RUN-20261119-061512-release-0-6-0-agpl3` (`completed`) · **Verify:** `VER-20261119-062258-tck-0010` (`approved-with-notes`, contexto limpo).
+- **Critérios locais e gates:** `criteria-check.py` 2/2 PASS (`0.6.0` + `AGPL-3.0-only` em `package.json`, `package-lock.json`, `smithery.yaml`, `CHANGELOG.md`, `LICENSE` verbatim; `git diff --check`, `npm run build`, 286/286 testes Vitest, `npm run test:transport`, `npm run build:worker`), instalação limpa do tarball `0.6.0` (`sha512-ugxpY/5QKWLgj/NXl8dCCj7K28pFpaqtxg8zIUxL34PGg2nKrZKWFC8NFbiPoDj9kBSQDmHU0Etj6SMOx1ymtg==`) aprovada em stdio + HTTP/SSE, guarda SemVer `0.6.0 > 0.5.0` PASS, `verify-run.py` PASS e scanners de segredo (`gitleaks` + `secret-scan.sh`) limpos.
+- **Auto-approval (`auto-approve.py --dry-run`, informativo):** não elegível (`effort: M`); merge, tag, GitHub Release e disparo de publicação npm são exclusivamente humanos (`SAFETY.md` §ship).
+- **Prod / Release prep:** comandos manuais registrados em `PROD_COMMANDS.md` neste diretório de run.
+- **Aprendizado:** mudança de licença permissiva (MIT) para copyleft de rede (`AGPL-3.0-only`) em SemVer `0.x.y` exige bump minor (`0.6.0`) para evitar auto-upgrade silencioso em `^0.5.0`; espelhar `npm pack` + instalação limpa + guarda SemVer localmente valida a candidata antes do CI remoto.

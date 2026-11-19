@@ -7,7 +7,7 @@ This program is free software: you can redistribute it and/or modify it under th
 
 This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero General Public License for more details.
 
-> Note on historical versions: releases up to `0.5.0` were distributed under the MIT License; relicensing to `AGPL-3.0-only` applies prospectively from this commit onward.
+> Note on historical versions: releases up to `0.5.0` were distributed under the MIT License; starting with `0.6.0`, this project is distributed under `AGPL-3.0-only`.
 
 ---
 

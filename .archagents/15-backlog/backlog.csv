@@ -8,3 +8,4 @@ TCK-0006,readme-do-mcp-dadosbr-para-divulgacao-com-a-orqo,README do MCP DadosBR 
 TCK-0007,preservar-json-rpc-no-stdout-do-transporte-stdio-ao-emitir-metricas,Preservar JSON-RPC no stdout do transporte stdio ao emitir métricas,done,medium,bug,S,verify,,,,,2026-11-18T03:07:53Z,
 TCK-0008,preparar-release-npm-dos-cinco-mcp-apps-com-gate-de-ci-na-vps,Preparar release npm dos cinco MCP Apps com gate de CI na VPS,done,medium,feature,M,user,,,,,2026-11-18T03:17:59Z,
 TCK-0009,reescrever-readme-md-no-padrao-orqo-e-migrar-licenca-para-agpl-3-0,Reescrever README.md no padrão Orqo e migrar licença para AGPL-3.0,done,medium,docs,M,user,,,,,2026-11-19T05:23:26Z,
+TCK-0010,preparar-candidata-npm-0-6-0-sob-gnu-agpl-3-0,Preparar candidata npm 0.6.0 sob GNU AGPL-3.0,done,medium,feature,M,user,,,,,2026-11-19T06:14:29Z,
