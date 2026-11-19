@@ -1,14 +1,14 @@
 # CI, ambientes e publicação
 
-Base inicial: `037dae4c`.
+Base revisada: `79aa712` (`v0.5.0`; base inicial: `037dae4c`).
 
-O snapshot inicial contém workflows de CI, release por tag e Cloudflare. As definições usam runners hospedados no GitHub. A API retornou Actions desativado e zero runners próprios registrados na coleta. Consulte o runbook para a configuração proposta depois do Bootstrap.
+O snapshot inicial continha workflows de CI, release por tag e Cloudflare com runners hospedados no GitHub. A partir da versão `0.5.0`, o CI, o deploy do Worker e a publicação npm usam runners próprios na VPS conforme detalhado abaixo. O resultado efetivo de execuções em Actions, publicação no registro npm e estado de runners ativos permanece **a confirmar** em runtime.
 
-## Fontes no snapshot inicial
+## Fontes
 
-- `.github/workflows/ci.yml:L1-L26`
-- `.github/workflows/release.yml:L1-L12`
-- `.github/workflows/cloudflare-deploy.yml:L1-L23`
+- `.github/workflows/ci.yml:L1-L80`
+- `.github/workflows/release.yml:L1-L80`
+- `.github/workflows/cloudflare-deploy.yml:L1-L32`
 
 ## Alteração preparada para o runner próprio
 
