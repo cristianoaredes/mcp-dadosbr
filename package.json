@@ -12,6 +12,7 @@
     "build/",
     "README.md",
     "LICENSE",
+    "NOTICE.md",
     ".mcprc.example.json"
   ],
   "scripts": {
@@ -69,7 +70,7 @@
     "self-hosting"
   ],
   "author": "Cristiano Aredes <cristiano@aredes.me>",
-  "license": "MIT",
+  "license": "AGPL-3.0-only",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/cristianoaredes/mcp-dadosbr.git"

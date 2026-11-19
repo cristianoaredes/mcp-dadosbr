@@ -5,36 +5,61 @@
   "generator": "codebase-ops-bootstrap",
   "project_name": "mcp-dadosbr",
   "stack": "TypeScript / Node.js / MCP",
-  "baseline_commit": "037dae4cb3eb1ba7aee5b8241e88a0052d3a178f",
+  "baseline_commit": "79aa71275ca55cf0e5adc97e2baa0ea228fd0d33",
   "autonomy_level": "L2",
   "sources": {
     ".archagents/00-overview.md": [
       {
         "path": "package.json",
-        "sha1": "c60836728befa1ef0ef41ac41000463625ed6ef2",
-        "lines_cited": "L1-L37"
+        "sha1": "5f8ef5a0a382bf93000403cdbab8b0628ed8e122",
+        "lines_cited": "L1-L48"
       },
       {
         "path": "package.json",
-        "sha1": "c60836728befa1ef0ef41ac41000463625ed6ef2",
-        "lines_cited": "L98-L109"
+        "sha1": "5f8ef5a0a382bf93000403cdbab8b0628ed8e122",
+        "lines_cited": "L72-L74"
+      },
+      {
+        "path": "package.json",
+        "sha1": "5f8ef5a0a382bf93000403cdbab8b0628ed8e122",
+        "lines_cited": "L109-L114"
+      },
+      {
+        "path": "lib/core/mcp-server.ts",
+        "sha1": "ca2fd0fa21c7c18bc08f972684f31ce1dbf9f85d",
+        "lines_cited": "L17-L64"
       }
     ],
     ".archagents/01-business-domain.md": [
       {
         "path": "lib/tools/core.ts",
         "sha1": "ff910375d0364d73c7d63471837a753432e60bd2",
-        "lines_cited": "L45-L77"
+        "lines_cited": "L45-L73"
       },
       {
         "path": "lib/tools/government.ts",
-        "sha1": "4bc9cbf6da27885cc687465a30b4e32557c975f7",
-        "lines_cited": "L19-L55"
+        "sha1": "c44484ea8ebee790a190755dcee3618de6bfba2a",
+        "lines_cited": "L20-L61"
+      },
+      {
+        "path": "lib/tools/government.ts",
+        "sha1": "c44484ea8ebee790a190755dcee3618de6bfba2a",
+        "lines_cited": "L225-L339"
       },
       {
         "path": "lib/tools/financial.ts",
-        "sha1": "f14cfc6fb8a3b383ce799da495918e8804dc2b34",
-        "lines_cited": "L13-L43"
+        "sha1": "6e2cc4795aa4e88dcdbf5db2de258b7fd02d0c51",
+        "lines_cited": "L13-L64"
+      },
+      {
+        "path": "lib/shared/bacen.ts",
+        "sha1": "ee25cb9e0df6ae4fdfa08aa3033a3937095e05c2",
+        "lines_cited": "L1-L37"
+      },
+      {
+        "path": "lib/shared/pncp.ts",
+        "sha1": "ac7238b7f3d605c53c10b1292ebb52f77d2e01a8",
+        "lines_cited": "L27-L56"
       }
     ],
     ".archagents/02-architecture.md": [
@@ -45,8 +70,13 @@
       },
       {
         "path": "lib/core/mcp-server.ts",
-        "sha1": "5b0d59502859793866e560922d51ece5aea4db89",
-        "lines_cited": "L22-L64"
+        "sha1": "ca2fd0fa21c7c18bc08f972684f31ce1dbf9f85d",
+        "lines_cited": "L17-L143"
+      },
+      {
+        "path": "lib/core/tools.ts",
+        "sha1": "211d028b8ffa6115db9c386b0e8169f48512a762",
+        "lines_cited": "L27-L47"
       },
       {
         "path": "lib/workers/worker.ts",
@@ -55,15 +85,20 @@
       },
       {
         "path": "lib/tools/government.ts",
-        "sha1": "4bc9cbf6da27885cc687465a30b4e32557c975f7",
-        "lines_cited": "L11-L32"
+        "sha1": "c44484ea8ebee790a190755dcee3618de6bfba2a",
+        "lines_cited": "L12-L38"
+      },
+      {
+        "path": "scripts/build-apps.mjs",
+        "sha1": "150ffe570b334ea99d4015a5bbc48c8bb9ca8b7b",
+        "lines_cited": "L1-L42"
       }
     ],
     ".archagents/03-modules.md": [
       {
         "path": "lib/tools/index.ts",
         "sha1": "1b2d9592886398b0e75d3ff69cf3f2906a14d494",
-        "lines_cited": "L1-L19"
+        "lines_cited": "L1-L25"
       },
       {
         "path": "lib/core/registry.ts",
@@ -79,6 +114,26 @@
         "path": "lib/workers/worker.ts",
         "sha1": "fb988b445ab0f5dd36034eac55a81f3b8853a8e3",
         "lines_cited": "L63-L92"
+      },
+      {
+        "path": "scripts/build-apps.mjs",
+        "sha1": "150ffe570b334ea99d4015a5bbc48c8bb9ca8b7b",
+        "lines_cited": "L1-L42"
+      },
+      {
+        "path": "lib/shared/bacen.ts",
+        "sha1": "ee25cb9e0df6ae4fdfa08aa3033a3937095e05c2",
+        "lines_cited": "L1-L37"
+      },
+      {
+        "path": "lib/shared/pncp.ts",
+        "sha1": "ac7238b7f3d605c53c10b1292ebb52f77d2e01a8",
+        "lines_cited": "L1-L56"
+      },
+      {
+        "path": "lib/shared/cnpj-profile.ts",
+        "sha1": "00689c6bf7ef471ebee9e28110c23978db44bba7",
+        "lines_cited": "L1-L119"
       }
     ],
     ".archagents/04-data-model.md": [
@@ -89,47 +144,67 @@
       },
       {
         "path": "lib/core/mcp-server.ts",
-        "sha1": "5b0d59502859793866e560922d51ece5aea4db89",
-        "lines_cited": "L28-L65"
+        "sha1": "ca2fd0fa21c7c18bc08f972684f31ce1dbf9f85d",
+        "lines_cited": "L90-L160"
+      },
+      {
+        "path": "lib/types/index.ts",
+        "sha1": "adb327d9c3568ca9dd9aa1337a3d19cc11ebf993",
+        "lines_cited": "L35-L41"
       },
       {
         "path": "lib/tools/government.ts",
-        "sha1": "4bc9cbf6da27885cc687465a30b4e32557c975f7",
-        "lines_cited": "L35-L55"
+        "sha1": "c44484ea8ebee790a190755dcee3618de6bfba2a",
+        "lines_cited": "L31-L59"
+      },
+      {
+        "path": "lib/shared/cnpj-profile.ts",
+        "sha1": "00689c6bf7ef471ebee9e28110c23978db44bba7",
+        "lines_cited": "L1-L119"
       }
     ],
     ".archagents/05-integrations.md": [
       {
-        "path": "lib/tools/government.ts",
-        "sha1": "4bc9cbf6da27885cc687465a30b4e32557c975f7",
-        "lines_cited": "L9-L32"
+        "path": "lib/config/index.ts",
+        "sha1": "09841ed42359ae233c39872df7f8d21fe866b7b2",
+        "lines_cited": "L7-L35"
       },
       {
         "path": "lib/tools/government.ts",
-        "sha1": "4bc9cbf6da27885cc687465a30b4e32557c975f7",
-        "lines_cited": "L60-L74"
+        "sha1": "c44484ea8ebee790a190755dcee3618de6bfba2a",
+        "lines_cited": "L12-L79"
+      },
+      {
+        "path": "lib/tools/government.ts",
+        "sha1": "c44484ea8ebee790a190755dcee3618de6bfba2a",
+        "lines_cited": "L213-L319"
       },
       {
         "path": "lib/tools/financial.ts",
-        "sha1": "f14cfc6fb8a3b383ce799da495918e8804dc2b34",
-        "lines_cited": "L9-L43"
+        "sha1": "6e2cc4795aa4e88dcdbf5db2de258b7fd02d0c51",
+        "lines_cited": "L13-L89"
+      },
+      {
+        "path": "lib/core/http-client.ts",
+        "sha1": "b3c88ec88b00c5c3c5cb1169e8d06eefefa6d875",
+        "lines_cited": "L64-L69"
       }
     ],
     ".archagents/06-infra-devops.md": [
       {
         "path": ".github/workflows/ci.yml",
-        "sha1": "063df02d9425d18f29b17d2332d15fca629d15b0",
-        "lines_cited": "L1-L26"
+        "sha1": "d17496cebc224d557c218b1a502b267bc0000c66",
+        "lines_cited": "L1-L80"
       },
       {
         "path": ".github/workflows/release.yml",
-        "sha1": "c538db15c115651ab7840a533fb35096080207cf",
-        "lines_cited": "L1-L12"
+        "sha1": "bef8407a199747c0ae8dfd0349c9f70a82f8c3b9",
+        "lines_cited": "L1-L80"
       },
       {
         "path": ".github/workflows/cloudflare-deploy.yml",
-        "sha1": "1e19a50b4fb3c179512c973eb0b2a08dc4e75ac1",
-        "lines_cited": "L1-L23"
+        "sha1": "3a107da3d5dd7162853f2e94d62ff35d331d0dfe",
+        "lines_cited": "L1-L32"
       }
     ],
     ".archagents/07-security-compliance.md": [
@@ -147,41 +222,61 @@
         "path": "lib/adapters/cli.ts",
         "sha1": "6e8fbe9e784b951ee6a829874b8eabbe2df76127",
         "lines_cited": "L165-L205"
+      },
+      {
+        "path": "lib/config/index.ts",
+        "sha1": "09841ed42359ae233c39872df7f8d21fe866b7b2",
+        "lines_cited": "L15-L70"
+      },
+      {
+        "path": "lib/shared/cnpj-profile.ts",
+        "sha1": "00689c6bf7ef471ebee9e28110c23978db44bba7",
+        "lines_cited": "L92-L100"
+      },
+      {
+        "path": "scripts/build-apps.mjs",
+        "sha1": "150ffe570b334ea99d4015a5bbc48c8bb9ca8b7b",
+        "lines_cited": "L30-L35"
       }
     ],
     ".archagents/08-conventions.md": [
       {
         "path": "package.json",
-        "sha1": "c60836728befa1ef0ef41ac41000463625ed6ef2",
-        "lines_cited": "L5-L29"
+        "sha1": "5f8ef5a0a382bf93000403cdbab8b0628ed8e122",
+        "lines_cited": "L5-L48"
       },
       {
         "path": "test/integration/transports.mjs",
-        "sha1": "a910d8b8eec28d56e0d10218a5948b401988f62d",
-        "lines_cited": "L12-L61"
+        "sha1": "3ae93d548218aeb2f8216b2db3e8249f9e4b03f5",
+        "lines_cited": "L12-L99"
+      },
+      {
+        "path": "lib/core/tools.ts",
+        "sha1": "211d028b8ffa6115db9c386b0e8169f48512a762",
+        "lines_cited": "L27-L47"
       }
     ],
     ".archagents/10-runbooks.md": [
       {
         "path": "package.json",
-        "sha1": "c60836728befa1ef0ef41ac41000463625ed6ef2",
-        "lines_cited": "L17-L48"
+        "sha1": "5f8ef5a0a382bf93000403cdbab8b0628ed8e122",
+        "lines_cited": "L18-L48"
       },
       {
         "path": "test/integration/transports.mjs",
-        "sha1": "a910d8b8eec28d56e0d10218a5948b401988f62d",
-        "lines_cited": "L47-L62"
+        "sha1": "3ae93d548218aeb2f8216b2db3e8249f9e4b03f5",
+        "lines_cited": "L44-L99"
       }
     ]
   },
   "metrics": {
-    "total_tickets": 8,
-    "done_tickets": 8,
+    "total_tickets": 9,
+    "done_tickets": 9,
     "archived_tickets": 0,
-    "avg_cycle_time": 0.18,
+    "avg_cycle_time": 0.19,
     "avg_cycle_time_coverage": {
-      "measured": 8,
-      "total": 8,
+      "measured": 9,
+      "total": 9,
       "ratio": 1.0
     },
     "success_rate": 0.0,
@@ -193,7 +288,7 @@
       "source": "learning_log + taxonomia TCK-0820"
     },
     "status_breakdown": {
-      "done": 8
+      "done": 9
     }
   },
   "active_runs": [],
@@ -209,8 +304,8 @@
       "backlog_health": {
         "value": 100.0,
         "weight": 0.4,
-        "measured": 8,
-        "total": 8,
+        "measured": 9,
+        "total": 9,
         "ratio": 1.0
       },
       "recent_success": {
@@ -238,7 +333,7 @@
       "source": "zombie-run-scan.py (TCK-1447/TCK-2477) via .archagents/.zombie-runs-baseline.json"
     }
   },
-  "last_updated": "2026-11-18T03:30:15.301887Z",
+  "last_updated": "2026-11-19T05:42:38.887393Z",
   "learning_log": [
     {
       "run": "RUN-20261117-224844-querido-diario",
@@ -259,6 +354,11 @@
       "ticket": "TCK-0005",
       "run": "RUN-20261118-020150-cnpj",
       "learning": "Distinguir a atualização informada pelo provedor e a consulta efetivamente feita pelo servidor."
+    },
+    {
+      "ticket": "TCK-0009",
+      "run": "RUN-20261119-052343-readme-orqo-agpl3",
+      "learning": "Confrontar cada afirmação do README (provedores implementados, variáveis de ambiente, escopo de proveniência e sintaxe Mermaid) contra o código-fonte em verificação independente evita propagar comentários obsoletos; separar atribuições de terceiros em NOTICE.md preserva a detecção SPDX verbatim da GNU AGPL-3.0."
     }
   ]
 }
