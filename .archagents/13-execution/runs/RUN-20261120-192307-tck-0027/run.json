@@ -1,0 +1,34 @@
+{
+  "id": "RUN-20261120-192307-tck-0027",
+  "design": "DES-0023",
+  "ticket": "TCK-0027",
+  "started_at": "2026-11-20T19:23:08Z",
+  "started_by": "ops",
+  "environment": "dev",
+  "mode": "live",
+  "status": "completed",
+  "current_step": 4,
+  "total_steps": 4,
+  "ended_at": "2026-11-20T19:25:16Z",
+  "result": "test:coverage PASS (75.76/69.56/74.53/77.47 >= 73/67/72/75), 17/17 circuit-breaker.test.ts (18ms tests), 403/403 Vitest (1.87s), 0 audit vulns, npm ci OK, tsc/build/test:transport PASS, criteria-check 4/4",
+  "loop_iterations": 1,
+  "attempt_count": 0,
+  "lessons_consulted": [
+    "Precisou de 2 iterações (re-execução)"
+  ],
+  "loop_cost_usd": null,
+  "cost_source": "unknown",
+  "loop_strategy": "default",
+  "context_peak": 0,
+  "final_judge_delta": 32,
+  "warmup": false,
+  "final_judge_delta_source": "judge",
+  "lesson_utility": {
+    "utility": 0.64,
+    "n_lessons": 1,
+    "lessons_consulted": [
+      "Precisou de 2 iterações (re-execução)"
+    ],
+    "signal": "computed"
+  }
+}

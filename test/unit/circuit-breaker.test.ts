@@ -3,18 +3,25 @@
  * Tests thread-safety, state transitions, and failure handling
  */
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { CircuitBreaker, CircuitBreakerOpenError } from '../../lib/infrastructure/http/circuit-breaker';
 
 describe('CircuitBreaker', () => {
   let circuitBreaker: CircuitBreaker;
 
   beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-11-20T18:00:00.000Z'));
     circuitBreaker = new CircuitBreaker({
       failureThreshold: 3,
       resetTimeoutMs: 1000,
       halfOpenMaxAttempts: 2,
     });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.useRealTimers();
   });
 
   describe('CLOSED state', () => {
@@ -78,7 +85,7 @@ describe('CircuitBreaker', () => {
 
     it('should transition to HALF_OPEN after timeout', async () => {
       // Wait for reset timeout
-      await new Promise(resolve => setTimeout(resolve, 1100));
+      vi.advanceTimersByTime(1100);
 
       // Next call should attempt execution (HALF_OPEN)
       const result = await circuitBreaker.execute(async () => 'success');
@@ -97,7 +104,7 @@ describe('CircuitBreaker', () => {
           })
         ).rejects.toThrow();
       }
-      await new Promise(resolve => setTimeout(resolve, 1100));
+      vi.advanceTimersByTime(1100);
     });
 
     it('should transition to CLOSED on success', async () => {
@@ -189,6 +196,7 @@ describe('CircuitBreaker', () => {
         })
       );
 
+      await vi.advanceTimersByTimeAsync(10);
       const results = await Promise.all(promises);
       expect(results).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
     });

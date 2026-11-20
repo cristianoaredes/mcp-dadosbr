@@ -187,5 +187,14 @@
     "tree": "07a9f996ca982a1ac4bf4eb87498d5a2943831eb",
     "updated_at": "2026-11-20T19:13:48Z",
     "updated_by": "criteria-check"
+  },
+  "TCK-0027": {
+    "content_digest": "sha256:3000a7744cedb2110632458113542221abba6b3ab1c196266d6ea5e460394261",
+    "criteria_digest": "sha256:17e20f483a3bee2d7ce43081f29fa1a136e4a00b5b24dc648ea9218f25f7f4b8",
+    "head": "ef0dad9205335a7ffffa72f0ce1fa92197741c1f",
+    "passes": true,
+    "tree": "3280847500b5728ff68e8bdba0b3cc36f24e5f34",
+    "updated_at": "2026-11-20T19:25:16Z",
+    "updated_by": "criteria-check"
   }
 }
