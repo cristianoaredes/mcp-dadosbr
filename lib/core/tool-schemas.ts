@@ -4,7 +4,7 @@
  * before any registered tool handler executes.
  */
 
-import { z, type ZodTypeAny } from "zod";
+import { z, type ZodType } from "zod";
 import { CnpjSchema, CepSchema } from "./validation.js";
 
 export const DORK_CATEGORIES = [
@@ -207,16 +207,14 @@ export const FipeSchema = z
   .object({
     codigo_fipe: z
       .string({
-        invalid_type_error: "Invalid codigo_fipe format (expected e.g. '001004-9').",
+        error: "Invalid codigo_fipe format (expected e.g. '001004-9').",
       })
       .trim()
       .regex(/^[0-9]+(?:-[0-9]+)?$/, "Invalid codigo_fipe format (expected e.g. '001004-9').")
       .optional(),
     tipo: z
       .enum(["carros", "motos", "caminhoes"], {
-        errorMap: () => ({
-          message: "Invalid FIPE vehicle type. Valid: carros, motos, caminhoes.",
-        }),
+        error: "Invalid FIPE vehicle type. Valid: carros, motos, caminhoes.",
       })
       .optional(),
   })
@@ -245,7 +243,7 @@ export const StrategicOsintPromptSchema = z.object({
   context: z.string().trim().max(2000).optional(),
 });
 
-export const TOOL_SCHEMAS: Record<string, ZodTypeAny> = {
+export const TOOL_SCHEMAS: Record<string, ZodType> = {
   cnpj_lookup: CnpjLookupSchema,
   cep_lookup: CepLookupSchema,
   cnpj_search: CnpjSearchSchema,

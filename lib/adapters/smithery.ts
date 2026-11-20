@@ -30,7 +30,7 @@ export const configSchema = z
       .describe(`Custom CEP API base URL (default: ${DEFAULT_CEP_URL})`)
       .default(DEFAULT_CEP_URL),
     authHeaders: z
-      .record(z.string())
+      .record(z.string(), z.string())
       .describe("Extra headers for API requests (optional)")
       .optional(),
   })

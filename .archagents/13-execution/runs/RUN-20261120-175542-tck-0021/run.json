@@ -1,0 +1,30 @@
+{
+  "id": "RUN-20261120-175542-tck-0021",
+  "design": "DES-0019",
+  "ticket": "TCK-0021",
+  "started_at": "2026-11-20T17:55:42Z",
+  "started_by": "ops",
+  "environment": "dev",
+  "mode": "live",
+  "status": "completed",
+  "current_step": 5,
+  "total_steps": 5,
+  "ended_at": "2026-11-20T17:59:00Z",
+  "result": "npm audit --omit=dev 0 vulnerabilidades (0C/0H/0M/0L), npm ci OK, 4/4 dependency-hygiene.test.ts, 375/375 Vitest (24 arquivos), tsc + tsc.worker TYPECHECK_OK, build + build:worker BUILD_OK, test:transport PASS (101 stdio calls), npm pack --dry-run OK (206 arquivos, sem mcp-agent), criteria-check 3/3 pass",
+  "loop_iterations": 1,
+  "attempt_count": 0,
+  "lessons_consulted": [],
+  "loop_cost_usd": null,
+  "cost_source": "unknown",
+  "loop_strategy": "default",
+  "context_peak": 0,
+  "final_judge_delta": 35,
+  "warmup": false,
+  "final_judge_delta_source": "judge",
+  "lesson_utility": {
+    "utility": 0.0,
+    "n_lessons": 0,
+    "lessons_consulted": [],
+    "signal": "no-lessons"
+  }
+}

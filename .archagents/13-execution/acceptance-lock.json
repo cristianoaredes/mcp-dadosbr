@@ -151,5 +151,14 @@
     "tree": null,
     "updated_at": "2026-11-20T17:44:36Z",
     "updated_by": "criteria-check"
+  },
+  "TCK-0021": {
+    "content_digest": "sha256:28e6f184a486a68a620d4ce922a6a74804acdddb98fb2b9af49acc2bb9e51b4c",
+    "criteria_digest": "sha256:ba129d2dffff92b5d5843379994f3eba2db1c642c059aa3351e1aa6604a3e893",
+    "head": "2f0e25c6f2c50115e57c3af4774860ea9debfdd4",
+    "passes": true,
+    "tree": "b95135bd3d37b2eb0e7e74d514bd957aeab9e273",
+    "updated_at": "2026-11-20T17:59:00Z",
+    "updated_by": "criteria-check"
   }
 }

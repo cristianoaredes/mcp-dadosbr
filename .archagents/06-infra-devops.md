@@ -6,9 +6,15 @@ O snapshot inicial continha workflows de CI, release por tag e Cloudflare com ru
 
 ## Fontes
 
-- `.github/workflows/ci.yml:L1-L80`
+- `.github/workflows/ci.yml:L1-L142`
 - `.github/workflows/release.yml:L1-L80`
 - `.github/workflows/cloudflare-deploy.yml:L1-L32`
+- `package.json:L82-L88`
+
+## Gate de auditoria de dependências em produção (`TCK-0021`)
+
+- O job `lint` (`Code Quality`) de `.github/workflows/ci.yml:L116-L117` executa `npm audit --omit=dev --audit-level=high` após `npm ci`.
+- Dependências de runtime mortas (`agents`, `@smithery/sdk`, `workers-mcp`, `async-mutex`) e o módulo obsoleto `lib/workers/mcp-agent.ts` foram removidos em `TCK-0021`; `zod` (`^4.6.7`) e `express` (`^5.3.0`) + transitivas foram saneados com `package-lock.json` validado via `npm ci`. A execução efetiva do pipeline no GitHub Actions após essa alteração permanece **a confirmar**.
 
 ## Alteração preparada para o runner próprio
 

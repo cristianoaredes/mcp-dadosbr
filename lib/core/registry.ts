@@ -5,7 +5,7 @@
  * The registry provides tool definitions and execution without if/else chains.
  */
 
-import type { ZodTypeAny } from "zod";
+import type { ZodType } from "zod";
 import type { SequentialThinkingProcessor } from "./sequential-thinking.js";
 import { Cache, LookupResult, ApiConfig } from "../types/index.js";
 
@@ -18,7 +18,7 @@ export interface ToolHandler {
     name: string;
     description: string;
     inputSchema: Record<string, unknown>;
-    zodSchema: ZodTypeAny;
+    zodSchema: ZodType;
     execute: (args: unknown, apiConfig: ApiConfig, cache?: Cache, context?: ToolExecutionContext) => Promise<LookupResult>;
 }
 
