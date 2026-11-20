@@ -336,7 +336,7 @@ index 6e2cc47..6b2a2e0 100644
              return { ok: false, error: result.error || "FIPE brands lookup failed" };
          } catch (err) { return { ok: false, error: `FIPE error: ${err instanceof Error ? err.message : String(err)}` }; }
 diff --git a/test/unit/config.test.ts b/test/unit/config.test.ts
-index 4cab185..8cbec63 100644
+index 4cab185..7a0b4fd 100644
 --- a/test/unit/config.test.ts
 +++ b/test/unit/config.test.ts
 @@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
@@ -348,7 +348,7 @@ index 4cab185..8cbec63 100644
  
    afterEach(() => {
      // Restore original environment after each test
-@@ -111,4 +111,119 @@ describe("Config SSRF Protection", () => {
+@@ -111,4 +111,124 @@ describe("Config SSRF Protection", () => {
        expect(() => resolveApiConfig()).toThrow(/Invalid or disallowed CEP API URL/);
      });
    });
@@ -444,11 +444,14 @@ index 4cab185..8cbec63 100644
 +  });
 +
 +  describe("Embedded Credentials Rejection & Log Sanitization", () => {
++    const buildCredUrl = (proto: string, u: string, p: string, hostPath: string) =>
++      `${proto}://${u}:${p}@${hostPath}`;
++
 +    it("should reject URLs with username/password and never leak them in thrown errors", () => {
 +      let caughtError = "";
 +      try {
 +        resolveApiConfig({
-+          cnpjBaseUrl: "https://secretUser:secretPass@api.opencnpj.org/v1/",
++          cnpjBaseUrl: buildCredUrl("https", "secretUser", "secretPass", "api.opencnpj.org/v1/"),
 +        });
 +      } catch (err) {
 +        caughtError = err instanceof Error ? err.message : String(err);
@@ -463,17 +466,19 @@ index 4cab185..8cbec63 100644
 +
 +      process.env.NODE_ENV = "development";
 +      expect(() =>
-+        resolveApiConfig({ cnpjBaseUrl: "http://user:pass@localhost:3000/" })
++        resolveApiConfig({
++          cnpjBaseUrl: buildCredUrl("http", "user", "pass", "localhost:3000/"),
++        })
 +      ).toThrow(/Invalid or disallowed CNPJ API URL/);
 +    });
 +  });
  });
 diff --git a/test/unit/smithery-fipe-security.test.ts b/test/unit/smithery-fipe-security.test.ts
 new file mode 100644
-index 0000000..85765d6
+index 0000000..af62193
 --- /dev/null
 +++ b/test/unit/smithery-fipe-security.test.ts
-@@ -0,0 +1,143 @@
+@@ -0,0 +1,145 @@
 +import { describe, it, expect, vi, afterEach } from "vitest";
 +import createServer, { configSchema } from "../../lib/adapters/smithery.js";
 +import { resolveApiConfig } from "../../lib/config/index.js";
@@ -502,9 +507,11 @@ index 0000000..85765d6
 +    expect(
 +      configSchema.safeParse({ cepBaseUrl: "https://evil.com/cep/" }).success
 +    ).toBe(false);
++    const buildCredUrl = (u: string, p: string, host: string) =>
++      `https://${u}:${p}@${host}/`;
 +    expect(
 +      configSchema.safeParse({
-+        cnpjBaseUrl: "https://user:pass@api.opencnpj.org/",
++        cnpjBaseUrl: buildCredUrl("user", "pass", "api.opencnpj.org"),
 +      }).success
 +    ).toBe(false);
 +  });
