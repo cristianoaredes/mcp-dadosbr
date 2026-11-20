@@ -1,0 +1,1439 @@
+diff --git a/.archagents/07-security-compliance.md b/.archagents/07-security-compliance.md
+index 79f757f..1f6f819 100644
+--- a/.archagents/07-security-compliance.md
++++ b/.archagents/07-security-compliance.md
+@@ -2,11 +2,14 @@
+ 
+ Base revisada: `79aa712` (`v0.5.0`; base inicial: `037dae4c`).
+ 
+-O Worker define rotas públicas e autenticação no seu adapter. O CLI usa rate limit na entrada HTTP. URLs configuráveis de CNPJ e CEP passam por allowlist de hosts HTTPS (proteção SSRF em `lib/config/index.ts`), `readCnpjProfile` rejeita credenciais embutidas na URL do provedor, e `scripts/build-apps.mjs` bloqueia fechamentos inline `</script`/`</style` ao empacotar os MCP Apps. Exposição efetiva, controles ativos no host e conformidade ficam **a confirmar** por ambiente. Credenciais e evidências de execução ficam fora do Git.
++O Worker define rotas públicas explícitas (`PUBLIC_PATHS`: `/health`, `/`, `/openapi.json`, `/.well-known/*`) e exige `MCP_API_KEY` com comparação constant-time em `/mcp`, `/sse` e rotas REST quando configurada, mantendo `/oauth/*` e descoberta OAuth desabilitados em modo fail-closed (`501 oauth_not_supported`) e aplicando CORS restritivo via `MCP_ALLOWED_ORIGINS` (sem `*` em rotas autenticadas). O CLI usa rate limit na entrada HTTP. URLs configuráveis de CNPJ e CEP passam por allowlist de hosts HTTPS (proteção SSRF em `lib/config/index.ts`), `readCnpjProfile` rejeita credenciais embutidas na URL do provedor, e `scripts/build-apps.mjs` bloqueia fechamentos inline `</script`/`</style` ao empacotar os MCP Apps. Exposição efetiva, controles ativos no host e conformidade ficam **a confirmar** por ambiente. Credenciais e evidências de execução ficam fora do Git.
+ 
+ ## Fontes
+ 
+-- `lib/workers/auth.ts:L22-L58`
++- `lib/workers/auth.ts:L12-L86`
++- `lib/workers/oauth.ts:L1-L48`
++- `lib/adapters/cloudflare.ts:L19-L116`
++- `lib/workers/worker.ts:L145-L185`
+ - `lib/adapters/cli.ts:L95-L127`
+ - `lib/adapters/cli.ts:L165-L205`
+ - `lib/config/index.ts:L15-L70`
+diff --git a/lib/adapters/cloudflare.ts b/lib/adapters/cloudflare.ts
+index 86344bb..c043b91 100644
+--- a/lib/adapters/cloudflare.ts
++++ b/lib/adapters/cloudflare.ts
+@@ -23,31 +23,112 @@ export interface Env {
+   MCP_CACHE_TTL?: string;
+   MCP_CACHE?: KVNamespace;
+   MCP_API_KEY?: string;
++  MCP_ALLOWED_ORIGINS?: string;
+   MCP_DISABLE_RATE_LIMIT?: string;
+   MCP_KV?: KVNamespace;
+   TAVILY_API_KEY?: string; // Tavily search API key (secret)
+ }
+ 
+ 
+-// CORS headers
+-const corsHeaders = {
+-  "Access-Control-Allow-Origin": "*",
++const BASE_CORS_HEADERS: Record<string, string> = {
+   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+-  "Access-Control-Allow-Headers": "Content-Type, Accept",
++  "Access-Control-Allow-Headers": "Content-Type, Accept, Authorization, X-API-Key",
+   "Access-Control-Max-Age": "86400",
++  "X-Content-Type-Options": "nosniff",
+ };
+ 
+-function handleCORS(request: Request): Response | null {
+-  if (request.method === "OPTIONS") {
+-    return new Response(null, {
+-      status: 204,
+-      headers: corsHeaders,
++// Base CORS headers without wildcard origin
++const corsHeaders: Record<string, string> = { ...BASE_CORS_HEADERS };
++
++function parseAllowedOrigins(raw?: string): string[] {
++  if (typeof raw !== "string" || !raw.trim()) return [];
++  const origins: string[] = [];
++  for (const part of raw.split(",")) {
++    const trimmed = part.trim();
++    if (!trimmed || trimmed === "*") continue;
++    try {
++      const parsed = new URL(trimmed);
++      if (parsed.protocol === "https:" || parsed.protocol === "http:") {
++        origins.push(parsed.origin);
++      }
++    } catch {
++      // Ignore malformed origin entries
++    }
++  }
++  return origins;
++}
++
++function getCorsHeaders(
++  request: Request,
++  env?: Env,
++  options?: { isPublic?: boolean }
++): Record<string, string> {
++  const hasApiKey = typeof env?.MCP_API_KEY === "string" && env.MCP_API_KEY.length > 0;
++  const allowedOrigins = parseAllowedOrigins(env?.MCP_ALLOWED_ORIGINS);
++  const origin = request.headers.get("Origin");
++
++  if (allowedOrigins.length > 0) {
++    const headers: Record<string, string> = {
++      ...BASE_CORS_HEADERS,
++      Vary: "Origin",
++    };
++    if (origin && allowedOrigins.includes(origin)) {
++      headers["Access-Control-Allow-Origin"] = origin;
++    }
++    return headers;
++  }
++
++  if (hasApiKey && !options?.isPublic) {
++    return {
++      ...BASE_CORS_HEADERS,
++      Vary: "Origin",
++    };
++  }
++
++  return {
++    ...BASE_CORS_HEADERS,
++    "Access-Control-Allow-Origin": "*",
++  };
++}
++
++function handleCORS(
++  request: Request,
++  env?: Env,
++  options?: { isPublic?: boolean }
++): Response | null {
++  if (request.method !== "OPTIONS") return null;
++  const headers = getCorsHeaders(request, env, options);
++  if (request.headers.get("Origin") && !("Access-Control-Allow-Origin" in headers)) {
++    return new Response("Origin not allowed", {
++      status: 403,
++      headers,
+     });
+   }
+-  return null;
++  return new Response(null, {
++    status: 204,
++    headers,
++  });
+ }
+ 
+-function handleHealthCheck(): Response {
++function withCorsHeaders(
++  response: Response,
++  request: Request,
++  env?: Env,
++  options?: { isPublic?: boolean }
++): Response {
++  const headers = new Headers(response.headers);
++  headers.delete("Access-Control-Allow-Origin");
++  for (const [key, value] of Object.entries(getCorsHeaders(request, env, options))) {
++    headers.set(key, value);
++  }
++  return new Response(response.body, {
++    status: response.status,
++    statusText: response.statusText,
++    headers,
++  });
++}
++
++function handleHealthCheck(request?: Request, env?: Env): Response {
+   const healthData = {
+     status: "healthy",
+     service: "mcp-dadosbr",
+@@ -55,12 +136,15 @@ function handleHealthCheck(): Response {
+     timestamp: new Date().toISOString(),
+     runtime: "cloudflare-workers",
+   };
++  const headers = request
++    ? getCorsHeaders(request, env, { isPublic: true })
++    : corsHeaders;
+ 
+   return new Response(JSON.stringify(healthData), {
+     status: 200,
+     headers: {
+       "Content-Type": "application/json",
+-      ...corsHeaders,
++      ...headers,
+     },
+   });
+ }
+@@ -235,4 +319,11 @@ export async function handleMCPEndpoint(
+   }
+ }
+ 
+-export { corsHeaders, handleCORS, handleHealthCheck };
++export {
++  corsHeaders,
++  getCorsHeaders,
++  parseAllowedOrigins,
++  withCorsHeaders,
++  handleCORS,
++  handleHealthCheck,
++};
+diff --git a/lib/workers/auth.ts b/lib/workers/auth.ts
+index 2cd5e73..e1b1493 100644
+--- a/lib/workers/auth.ts
++++ b/lib/workers/auth.ts
+@@ -2,51 +2,68 @@
+  * Authentication middleware for Cloudflare Workers
+  */
+ 
+-import { Env } from "../adapters/cloudflare.js";
+-import { corsHeaders } from "../adapters/cloudflare.js";
++import { Env, getCorsHeaders } from "../adapters/cloudflare.js";
+ 
+ export interface AuthResult {
+   authenticated: boolean;
+   error?: Response;
+ }
+ 
++export const PUBLIC_PATHS = new Set<string>([
++  "/health",
++  "/",
++  "/openapi.json",
++  "/.well-known/oauth-authorization-server",
++  "/.well-known/openid_configuration",
++  "/.well-known/jwks.json",
++]);
++
++export function isPublicPath(pathname: string): boolean {
++  return PUBLIC_PATHS.has(pathname);
++}
++
++const textEncoder = new TextEncoder();
++
++export function constantTimeEqual(a: string, b: string): boolean {
++  const bufA = textEncoder.encode(a);
++  const bufB = textEncoder.encode(b);
++  const maxLen = Math.max(bufA.length, bufB.length);
++  let diff = bufA.length ^ bufB.length;
++  for (let i = 0; i < maxLen; i++) {
++    diff |= (bufA[i] ?? 0) ^ (bufB[i] ?? 0);
++  }
++  return diff === 0;
++}
++
+ /**
+  * Authenticate incoming request
+  * Checks for API key in Authorization header or X-API-Key header
+- * Skips authentication for public endpoints (health, OAuth, etc.)
++ * Skips authentication only for explicit public metadata/health paths
+  */
+ export async function authenticateRequest(
+   request: Request,
+   env: Env
+ ): Promise<AuthResult> {
+-  // Skip authentication for health checks, OAuth endpoints, and MCP protocol endpoints
+   const url = new URL(request.url);
+-  if (
+-    url.pathname === "/health" ||
+-    url.pathname === "/mcp" ||
+-    url.pathname === "/sse" ||
+-    url.pathname.startsWith("/oauth/") ||
+-    url.pathname.startsWith("/.well-known/") ||
+-    url.pathname === "/openapi.json"
+-  ) {
++  if (isPublicPath(url.pathname)) {
+     return { authenticated: true };
+   }
+ 
+-  // Check for API key if configured
+   const expectedApiKey = env.MCP_API_KEY;
+-  if (expectedApiKey) {
++  if (typeof expectedApiKey === "string" && expectedApiKey.length > 0) {
+     const authHeader = request.headers.get("Authorization");
+     const apiKey = request.headers.get("X-API-Key");
+ 
+     let providedKey: string | null = null;
+ 
+     if (authHeader?.startsWith("Bearer ")) {
+-      providedKey = authHeader.substring(7);
++      providedKey = authHeader.slice(7);
+     } else if (apiKey) {
+       providedKey = apiKey;
+     }
+ 
+-    if (!providedKey || providedKey !== expectedApiKey) {
++    if (!providedKey || !constantTimeEqual(providedKey, expectedApiKey)) {
++      console.error(`[Auth] Unauthorized request to ${url.pathname}`);
+       return {
+         authenticated: false,
+         error: new Response(
+@@ -60,7 +77,7 @@ export async function authenticateRequest(
+             headers: {
+               "Content-Type": "application/json",
+               "WWW-Authenticate": "Bearer",
+-              ...corsHeaders,
++              ...getCorsHeaders(request, env),
+             },
+           }
+         ),
+diff --git a/lib/workers/oauth.ts b/lib/workers/oauth.ts
+index 089803c..8ee8689 100644
+--- a/lib/workers/oauth.ts
++++ b/lib/workers/oauth.ts
+@@ -1,249 +1,47 @@
+ /**
+- * OAuth endpoints for MCP connector integration
++ * OAuth endpoints for Cloudflare Workers — fail-closed (disabled)
+  */
+ 
+-import { corsHeaders } from '../adapters/cloudflare.js';
+-import { generateSecureToken } from './tokens.js';
++import { Env, corsHeaders, getCorsHeaders } from '../adapters/cloudflare.js';
+ 
+-/**
+- * Handle /oauth/authorize endpoint
+- * Simple OAuth authorize endpoint with auto-approval for MCP connector
+- */
+-export function handleOAuthAuthorize(request: Request): Response {
+-  const authUrl = new URL(request.url);
+-  const clientId = authUrl.searchParams.get('client_id');
+-  const redirectUri = authUrl.searchParams.get('redirect_uri');
+-  const state = authUrl.searchParams.get('state');
+-  const scope = authUrl.searchParams.get('scope');
+-  const responseType = authUrl.searchParams.get('response_type');
+-
+-  if (!redirectUri) {
+-    return new Response('Missing redirect_uri', {
+-      status: 400,
+-      headers: corsHeaders
+-    });
+-  }
+-
+-  if (!clientId) {
+-    return new Response('Missing client_id', {
+-      status: 400,
+-      headers: corsHeaders
+-    });
+-  }
+-
+-  // For MCP connector, auto-approve and redirect with a secure code
+-  // Include scope in the code so it can be retrieved during token exchange
+-  const code = generateSecureToken('access');
+-  const redirectUrl = new URL(redirectUri);
+-  redirectUrl.searchParams.set('code', code);
+-  if (state) redirectUrl.searchParams.set('state', state);
+-  
+-  // Store scope with code for token exchange (in production, use KV storage)
+-  // For now, we'll encode it in the code itself
++const OAUTH_DISABLED_BODY = JSON.stringify({
++  error: 'oauth_not_supported',
++  error_description:
++    "OAuth 2.0 is disabled on this server. Authenticate with MCP_API_KEY via 'Authorization: Bearer <key>' or 'X-API-Key: <key>'.",
++});
+ 
+-  return new Response(null, {
+-    status: 302,
++function oauthNotSupportedResponse(request?: Request, env?: Env): Response {
++  const cors = request ? getCorsHeaders(request, env) : corsHeaders;
++  return new Response(OAUTH_DISABLED_BODY, {
++    status: 501,
+     headers: {
+-      Location: redirectUrl.toString(),
+-      ...corsHeaders,
++      'Content-Type': 'application/json',
++      'Cache-Control': 'no-store',
++      ...cors,
+     },
+   });
+ }
+ 
+-/**
+- * Handle /oauth/token endpoint
+- * OAuth token endpoint for exchanging authorization code for access token
+- */
+-export async function handleOAuthToken(request: Request): Promise<Response> {
+-  if (request.method !== 'POST') {
+-    return new Response('Method not allowed', {
+-      status: 405,
+-      headers: corsHeaders
+-    });
+-  }
+-
+-  try {
+-    // Parse form data from request body
+-    const body = await request.text();
+-    const params = new URLSearchParams(body);
+-    const code = params.get('code');
+-    const grantType = params.get('grant_type');
+-    
+-    // Validate required parameters
+-    if (grantType !== 'authorization_code') {
+-      return new Response(JSON.stringify({
+-        error: 'unsupported_grant_type',
+-        error_description: 'Only authorization_code grant type is supported'
+-      }), {
+-        status: 400,
+-        headers: {
+-          'Content-Type': 'application/json',
+-          ...corsHeaders,
+-        },
+-      });
+-    }
+-
+-    if (!code) {
+-      return new Response(JSON.stringify({
+-        error: 'invalid_request',
+-        error_description: 'Missing authorization code'
+-      }), {
+-        status: 400,
+-        headers: {
+-          'Content-Type': 'application/json',
+-          ...corsHeaders,
+-        },
+-      });
+-    }
+-
+-    // Grant all supported scopes (ChatGPT needs this to succeed)
+-    const tokenResponse = {
+-      access_token: generateSecureToken('bearer'),
+-      token_type: 'Bearer',
+-      expires_in: 3600,
+-      scope: 'openid profile mcp', // Grant all scopes we support
+-      id_token: generateSecureToken('jwt') // Add dummy id_token for OpenID compliance
+-    };
+-
+-    return new Response(JSON.stringify(tokenResponse), {
+-      status: 200,
+-      headers: {
+-        'Content-Type': 'application/json',
+-        ...corsHeaders,
+-      },
+-    });
+-  } catch (error) {
+-    return new Response(JSON.stringify({
+-      error: 'invalid_request',
+-      error_description: error instanceof Error ? error.message : 'Invalid token request'
+-    }), {
+-      status: 400,
+-      headers: {
+-        'Content-Type': 'application/json',
+-        ...corsHeaders,
+-      },
+-    });
+-  }
++export function handleOAuthAuthorize(request?: Request, env?: Env): Response {
++  return oauthNotSupportedResponse(request, env);
+ }
+ 
+-/**
+- * Handle /oauth/userinfo endpoint
+- * OAuth userinfo endpoint for retrieving user information
+- */
+-export function handleOAuthUserInfo(): Response {
+-  const userInfo = {
+-    sub: 'mcp-dadosbr-user',
+-    name: 'MCP DadosBR User',
+-    preferred_username: 'mcp-user'
+-  };
+-
+-  return new Response(JSON.stringify(userInfo), {
+-    status: 200,
+-    headers: {
+-      'Content-Type': 'application/json',
+-      ...corsHeaders,
+-    },
+-  });
++export async function handleOAuthToken(request?: Request, env?: Env): Promise<Response> {
++  return oauthNotSupportedResponse(request, env);
+ }
+ 
+-/**
+- * Handle /.well-known/jwks.json endpoint
+- * JSON Web Key Set (dummy for MCP compatibility)
+- */
+-export function handleJWKS(): Response {
+-  const jwks = {
+-    keys: []
+-  };
+-
+-  return new Response(JSON.stringify(jwks), {
+-    status: 200,
+-    headers: {
+-      'Content-Type': 'application/json',
+-      ...corsHeaders,
+-    },
+-  });
++export function handleOAuthUserInfo(request?: Request, env?: Env): Response {
++  return oauthNotSupportedResponse(request, env);
+ }
+ 
+-/**
+- * Handle /oauth/register endpoint
+- * RFC 7591 Dynamic Client Registration for ChatGPT integration
+- */
+-export async function handleOAuthRegister(request: Request): Promise<Response> {
+-  if (request.method !== 'POST') {
+-    return new Response('Method not allowed', {
+-      status: 405,
+-      headers: corsHeaders
+-    });
+-  }
+-
+-  try {
+-    const body = await request.json() as Record<string, unknown>;
+-    
+-    // Generate client credentials
+-    const clientId = generateSecureToken('client');
+-    const clientSecret = generateSecureToken('secret');
+-    
+-    // Build registration response
+-    const registrationResponse = {
+-      client_id: clientId,
+-      client_secret: clientSecret,
+-      client_id_issued_at: Math.floor(Date.now() / 1000),
+-      client_secret_expires_at: 0, // Never expires
+-      redirect_uris: body.redirect_uris || [],
+-      grant_types: body.grant_types || ['authorization_code'],
+-      response_types: body.response_types || ['code'],
+-      client_name: body.client_name || 'MCP Client',
+-      token_endpoint_auth_method: body.token_endpoint_auth_method || 'client_secret_basic',
+-    };
+-
+-    return new Response(JSON.stringify(registrationResponse), {
+-      status: 201,
+-      headers: {
+-        'Content-Type': 'application/json',
+-        ...corsHeaders,
+-      },
+-    });
+-  } catch (error) {
+-    return new Response(JSON.stringify({
+-      error: 'invalid_request',
+-      error_description: error instanceof Error ? error.message : 'Invalid registration request'
+-    }), {
+-      status: 400,
+-      headers: {
+-        'Content-Type': 'application/json',
+-        ...corsHeaders,
+-      },
+-    });
+-  }
++export function handleJWKS(request?: Request, env?: Env): Response {
++  return oauthNotSupportedResponse(request, env);
+ }
+ 
+-/**
+- * Handle /.well-known/oauth-authorization-server endpoint
+- * OAuth discovery endpoint for ChatGPT MCP connector with RFC 7591 support
+- */
+-export function handleOAuthDiscovery(request: Request): Response {
+-  const baseUrl = new URL(request.url).origin;
+-  const oauthConfig = {
+-    issuer: baseUrl,
+-    authorization_endpoint: `${baseUrl}/oauth/authorize`,
+-    token_endpoint: `${baseUrl}/oauth/token`,
+-    registration_endpoint: `${baseUrl}/oauth/register`,
+-    userinfo_endpoint: `${baseUrl}/oauth/userinfo`,
+-    jwks_uri: `${baseUrl}/.well-known/jwks.json`,
+-    scopes_supported: ['openid', 'profile', 'mcp'],
+-    response_types_supported: ['code'],
+-    grant_types_supported: ['authorization_code'],
+-    subject_types_supported: ['public'],
+-    id_token_signing_alg_values_supported: ['RS256'],
+-    token_endpoint_auth_methods_supported: ['client_secret_basic', 'client_secret_post'],
+-    registration_endpoint_auth_methods_supported: ['none'],
+-  };
++export async function handleOAuthRegister(request?: Request, env?: Env): Promise<Response> {
++  return oauthNotSupportedResponse(request, env);
++}
+ 
+-  return new Response(JSON.stringify(oauthConfig), {
+-    status: 200,
+-    headers: {
+-      'Content-Type': 'application/json',
+-      ...corsHeaders,
+-    },
+-  });
++export function handleOAuthDiscovery(request?: Request, env?: Env): Response {
++  return oauthNotSupportedResponse(request, env);
+ }
+diff --git a/lib/workers/openapi.ts b/lib/workers/openapi.ts
+index 3386c73..bccc767 100644
+--- a/lib/workers/openapi.ts
++++ b/lib/workers/openapi.ts
+@@ -2,7 +2,7 @@
+  * OpenAPI schema generation for ChatGPT integration
+  */
+ 
+-import { corsHeaders } from '../adapters/cloudflare.js';
++import { Env, getCorsHeaders } from '../adapters/cloudflare.js';
+ 
+ /**
+  * Generate OpenAPI 3.0 schema for the API
+@@ -20,33 +20,24 @@ export function generateOpenAPISchema(requestUrl: string): unknown {
+     servers: [{ url: origin }],
+     security: [
+       {
+-        'OAuth2': ['mcp']
++        'ApiKeyAuth': []
+       },
+       {
+-        'ApiKeyAuth': []
++        'BearerAuth': []
+       }
+     ],
+     components: {
+       securitySchemes: {
+-        OAuth2: {
+-          type: 'oauth2',
+-          flows: {
+-            authorizationCode: {
+-              authorizationUrl: `${origin}/oauth/authorize`,
+-              tokenUrl: `${origin}/oauth/token`,
+-              scopes: {
+-                'mcp': 'Access to MCP DadosBR tools',
+-                'openid': 'OpenID Connect',
+-                'profile': 'User profile information'
+-              }
+-            }
+-          }
+-        },
+         ApiKeyAuth: {
+           type: 'apiKey',
+           in: 'header',
+           name: 'X-API-Key',
+-          description: 'API key for authentication. Can also be provided via \'Authorization: Bearer <key>\' header.'
++          description: 'API key for authentication via X-API-Key header.'
++        },
++        BearerAuth: {
++          type: 'http',
++          scheme: 'bearer',
++          description: "API key for authentication via 'Authorization: Bearer <key>' header."
+         }
+       }
+     },
+@@ -55,8 +46,8 @@ export function generateOpenAPISchema(requestUrl: string): unknown {
+         get: {
+           summary: 'Look up CNPJ company data',
+           security: [
+-            { 'OAuth2': ['mcp'] },
+-            { 'ApiKeyAuth': [] }
++            { 'ApiKeyAuth': [] },
++            { 'BearerAuth': [] }
+           ],
+           parameters: [{
+             name: 'cnpj',
+@@ -77,8 +68,8 @@ export function generateOpenAPISchema(requestUrl: string): unknown {
+         get: {
+           summary: 'Look up CEP postal code data',
+           security: [
+-            { 'OAuth2': ['mcp'] },
+-            { 'ApiKeyAuth': [] }
++            { 'ApiKeyAuth': [] },
++            { 'BearerAuth': [] }
+           ],
+           parameters: [{
+             name: 'cep',
+@@ -99,8 +90,8 @@ export function generateOpenAPISchema(requestUrl: string): unknown {
+         post: {
+           summary: 'Search the web for Brazilian company information',
+           security: [
+-            { 'OAuth2': ['mcp'] },
+-            { 'ApiKeyAuth': [] }
++            { 'ApiKeyAuth': [] },
++            { 'BearerAuth': [] }
+           ],
+           requestBody: {
+             required: true,
+@@ -138,8 +129,8 @@ export function generateOpenAPISchema(requestUrl: string): unknown {
+         post: {
+           summary: 'Intelligent search for Brazilian company information',
+           security: [
+-            { 'OAuth2': ['mcp'] },
+-            { 'ApiKeyAuth': [] }
++            { 'ApiKeyAuth': [] },
++            { 'BearerAuth': [] }
+           ],
+           requestBody: {
+             required: true,
+@@ -192,8 +183,8 @@ export function generateOpenAPISchema(requestUrl: string): unknown {
+         post: {
+           summary: 'Structured reasoning and problem-solving',
+           security: [
+-            { 'OAuth2': ['mcp'] },
+-            { 'ApiKeyAuth': [] }
++            { 'ApiKeyAuth': [] },
++            { 'BearerAuth': [] }
+           ],
+           requestBody: {
+             required: true,
+@@ -238,7 +229,10 @@ export function generateOpenAPISchema(requestUrl: string): unknown {
+         post: {
+           summary: 'MCP JSON-RPC endpoint',
+           description: 'Model Context Protocol JSON-RPC endpoint for AI assistants',
+-          security: [], // No authentication required for MCP protocol
++          security: [
++            { 'ApiKeyAuth': [] },
++            { 'BearerAuth': [] }
++          ],
+           requestBody: {
+             required: true,
+             content: {
+@@ -258,7 +252,8 @@ export function generateOpenAPISchema(requestUrl: string): unknown {
+           },
+           responses: {
+             '200': { description: 'MCP response' },
+-            '400': { description: 'Invalid request' }
++            '400': { description: 'Invalid request' },
++            '401': { description: 'Unauthorized - API key required' }
+           }
+         }
+       },
+@@ -266,10 +261,14 @@ export function generateOpenAPISchema(requestUrl: string): unknown {
+         get: {
+           summary: 'MCP Server-Sent Events endpoint',
+           description: 'Model Context Protocol streaming endpoint for real-time communication',
+-          security: [], // No authentication required for MCP protocol
++          security: [
++            { 'ApiKeyAuth': [] },
++            { 'BearerAuth': [] }
++          ],
+           responses: {
+             '200': { description: 'SSE stream established' },
+-            '400': { description: 'Invalid request' }
++            '400': { description: 'Invalid request' },
++            '401': { description: 'Unauthorized - API key required' }
+           }
+         }
+       }
+@@ -280,14 +279,14 @@ export function generateOpenAPISchema(requestUrl: string): unknown {
+ /**
+  * Handle /openapi.json endpoint
+  */
+-export function handleOpenAPIEndpoint(request: Request): Response {
++export function handleOpenAPIEndpoint(request: Request, env?: Env): Response {
+   const schema = generateOpenAPISchema(request.url);
+ 
+   return new Response(JSON.stringify(schema), {
+     status: 200,
+     headers: {
+       'Content-Type': 'application/json',
+-      ...corsHeaders,
++      ...getCorsHeaders(request, env, { isPublic: true }),
+     },
+   });
+ }
+diff --git a/lib/workers/worker.ts b/lib/workers/worker.ts
+index fb988b4..1e018b1 100644
+--- a/lib/workers/worker.ts
++++ b/lib/workers/worker.ts
+@@ -8,10 +8,11 @@ import {
+   handleMCPEndpoint,
+   handleCORS,
+   handleHealthCheck,
++  withCorsHeaders,
+   corsHeaders,
+   Env
+ } from '../adapters/cloudflare.js';
+-import { authenticateRequest } from './auth.js';
++import { authenticateRequest, isPublicPath } from './auth.js';
+ import { checkRateLimit } from './rate-limit.js';
+ import { handleSSEEndpoint } from './sse.js';
+ import {
+@@ -31,6 +32,124 @@ import {
+ } from './rest.js';
+ import { WorkerExportedHandler } from './types.js';
+ 
++async function routeRequest(
++  request: Request,
++  env: Env,
++  url: URL
++): Promise<Response> {
++  switch (url.pathname) {
++    case '/health':
++      return handleHealthCheck(request, env);
++
++    case '/mcp':
++      // HTTP JSON-RPC endpoint
++      if (request.method !== 'POST') {
++        return new Response('Method not allowed', {
++          status: 405,
++          headers: corsHeaders,
++        });
++      }
++      return await handleMCPEndpoint(request, env);
++
++    case '/sse':
++      // Server-Sent Events endpoint for streaming MCP
++      if (request.method !== 'GET' && request.method !== 'POST') {
++        return new Response('Method not allowed', {
++          status: 405,
++          headers: corsHeaders,
++        });
++      }
++      return await handleSSEEndpoint(request, env);
++
++    case '/.well-known/oauth-authorization-server':
++    case '/.well-known/openid_configuration':
++      return handleOAuthDiscovery(request, env);
++
++    case '/oauth/authorize':
++      return handleOAuthAuthorize(request, env);
++
++    case '/oauth/token':
++      return await handleOAuthToken(request, env);
++
++    case '/oauth/register':
++      return await handleOAuthRegister(request, env);
++
++    case '/oauth/userinfo':
++      return handleOAuthUserInfo(request, env);
++
++    case '/.well-known/jwks.json':
++      return handleJWKS(request, env);
++
++    case '/openapi.json':
++      return handleOpenAPIEndpoint(request, env);
++
++    case '/': {
++      // Root endpoint with basic info
++      const info = {
++        service: 'MCP DadosBR',
++        description:
++          'Model Context Protocol server for Brazilian public data',
++        version: '1.0.0',
++        runtime: 'cloudflare-workers',
++        free_tier: {
++          workers: '100,000 requests/day',
++          kv: '100,000 reads/day, 1,000 writes/day, 1GB storage',
++          note: 'Perfect for MCP remote server hosting',
++        },
++        endpoints: {
++          mcp: '/mcp (HTTP JSON-RPC)',
++          sse: '/sse (Server-Sent Events)',
++          health: '/health',
++          openapi: '/openapi.json',
++        },
++        tools: ['cnpj_lookup', 'cep_lookup', 'cnpj_search', 'sequentialthinking', 'cnpj_intelligence'],
++        documentation: 'https://github.com/cristianoaredes/mcp-dadosbr',
++        cloudflare_docs: {
++          agents: 'https://developers.cloudflare.com/agents/',
++          sse: 'https://developers.cloudflare.com/agents/api-reference/http-sse/',
++          pricing:
++            'https://developers.cloudflare.com/workers/platform/pricing/',
++        },
++      };
++
++      return new Response(JSON.stringify(info), {
++        status: 200,
++        headers: {
++          'Content-Type': 'application/json',
++          ...corsHeaders,
++        },
++      });
++    }
++
++    default: {
++      // Handle REST API endpoints for ChatGPT integration
++      const pathMatch = url.pathname.match(/^\/(cnpj|cep)\/(.+)$/);
++      if (pathMatch && request.method === 'GET') {
++        const [, toolType, value] = pathMatch;
++        return await handleLookupEndpoint(toolType, value, env);
++      }
++
++      // Handle advanced REST endpoints
++      if (url.pathname === '/search' && request.method === 'POST') {
++        return await handleSearchEndpoint(request, env);
++      }
++
++      if (url.pathname === '/intelligence' && request.method === 'POST') {
++        return await handleIntelligenceEndpoint(request, env);
++      }
++
++      if (url.pathname === '/thinking' && request.method === 'POST') {
++        return await handleThinkingEndpoint(request, env);
++      }
++
++      return new Response('Not found', {
++        status: 404,
++        headers: corsHeaders,
++      });
++    }
++  }
++}
++
+ /**
+  * Main Cloudflare Worker fetch handler
+  */
+@@ -47,9 +166,10 @@ export default {
+     }
+ 
+     const url = new URL(request.url);
++    const isPublic = isPublicPath(url.pathname);
+ 
+     // Handle CORS preflight
+-    const corsResponse = handleCORS(request);
++    const corsResponse = handleCORS(request, env, { isPublic });
+     if (corsResponse) {
+       return corsResponse;
+     }
+@@ -57,132 +177,16 @@ export default {
+     // Apply rate limiting
+     const rateLimitResult = await checkRateLimit(request, env);
+     if (!rateLimitResult.allowed) {
+-      return rateLimitResult.error!;
++      return withCorsHeaders(rateLimitResult.error!, request, env, { isPublic });
+     }
+ 
+     // Apply authentication
+     const authResult = await authenticateRequest(request, env);
+     if (!authResult.authenticated) {
+-      return authResult.error!;
++      return withCorsHeaders(authResult.error!, request, env, { isPublic });
+     }
+ 
+-    // Route handling
+-    switch (url.pathname) {
+-      case '/health':
+-        return handleHealthCheck();
+-
+-      case '/mcp':
+-        // HTTP JSON-RPC endpoint
+-        if (request.method !== 'POST') {
+-          return new Response('Method not allowed', {
+-            status: 405,
+-            headers: corsHeaders,
+-          });
+-        }
+-        return await handleMCPEndpoint(request, env);
+-
+-      case '/sse':
+-        // Server-Sent Events endpoint for streaming MCP
+-        if (request.method !== 'GET' && request.method !== 'POST') {
+-          return new Response('Method not allowed', {
+-            status: 405,
+-            headers: corsHeaders,
+-          });
+-        }
+-        return await handleSSEEndpoint(request, env);
+-
+-      case '/.well-known/oauth-authorization-server':
+-      case '/.well-known/openid_configuration':
+-        // OAuth discovery endpoint for ChatGPT MCP connector
+-        return handleOAuthDiscovery(request);
+-
+-      case '/oauth/authorize':
+-        // OAuth authorize endpoint
+-        return handleOAuthAuthorize(request);
+-
+-      case '/oauth/token':
+-        // OAuth token endpoint
+-        return await handleOAuthToken(request);
+-
+-      case '/oauth/register':
+-        // OAuth dynamic client registration endpoint (RFC 7591)
+-        return await handleOAuthRegister(request);
+-
+-      case '/oauth/userinfo':
+-        // OAuth userinfo endpoint
+-        return handleOAuthUserInfo();
+-
+-      case '/.well-known/jwks.json':
+-        // JSON Web Key Set endpoint
+-        return handleJWKS();
+-
+-      case '/openapi.json':
+-        // OpenAPI schema endpoint
+-        return handleOpenAPIEndpoint(request);
+-
+-      case '/':
+-        // Root endpoint with basic info
+-        const info = {
+-          service: 'MCP DadosBR',
+-          description:
+-            'Model Context Protocol server for Brazilian public data',
+-          version: '1.0.0',
+-          runtime: 'cloudflare-workers',
+-          free_tier: {
+-            workers: '100,000 requests/day',
+-            kv: '100,000 reads/day, 1,000 writes/day, 1GB storage',
+-            note: 'Perfect for MCP remote server hosting',
+-          },
+-          endpoints: {
+-            mcp: '/mcp (HTTP JSON-RPC)',
+-            sse: '/sse (Server-Sent Events)',
+-            health: '/health',
+-            openapi: '/openapi.json',
+-            oauth: '/.well-known/oauth-authorization-server'
+-          },
+-          tools: ['cnpj_lookup', 'cep_lookup', 'cnpj_search', 'sequentialthinking', 'cnpj_intelligence'],
+-          documentation: 'https://github.com/cristianoaredes/mcp-dadosbr',
+-          cloudflare_docs: {
+-            agents: 'https://developers.cloudflare.com/agents/',
+-            sse: 'https://developers.cloudflare.com/agents/api-reference/http-sse/',
+-            pricing:
+-              'https://developers.cloudflare.com/workers/platform/pricing/',
+-          },
+-        };
+-
+-        return new Response(JSON.stringify(info), {
+-          status: 200,
+-          headers: {
+-            'Content-Type': 'application/json',
+-            ...corsHeaders,
+-          },
+-        });
+-
+-      default:
+-        // Handle REST API endpoints for ChatGPT integration
+-        const pathMatch = url.pathname.match(/^\/(cnpj|cep)\/(.+)$/);
+-        if (pathMatch && request.method === 'GET') {
+-          const [, toolType, value] = pathMatch;
+-          return await handleLookupEndpoint(toolType, value, env);
+-        }
+-
+-        // Handle advanced REST endpoints
+-        if (url.pathname === '/search' && request.method === 'POST') {
+-          return await handleSearchEndpoint(request, env);
+-        }
+-
+-        if (url.pathname === '/intelligence' && request.method === 'POST') {
+-          return await handleIntelligenceEndpoint(request, env);
+-        }
+-
+-        if (url.pathname === '/thinking' && request.method === 'POST') {
+-          return await handleThinkingEndpoint(request, env);
+-        }
+-
+-        return new Response('Not found', {
+-          status: 404,
+-          headers: corsHeaders,
+-        });
+-    }
++    const response = await routeRequest(request, env, url);
++    return withCorsHeaders(response, request, env, { isPublic });
+   },
+ } satisfies WorkerExportedHandler<Env>;
+diff --git a/test/unit/worker-auth-oauth-cors.test.ts b/test/unit/worker-auth-oauth-cors.test.ts
+new file mode 100644
+index 0000000..73751ea
+--- /dev/null
++++ b/test/unit/worker-auth-oauth-cors.test.ts
+@@ -0,0 +1,418 @@
++import { describe, expect, it, vi } from "vitest";
++import worker from "../../lib/workers/worker.js";
++import { constantTimeEqual } from "../../lib/workers/auth.js";
++import { parseAllowedOrigins } from "../../lib/adapters/cloudflare.js";
++import { generateOpenAPISchema } from "../../lib/workers/openapi.js";
++import type { Env } from "../../lib/adapters/cloudflare.js";
++
++const mockCtx = {
++  waitUntil: vi.fn(),
++  passThroughOnException: vi.fn(),
++} as unknown as ExecutionContext;
++
++function makeMcpListRequest(
++  headers: Record<string, string> = {},
++  method = "POST"
++): Request {
++  return new Request("https://worker.example/mcp", {
++    method,
++    headers: {
++      "Content-Type": "application/json",
++      ...headers,
++    },
++    ...(method === "POST"
++      ? {
++          body: JSON.stringify({
++            jsonrpc: "2.0",
++            id: 1,
++            method: "tools/list",
++          }),
++        }
++      : {}),
++  });
++}
++
++describe("Worker Auth, OAuth Fail-Closed & CORS Hardening (TCK-0013)", () => {
++  describe("constantTimeEqual", () => {
++    it("returns true for identical strings and false for single-char, length, empty, or UTF-8 mismatches", () => {
++      expect(constantTimeEqual("secret-token-123", "secret-token-123")).toBe(true);
++      expect(constantTimeEqual("", "")).toBe(true);
++      expect(constantTimeEqual("secret-token-123", "secret-token-124")).toBe(false);
++      expect(constantTimeEqual("secret-token-123", "secret-token-12")).toBe(false);
++      expect(constantTimeEqual("secret-token-123", "secret-token-1234")).toBe(false);
++      expect(constantTimeEqual("", "a")).toBe(false);
++      expect(constantTimeEqual("a", "")).toBe(false);
++      expect(constantTimeEqual("chave-áéíóú", "chave-áéíóú")).toBe(true);
++      expect(constantTimeEqual("chave-áéíóú", "chave-aeiou")).toBe(false);
++    });
++  });
++
++  describe("Authentication enforcement with MCP_API_KEY", () => {
++    const env: Env = { MCP_API_KEY: "super-secret-worker-key" };
++
++    it("rejects unauthenticated POST /mcp and GET /sse with 401 and WWW-Authenticate", async () => {
++      const mcpRes = await worker.fetch(makeMcpListRequest(), env, mockCtx);
++      expect(mcpRes.status).toBe(401);
++      expect(mcpRes.headers.get("WWW-Authenticate")).toBe("Bearer");
++
++      const sseRes = await worker.fetch(
++        new Request("https://worker.example/sse", {
++          method: "GET",
++          headers: { Accept: "text/event-stream" },
++        }),
++        env,
++        mockCtx
++      );
++      expect(sseRes.status).toBe(401);
++      expect(sseRes.headers.get("WWW-Authenticate")).toBe("Bearer");
++    });
++
++    it("rejects wrong or different-length Bearer tokens on /mcp", async () => {
++      const wrongSameLen = await worker.fetch(
++        makeMcpListRequest({ Authorization: "Bearer super-secret-worker-kez" }),
++        env,
++        mockCtx
++      );
++      expect(wrongSameLen.status).toBe(401);
++
++      const wrongLen = await worker.fetch(
++        makeMcpListRequest({ Authorization: "Bearer short" }),
++        env,
++        mockCtx
++      );
++      expect(wrongLen.status).toBe(401);
++    });
++
++    it("rejects unauthenticated REST endpoints (/cnpj/* and /search) with 401", async () => {
++      const cnpjRes = await worker.fetch(
++        new Request("https://worker.example/cnpj/11222333000181"),
++        env,
++        mockCtx
++      );
++      expect(cnpjRes.status).toBe(401);
++
++      const searchRes = await worker.fetch(
++        new Request("https://worker.example/search", {
++          method: "POST",
++          headers: { "Content-Type": "application/json" },
++          body: JSON.stringify({ query: "teste" }),
++        }),
++        env,
++        mockCtx
++      );
++      expect(searchRes.status).toBe(401);
++    });
++
++    it("allows POST /mcp tools/list with valid Authorization Bearer or X-API-Key", async () => {
++      const bearerRes = await worker.fetch(
++        makeMcpListRequest({ Authorization: "Bearer super-secret-worker-key" }),
++        env,
++        mockCtx
++      );
++      expect(bearerRes.status).toBe(200);
++      const bearerJson = (await bearerRes.json()) as {
++        result?: { tools?: Array<{ name: string }> };
++      };
++      expect(Array.isArray(bearerJson.result?.tools)).toBe(true);
++      expect(bearerJson.result?.tools?.length).toBeGreaterThan(0);
++
++      const headerRes = await worker.fetch(
++        makeMcpListRequest({ "X-API-Key": "super-secret-worker-key" }),
++        env,
++        mockCtx
++      );
++      expect(headerRes.status).toBe(200);
++    });
++
++    it("allows GET /sse past auth when valid API key is supplied", async () => {
++      const sseRes = await worker.fetch(
++        new Request("https://worker.example/sse", {
++          method: "GET",
++          headers: {
++            Accept: "text/plain",
++            Authorization: "Bearer super-secret-worker-key",
++          },
++        }),
++        env,
++        mockCtx
++      );
++      expect(sseRes.status).toBe(400);
++    });
++
++    it("keeps /health and /openapi.json publicly accessible", async () => {
++      const healthRes = await worker.fetch(
++        new Request("https://worker.example/health"),
++        env,
++        mockCtx
++      );
++      expect(healthRes.status).toBe(200);
++
++      const openapiRes = await worker.fetch(
++        new Request("https://worker.example/openapi.json"),
++        env,
++        mockCtx
++      );
++      expect(openapiRes.status).toBe(200);
++    });
++  });
++
++  describe("Demo mode without MCP_API_KEY", () => {
++    it("allows POST /mcp tools/list when MCP_API_KEY is unset", async () => {
++      const res = await worker.fetch(makeMcpListRequest(), {}, mockCtx);
++      expect(res.status).toBe(200);
++      const body = (await res.json()) as {
++        result?: { tools?: unknown[] };
++      };
++      expect(Array.isArray(body.result?.tools)).toBe(true);
++    });
++  });
++
++  describe("OAuth fail-closed & Open Redirect protection", () => {
++    it("returns 401 on /oauth/authorize without key when MCP_API_KEY is set and 501 without Location when authorized or in demo mode", async () => {
++      const guardedEnv: Env = { MCP_API_KEY: "super-secret-worker-key" };
++
++      const unauth = await worker.fetch(
++        new Request(
++          "https://worker.example/oauth/authorize?client_id=x&redirect_uri=https://evil.example/cb&state=1"
++        ),
++        guardedEnv,
++        mockCtx
++      );
++      expect(unauth.status).toBe(401);
++      expect(unauth.headers.get("Location")).toBeNull();
++
++      for (const env of [guardedEnv, {}] as Env[]) {
++        const headers: Record<string, string> = env.MCP_API_KEY
++          ? { Authorization: `Bearer ${env.MCP_API_KEY}` }
++          : {};
++
++        for (const uri of [
++          "https://evil.example/cb",
++          "javascript:alert(1)",
++          "not-a-url",
++        ]) {
++          const res = await worker.fetch(
++            new Request(
++              `https://worker.example/oauth/authorize?client_id=x&redirect_uri=${encodeURIComponent(uri)}&state=1`,
++              { headers }
++            ),
++            env,
++            mockCtx
++          );
++          expect(res.status).toBe(501);
++          expect(res.status).not.toBe(302);
++          expect(res.headers.get("Location")).toBeNull();
++          expect(res.headers.get("Cache-Control")).toBe("no-store");
++        }
++      }
++    });
++
++    it("returns 501 without issuing tokens on /oauth/token, /oauth/register, /oauth/userinfo, and discovery/JWKS", async () => {
++      const tokenRes = await worker.fetch(
++        new Request("https://worker.example/oauth/token", {
++          method: "POST",
++          headers: { "Content-Type": "application/x-www-form-urlencoded" },
++          body: "grant_type=authorization_code&code=forged",
++        }),
++        {},
++        mockCtx
++      );
++      expect(tokenRes.status).toBe(501);
++      expect(tokenRes.headers.get("Cache-Control")).toBe("no-store");
++      const tokenJson = (await tokenRes.json()) as Record<string, unknown>;
++      expect(tokenJson.error).toBe("oauth_not_supported");
++      expect(tokenJson.access_token).toBeUndefined();
++      expect(tokenJson.id_token).toBeUndefined();
++
++      const registerRes = await worker.fetch(
++        new Request("https://worker.example/oauth/register", {
++          method: "POST",
++          headers: { "Content-Type": "application/json" },
++          body: JSON.stringify({ redirect_uris: ["https://evil.example/cb"] }),
++        }),
++        {},
++        mockCtx
++      );
++      expect(registerRes.status).toBe(501);
++      expect(registerRes.headers.get("Cache-Control")).toBe("no-store");
++
++      const userInfoRes = await worker.fetch(
++        new Request("https://worker.example/oauth/userinfo"),
++        {},
++        mockCtx
++      );
++      expect(userInfoRes.status).toBe(501);
++      expect(userInfoRes.headers.get("Cache-Control")).toBe("no-store");
++
++      const discoveryRes = await worker.fetch(
++        new Request("https://worker.example/.well-known/oauth-authorization-server"),
++        { MCP_API_KEY: "super-secret-worker-key" },
++        mockCtx
++      );
++      expect(discoveryRes.status).toBe(501);
++      expect(discoveryRes.headers.get("Cache-Control")).toBe("no-store");
++
++      const jwksRes = await worker.fetch(
++        new Request("https://worker.example/.well-known/jwks.json"),
++        { MCP_API_KEY: "super-secret-worker-key" },
++        mockCtx
++      );
++      expect(jwksRes.status).toBe(501);
++      expect(jwksRes.headers.get("Cache-Control")).toBe("no-store");
++    });
++  });
++
++  describe("CORS hardening", () => {
++    it("parses allowed origins safely and ignores wildcard or invalid URLs", () => {
++      expect(
++        parseAllowedOrigins("https://trusted.example, *, ftp://bad.example, not-a-url, https://app.example/path")
++      ).toEqual(["https://trusted.example", "https://app.example"]);
++    });
++
++    it("omits Access-Control-Allow-Origin and blocks preflight when MCP_API_KEY is set without MCP_ALLOWED_ORIGINS", async () => {
++      const env: Env = { MCP_API_KEY: "super-secret-worker-key" };
++
++      const unauthRes = await worker.fetch(
++        makeMcpListRequest({ Origin: "https://evil.example" }),
++        env,
++        mockCtx
++      );
++      expect(unauthRes.status).toBe(401);
++      expect(unauthRes.headers.get("Access-Control-Allow-Origin")).toBeNull();
++      expect(unauthRes.headers.get("Vary")).toBe("Origin");
++      expect(unauthRes.headers.get("X-Content-Type-Options")).toBe("nosniff");
++      const allowHeaders = unauthRes.headers.get("Access-Control-Allow-Headers") || "";
++      expect(allowHeaders).toContain("Authorization");
++      expect(allowHeaders).toContain("X-API-Key");
++
++      const authRes = await worker.fetch(
++        makeMcpListRequest({
++          Origin: "https://evil.example",
++          Authorization: "Bearer super-secret-worker-key",
++        }),
++        env,
++        mockCtx
++      );
++      expect(authRes.status).toBe(200);
++      expect(authRes.headers.get("Access-Control-Allow-Origin")).toBeNull();
++      expect(authRes.headers.get("Vary")).toBe("Origin");
++      expect(authRes.headers.get("X-Content-Type-Options")).toBe("nosniff");
++
++      const preflight = await worker.fetch(
++        new Request("https://worker.example/mcp", {
++          method: "OPTIONS",
++          headers: { Origin: "https://evil.example" },
++        }),
++        env,
++        mockCtx
++      );
++      expect(preflight.status).toBe(403);
++      expect(preflight.headers.get("Access-Control-Allow-Origin")).toBeNull();
++    });
++
++    it("reflects exact allowlisted origins and blocks untrusted origins when MCP_ALLOWED_ORIGINS is configured", async () => {
++      const env: Env = {
++        MCP_API_KEY: "super-secret-worker-key",
++        MCP_ALLOWED_ORIGINS: "https://trusted.example, https://app.example",
++      };
++
++      const trustedPreflight = await worker.fetch(
++        new Request("https://worker.example/mcp", {
++          method: "OPTIONS",
++          headers: { Origin: "https://trusted.example" },
++        }),
++        env,
++        mockCtx
++      );
++      expect(trustedPreflight.status).toBe(204);
++      expect(trustedPreflight.headers.get("Access-Control-Allow-Origin")).toBe(
++        "https://trusted.example"
++      );
++      expect(trustedPreflight.headers.get("Vary")).toBe("Origin");
++
++      const trustedPost = await worker.fetch(
++        makeMcpListRequest({
++          Origin: "https://trusted.example",
++          Authorization: "Bearer super-secret-worker-key",
++        }),
++        env,
++        mockCtx
++      );
++      expect(trustedPost.status).toBe(200);
++      expect(trustedPost.headers.get("Access-Control-Allow-Origin")).toBe(
++        "https://trusted.example"
++      );
++      expect(trustedPost.headers.get("Vary")).toBe("Origin");
++
++      const evilPreflight = await worker.fetch(
++        new Request("https://worker.example/mcp", {
++          method: "OPTIONS",
++          headers: { Origin: "https://evil.example" },
++        }),
++        env,
++        mockCtx
++      );
++      expect(evilPreflight.status).toBe(403);
++      expect(evilPreflight.headers.get("Access-Control-Allow-Origin")).toBeNull();
++
++      const evilPost = await worker.fetch(
++        makeMcpListRequest({
++          Origin: "https://evil.example",
++          Authorization: "Bearer super-secret-worker-key",
++        }),
++        env,
++        mockCtx
++      );
++      expect(evilPost.status).toBe(200);
++      expect(evilPost.headers.get("Access-Control-Allow-Origin")).toBeNull();
++    });
++
++    it("ignores wildcard '*' in MCP_ALLOWED_ORIGINS", async () => {
++      const env: Env = {
++        MCP_API_KEY: "super-secret-worker-key",
++        MCP_ALLOWED_ORIGINS: "*",
++      };
++
++      const preflight = await worker.fetch(
++        new Request("https://worker.example/mcp", {
++          method: "OPTIONS",
++          headers: { Origin: "https://evil.example" },
++        }),
++        env,
++        mockCtx
++      );
++      expect(preflight.status).toBe(403);
++      expect(preflight.headers.get("Access-Control-Allow-Origin")).toBeNull();
++    });
++
++    it("allows wildcard CORS on OPTIONS /mcp in demo mode when MCP_API_KEY and MCP_ALLOWED_ORIGINS are unset", async () => {
++      const preflight = await worker.fetch(
++        new Request("https://worker.example/mcp", {
++          method: "OPTIONS",
++          headers: { Origin: "https://demo-client.example" },
++        }),
++        {},
++        mockCtx
++      );
++      expect(preflight.status).toBe(204);
++      expect(preflight.headers.get("Access-Control-Allow-Origin")).toBe("*");
++    });
++  });
++
++  describe("OpenAPI schema security definitions", () => {
++    it("removes OAuth2 and declares ApiKeyAuth and BearerAuth including /mcp and /sse", () => {
++      const schema = generateOpenAPISchema("https://worker.example/openapi.json") as {
++        security: Array<Record<string, unknown>>;
++        components: { securitySchemes: Record<string, unknown> };
++        paths: Record<string, Record<string, { security?: Array<Record<string, unknown>> }>>;
++      };
++
++      expect(schema.components.securitySchemes.OAuth2).toBeUndefined();
++      expect(schema.components.securitySchemes.ApiKeyAuth).toBeDefined();
++      expect(schema.components.securitySchemes.BearerAuth).toBeDefined();
++      expect(JSON.stringify(schema)).not.toContain("OAuth2");
++      expect(schema.paths["/mcp"].post.security?.length).toBeGreaterThan(0);
++      expect(schema.paths["/sse"].get.security?.length).toBeGreaterThan(0);
++    });
++  });
++});

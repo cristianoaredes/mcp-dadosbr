@@ -97,5 +97,14 @@
     "tree": "2ebfb7a133202df2405baa9271a2ecc203dd0ce7",
     "updated_at": "2026-11-19T18:09:07Z",
     "updated_by": "criteria-check"
+  },
+  "TCK-0013": {
+    "content_digest": null,
+    "criteria_digest": null,
+    "head": null,
+    "passes": true,
+    "tree": null,
+    "updated_at": "2026-11-20T16:25:33Z",
+    "updated_by": "criteria-check"
   }
 }

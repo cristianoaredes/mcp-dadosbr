@@ -11,3 +11,4 @@ TCK-0009,reescrever-readme-md-no-padrao-orqo-e-migrar-licenca-para-agpl-3-0,Rees
 TCK-0010,preparar-candidata-npm-0-6-0-sob-gnu-agpl-3-0,Preparar candidata npm 0.6.0 sob GNU AGPL-3.0,done,medium,feature,M,user,,,,,2026-11-19T06:14:29Z,
 TCK-0011,tornar-deterministicos-os-testes-de-ttl-em-test-unit-cache-test-ts-com-fake-time,Tornar determinísticos os testes de TTL em test/unit/cache.test.ts com fake timers,done,low,bug,S,bug,,,,,2026-11-19T13:21:00Z,
 TCK-0012,configurar-supervisor-efemero-docker-de-runners-github-actions-para-ci-yml-e-rel,Configurar supervisor efêmero Docker de runners GitHub Actions para ci.yml e release.yml,done,medium,infra,M,request,,,,,2026-11-19T17:45:55Z,
+TCK-0013,corrigir-bypass-de-autenticacao-em-mcp-e-sse-oauth-inseguro-e-cors-permissivo-no,"Corrigir bypass de autenticacao em /mcp e /sse, OAuth inseguro e CORS permissivo no Worker",done,high,security,M,audit,,,,,2026-11-20T15:16:11Z,

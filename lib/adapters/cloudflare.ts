@@ -23,31 +23,112 @@ export interface Env {
   MCP_CACHE_TTL?: string;
   MCP_CACHE?: KVNamespace;
   MCP_API_KEY?: string;
+  MCP_ALLOWED_ORIGINS?: string;
   MCP_DISABLE_RATE_LIMIT?: string;
   MCP_KV?: KVNamespace;
   TAVILY_API_KEY?: string; // Tavily search API key (secret)
 }
 
 
-// CORS headers
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
+const BASE_CORS_HEADERS: Record<string, string> = {
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Accept",
+  "Access-Control-Allow-Headers": "Content-Type, Accept, Authorization, X-API-Key",
   "Access-Control-Max-Age": "86400",
+  "X-Content-Type-Options": "nosniff",
 };
 
-function handleCORS(request: Request): Response | null {
-  if (request.method === "OPTIONS") {
-    return new Response(null, {
-      status: 204,
-      headers: corsHeaders,
-    });
+// Base CORS headers without wildcard origin
+const corsHeaders: Record<string, string> = { ...BASE_CORS_HEADERS };
+
+function parseAllowedOrigins(raw?: string): string[] {
+  if (typeof raw !== "string" || !raw.trim()) return [];
+  const origins: string[] = [];
+  for (const part of raw.split(",")) {
+    const trimmed = part.trim();
+    if (!trimmed || trimmed === "*") continue;
+    try {
+      const parsed = new URL(trimmed);
+      if (parsed.protocol === "https:" || parsed.protocol === "http:") {
+        origins.push(parsed.origin);
+      }
+    } catch {
+      // Ignore malformed origin entries
+    }
   }
-  return null;
+  return origins;
 }
 
-function handleHealthCheck(): Response {
+function getCorsHeaders(
+  request: Request,
+  env?: Env,
+  options?: { isPublic?: boolean }
+): Record<string, string> {
+  const hasApiKey = typeof env?.MCP_API_KEY === "string" && env.MCP_API_KEY.length > 0;
+  const allowedOrigins = parseAllowedOrigins(env?.MCP_ALLOWED_ORIGINS);
+  const origin = request.headers.get("Origin");
+
+  if (allowedOrigins.length > 0) {
+    const headers: Record<string, string> = {
+      ...BASE_CORS_HEADERS,
+      Vary: "Origin",
+    };
+    if (origin && allowedOrigins.includes(origin)) {
+      headers["Access-Control-Allow-Origin"] = origin;
+    }
+    return headers;
+  }
+
+  if (hasApiKey && !options?.isPublic) {
+    return {
+      ...BASE_CORS_HEADERS,
+      Vary: "Origin",
+    };
+  }
+
+  return {
+    ...BASE_CORS_HEADERS,
+    "Access-Control-Allow-Origin": "*",
+  };
+}
+
+function handleCORS(
+  request: Request,
+  env?: Env,
+  options?: { isPublic?: boolean }
+): Response | null {
+  if (request.method !== "OPTIONS") return null;
+  const headers = getCorsHeaders(request, env, options);
+  if (request.headers.get("Origin") && !("Access-Control-Allow-Origin" in headers)) {
+    return new Response("Origin not allowed", {
+      status: 403,
+      headers,
+    });
+  }
+  return new Response(null, {
+    status: 204,
+    headers,
+  });
+}
+
+function withCorsHeaders(
+  response: Response,
+  request: Request,
+  env?: Env,
+  options?: { isPublic?: boolean }
+): Response {
+  const headers = new Headers(response.headers);
+  headers.delete("Access-Control-Allow-Origin");
+  for (const [key, value] of Object.entries(getCorsHeaders(request, env, options))) {
+    headers.set(key, value);
+  }
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
+
+function handleHealthCheck(request?: Request, env?: Env): Response {
   const healthData = {
     status: "healthy",
     service: "mcp-dadosbr",
@@ -55,12 +136,15 @@ function handleHealthCheck(): Response {
     timestamp: new Date().toISOString(),
     runtime: "cloudflare-workers",
   };
+  const headers = request
+    ? getCorsHeaders(request, env, { isPublic: true })
+    : corsHeaders;
 
   return new Response(JSON.stringify(healthData), {
     status: 200,
     headers: {
       "Content-Type": "application/json",
-      ...corsHeaders,
+      ...headers,
     },
   });
 }
@@ -235,4 +319,11 @@ export async function handleMCPEndpoint(
   }
 }
 
-export { corsHeaders, handleCORS, handleHealthCheck };
+export {
+  corsHeaders,
+  getCorsHeaders,
+  parseAllowedOrigins,
+  withCorsHeaders,
+  handleCORS,
+  handleHealthCheck,
+};
