@@ -188,6 +188,15 @@
     "updated_at": "2026-11-20T19:13:48Z",
     "updated_by": "criteria-check"
   },
+  "TCK-0023": {
+    "content_digest": "sha256:190bf0ff2622282b9ddf5be5e9c84dd70689248fe9b04da824dc998f361e2cd2",
+    "criteria_digest": "sha256:f2764fc273d7ef8568630d3e4ec27b849f97add77c41c0eb840335ad218e2639",
+    "head": "88a1caab890eba5684d4d7f943b5d3e0d3f8a968",
+    "passes": true,
+    "tree": "8294d2619036a4208d69a9300c41fa0b39f673a7",
+    "updated_at": "2026-11-20T20:31:18Z",
+    "updated_by": "criteria-check"
+  },
   "TCK-0026": {
     "content_digest": "sha256:79061db72d16bcbf14583fc85fc1d211fd22692b92b665c64ed23de1fe4c609f",
     "criteria_digest": "sha256:b396b52dddddd0211821c83378e1e417dff0b72b03567c1c6330b94b4df6f995",

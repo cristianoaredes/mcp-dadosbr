@@ -1,0 +1,1680 @@
+diff --git a/.archagents/05-integrations.md b/.archagents/05-integrations.md
+index 49d7b83..10aabdc 100644
+--- a/.archagents/05-integrations.md
++++ b/.archagents/05-integrations.md
+@@ -3,12 +3,13 @@
+ Base revisada: `79aa712` (`v0.5.0`; base inicial: `037dae4c`).
+ 
+ - **CNPJ e CEP (configuráveis com allowlist SSRF):** padrão `https://api.opencnpj.org/` e `https://opencep.com/v1/`, com hosts adicionais permitidos em `lib/config/index.ts` (ReceitaWS, BrasilAPI, CNPJ.ws, Minha Receita, ViaCEP, AwesomeAPI).
+-- **IBGE Localidades:** `https://servicodados.ibge.gov.br/api/v1/localidades` (sem chave).
+-- **PNCP (Publicações):** `https://pncp.gov.br/api/consulta/v1/contratacoes/publicacao` (sem chave), com HTTP 204 tratado como página vazia no modo filtrado (`options.noContent` em `lib/core/http-client.ts`).
+-- **Querido Diário (Open Knowledge Brasil):** `https://api.queridodiario.org.br/gazettes` (sem chave).
+-- **Banco Central (BCData/SGS):** `https://api.bcb.gov.br/dados/serie/bcdata.sgs` para séries 432, 433, 1, 21619 e 12 (sem chave).
+-- **FIPE (via BrasilAPI):** `https://brasilapi.com.br/api/fipe` (sem chave).
+-- **Portal da Transparência / CEIS / CNEP / CEPIM:** `https://api.portaldatransparencia.gov.br/api-de-dados` exige `TRANSPARENCIA_API_KEY` (com fallback para URLs manuais em `ceis_cnep_lookup`).
++- **IBGE Localidades:** `https://servicodados.ibge.gov.br/api/v1/localidades` (sem chave). Em `TCK-0023` (`FND-0011`), `ibge_localidades` passou a cachear a lista bruta por URL (`ibge:${url}`), suportar filtros opcionais em memória (`id` e `nome` acento/case-insensitive) e paginação opcional (`page`/`limit`, retornando `{ items, pagination, filter? }` apenas quando `page`/`limit` são informados e mantendo array bruto legado + `structuredContent.source` para MCP Apps quando omitidos).
++- **PNCP (Publicações):** `https://pncp.gov.br/api/consulta/v1/contratacoes/publicacao` (sem chave), com HTTP 204 tratado como página vazia no modo filtrado (`options.noContent` em `lib/core/http-client.ts`) e cache apenas de respostas `ok: true` preservando `source`.
++- **Querido Diário (Open Knowledge Brasil):** `https://api.queridodiario.org.br/gazettes` (sem chave), com cache de sucessos preservando `source`.
++- **Banco Central (BCData/SGS):** `https://api.bcb.gov.br/dados/serie/bcdata.sgs` para séries 432, 433, 1, 21619 e 12 (sem chave), com cache de sucessos preservando `source`.
++- **FIPE (via BrasilAPI):** `https://brasilapi.com.br/api/fipe` (sem chave), com cache de sucessos em `fipe:preco:*` e `fipe:marcas:*`.
++- **Portal da Transparência / CEIS / CNEP / CEPIM:** `https://api.portaldatransparencia.gov.br/api-de-dados` exige `TRANSPARENCIA_API_KEY` (com fallback para URLs manuais em `ceis_cnep_lookup`). A checagem de API key ocorre sempre antes da leitura do cache, as chaves de cache nunca incluem segredos e respostas com falhas parciais (`errors.length > 0`) ou fallbacks nunca são cacheadas.
++- **Reuso de `lookup()` e caching nas demais tools read-heavy (`TCK-0023`):** `company_deep_profile` (`lib/tools/company.ts`) reutiliza `lookup("cnpj", ...)` (`cache` + `deduplicate`) e propaga `cache` aos sub-lookups; `domain_whois`, `consumidor_reclamacoes`, `datajud_processos`, `oab_advogado`, `bnmp_mandados`, `lista_suja_lookup` e `cnes_saude` cacheiam apenas sucessos reais (`ok: true`, jamais fallbacks/CAPTCHAs/erros e com `DATAJUD_API_KEY` validada antes do cache).
+ 
+ ## Resiliência HTTP (`lib/core/http-client.ts`)
+ 
+@@ -18,7 +19,7 @@ Base revisada: `79aa712` (`v0.5.0`; base inicial: `037dae4c`).
+ - **Timeouts e cancelamento em clientes externos (`lib/shared/utils/timeout.ts`, `search-providers.ts`, `legal.ts`, `intelligence.ts`):**
+   - `PerplexityProvider` (`createTimeoutController`) e `TavilyProvider` (`raceWithTimeoutAndSignal`) aplicam `TIMEOUTS.SEARCH_REQUEST_MS` (default `10s`) e propagam `AbortSignal` com cleanup em `finally`.
+   - `datajud_processos` e `bnmp_mandados` (`lib/tools/legal.ts`) limitam `fetch` com `TIMEOUTS.HTTP_REQUEST_MS`; em timeout no BNMP, o fallback marca `timed_out: true`.
+-  - `procurados_lookup` (`executeProcurados`) aplica timeout por página (`TIMEOUTS.HTTP_REQUEST_MS`) e deadline agregado (`Math.max(HTTP_REQUEST_MS, INTELLIGENCE_TOTAL_MS)`), contabilizando `pages_checked`/`pages_failed` para evitar falsos negativos silenciosos (`NOT_FOUND` só com `pages_failed === 0`, `INCONCLUSIVE` com `partial: true` se houver falhas parciais sem match, e `{ ok: false }` se todas as 13 páginas falharem).
++  - `procurados_lookup` (`executeProcurados`) aplica concorrência limitada (`PROCURADOS_CONCURRENCY = 4` via `executeWithConcurrencyLimit`), timeout por página (`TIMEOUTS.HTTP_REQUEST_MS`) e deadline agregado (`totalCtrl`, `Math.max(HTTP_REQUEST_MS, INTELLIGENCE_TOTAL_MS)`), contabilizando `pages_checked`/`pages_failed` para evitar falsos negativos silenciosos (`NOT_FOUND` só com `pages_failed === 0`, `INCONCLUSIVE` com `partial: true` se houver falhas parciais sem match, e `{ ok: false }` se todas as 13 páginas falharem). O cache integral da lista (`PROCURADOS_CACHE_KEY = "procurados:entries:v1"`) só é gravado quando todas as 13 páginas obtêm sucesso (`pages_failed === 0`).
+   - `executeIntelligence` limpa seu timer de 25 s em `finally` e propaga `AbortController.signal` ao scheduler concorrente e aos search providers.
+ 
+ Disponibilidade, limites de taxa e cobertura efetiva de cada provedor ficam **a confirmar** no ambiente de uso.
+@@ -26,11 +27,14 @@ Disponibilidade, limites de taxa e cobertura efetiva de cada provedor ficam **a
+ ## Fontes
+ 
+ - `lib/config/index.ts:L7-L35`
+-- `lib/tools/government.ts:L12-L79`
+-- `lib/tools/government.ts:L213-L319`
+-- `lib/tools/financial.ts:L13-L89`
++- `lib/core/tool-schemas.ts:L96-L108`
++- `lib/core/mcp-server.ts:L184-L205`
++- `lib/tools/government.ts:L1-L486`
++- `lib/tools/financial.ts:L1-L149`
++- `lib/tools/company.ts:L74-L238`
++- `lib/tools/health.ts:L1-L58`
+ - `lib/core/http-client.ts:L1-L278`
+ - `lib/shared/utils/timeout.ts:L1-L138`
+ - `lib/core/search-providers.ts:L1-L296`
+ - `lib/core/intelligence.ts:L1-L523`
+-- `lib/tools/legal.ts:L1-L360`
++- `lib/tools/legal.ts:L1-L498`
+diff --git a/.archagents/13-execution/acceptance-lock.json b/.archagents/13-execution/acceptance-lock.json
+index c281656..5b0ebb5 100644
+--- a/.archagents/13-execution/acceptance-lock.json
++++ b/.archagents/13-execution/acceptance-lock.json
+@@ -188,6 +188,15 @@
+     "updated_at": "2026-11-20T19:13:48Z",
+     "updated_by": "criteria-check"
+   },
++  "TCK-0023": {
++    "content_digest": "sha256:67b7826c4fe03692c4e480a8d616186b35c6951c165433af856472150d68a102",
++    "criteria_digest": "sha256:f2764fc273d7ef8568630d3e4ec27b849f97add77c41c0eb840335ad218e2639",
++    "head": "88a1caab890eba5684d4d7f943b5d3e0d3f8a968",
++    "passes": true,
++    "tree": "8294d2619036a4208d69a9300c41fa0b39f673a7",
++    "updated_at": "2026-11-20T20:17:07Z",
++    "updated_by": "criteria-check"
++  },
+   "TCK-0026": {
+     "content_digest": "sha256:79061db72d16bcbf14583fc85fc1d211fd22692b92b665c64ed23de1fe4c609f",
+     "criteria_digest": "sha256:b396b52dddddd0211821c83378e1e417dff0b72b03567c1c6330b94b4df6f995",
+diff --git a/.archagents/13-execution/criteria-attempts.jsonl b/.archagents/13-execution/criteria-attempts.jsonl
+index 2bde8aa..3090921 100644
+--- a/.archagents/13-execution/criteria-attempts.jsonl
++++ b/.archagents/13-execution/criteria-attempts.jsonl
+@@ -38,3 +38,4 @@
+ {"ts": "2026-11-20T19:54:44Z", "ticket": "TCK-0029", "verdict": "pass", "passed": 4, "total": 4}
+ {"ts": "2026-11-20T20:01:33Z", "ticket": "TCK-0029", "verdict": "pass", "passed": 4, "total": 4}
+ {"ts": "2026-11-20T20:06:08Z", "ticket": "TCK-0026", "verdict": "pass", "passed": 2, "total": 2}
++{"ts": "2026-11-20T20:17:07Z", "ticket": "TCK-0023", "verdict": "pass", "passed": 4, "total": 4}
+diff --git a/.archagents/15-backlog/tickets/TCK-0023-adicionar-cache-e-paginacao-em-ibge-localidades-tools-governamentais-financeiras.md b/.archagents/15-backlog/tickets/TCK-0023-adicionar-cache-e-paginacao-em-ibge-localidades-tools-governamentais-financeiras.md
+index 7191695..4205b79 100644
+--- a/.archagents/15-backlog/tickets/TCK-0023-adicionar-cache-e-paginacao-em-ibge-localidades-tools-governamentais-financeiras.md
++++ b/.archagents/15-backlog/tickets/TCK-0023-adicionar-cache-e-paginacao-em-ibge-localidades-tools-governamentais-financeiras.md
+@@ -5,8 +5,8 @@ title: "Adicionar cache e paginacao em ibge_localidades, tools governamentais/fi
+ source: audit
+ created_at: 2026-11-20T15:16:20Z
+ created_by: ops
+-updated_at: 2026-11-20T15:16:20Z
+-status: raw
++updated_at: 2026-11-20T20:13:02Z
++status: executing
+ severity: medium
+ category: performance
+ effort: M
+@@ -15,8 +15,10 @@ ceremony: full
+ business_impact: ""
+ linked_findings:
+   - FND-0011
+-linked_designs: []
+-linked_runs: []
++linked_designs:
++  - DES-0026
++linked_runs:
++  - RUN-20261120-201302-tck-0023
+ linked_verifications: []
+ linked_docs:
+   - .archagents/05-integrations.md
+@@ -25,7 +27,21 @@ external_sync: []
+ blocks: []
+ blocked_by: []
+ related: []
+-acceptance: []
++acceptance:
++  - check: "npx vitest run test/unit/performance-cache-pagination.test.ts test/unit/ibge-app.test.ts test/unit/legal-timeouts-intelligence.test.ts && echo PERF_TESTS_OK"
++    expect: PERF_TESTS_OK
++  - check: "npm run test:coverage && npm test && echo TESTS_COVERAGE_OK"
++    expect: TESTS_COVERAGE_OK
++  - check: "npx tsc --noEmit && npx tsc -p tsconfig.worker.json --noEmit && echo TYPECHECK_OK"
++    expect: TYPECHECK_OK
++  - check: "npm run build && npm run build:worker && npm run test:transport && echo BUILD_TRANSPORT_OK"
++    expect: BUILD_TRANSPORT_OK
++depth_decision:
++  workflow: lightweight
++  design: lightweight
++  verify: completo
++  source: routing-classifier
++  classified_at: 2026-11-20T20:12:26Z
+ ---
+ # TCK-0023 - Adicionar cache e paginacao em ibge_localidades, tools governamentais/financeiras e otimizar raspagem de procurados_lookup
+ 
+@@ -39,9 +55,17 @@ Originado por **FND-0011** (`performance` / `medium`, auditoria na revisão `6c7
+ 
+ ## Falsificador
+ 
+-<!-- O que reprova ANTES do fix: o comando que fica vermelho hoje, ou
+-     `arquivo:linha` da evidência. Sem isto o ticket não fecha. -->
++Evidências pré-fix de **FND-0011** observadas na revisão `88a1caa`:
++
++- `lib/tools/government.ts:27-69`: `executeIBGE` ignora o parâmetro `cache`, ignora `id` declarado no schema e não oferece filtro (`nome`) nem paginação (`page`/`limit`), retornando ~5.570 municípios em payload único não cacheado em toda chamada.
++- `lib/tools/government.ts:83-355` e `lib/tools/financial.ts:17-119`: `transparencia_lookup`, `ceis_cnep_lookup`, `pncp_licitacoes`, `querido_diario`, `bacen_taxas` e `fipe_veiculos` ignoram o parâmetro `cache` repassado por `executeRegisteredTool`.
++- `lib/tools/company.ts:76-192`: `executeWhois`, `executeConsumidor` e `executeDeepProfile` ignoram `cache`; `executeDeepProfile` (`lib/tools/company.ts:166`) chama `httpJson` diretamente em vez de reutilizar `lookup()` (`cache` + `deduplicate`).
++- `lib/tools/legal.ts:32-356` e `lib/tools/health.ts:14-48`: `datajud_processos`, `oab_advogado`, `bnmp_mandados`, `lista_suja_lookup` e `cnes_saude` ignoram `cache`; `procurados_lookup` (`lib/tools/legal.ts:180-305`) raspa as 13 páginas sequencialmente em loop serial sem cache entre consultas.
+ 
+ ## Log de transicoes
+ 
+ - 2026-11-20T15:16:20Z - **raw** - criado via scripts/ops/ticket/create.py.
++- 2026-11-20T20:12:26Z - **noted** - body:falsifier (replace): Registrar evidencias FND-0011 pre-fix na revisao 88a1caa
++- 2026-11-20T20:12:26Z - **triaged** - Falsificador FND-0011 e criterios mecanicos de aceite registrados para TCK-0023 [aceite reescrito: 4 critério(s)] [depth_decision do routing-classifier: workflow lightweight, design lightweight, verify completo]
++- 2026-11-20T20:13:02Z - **designed** - DES-0026 aprovado para remediacao de performance FND-0011 (TCK-0023)
++- 2026-11-20T20:13:02Z - **executing** - Iniciando execucao de DES-0026 (RUN-20261120-201302-tck-0023)
+diff --git a/.archagents/99-memory/decisions/decisions.jsonl b/.archagents/99-memory/decisions/decisions.jsonl
+index a5ce107..720baac 100644
+--- a/.archagents/99-memory/decisions/decisions.jsonl
++++ b/.archagents/99-memory/decisions/decisions.jsonl
+@@ -76,3 +76,5 @@
+ {"id": "DEC-20261120-200308262789", "ts": "2026-11-20T20:03:08Z", "classe": "triage", "decision": "TCK-0026: raw->triaged", "confidence": 0.8, "outcome": "approved", "outcome_ts": "2026-11-20T20:08:41Z", "human_review": null, "metadata": {"ticket_id": "TCK-0026", "from": "raw", "to": "triaged", "forced": false, "ver_required": null}}
+ {"id": "DEC-20261120-200308878949", "ts": "2026-11-20T20:03:08Z", "classe": "design-approval", "decision": "TCK-0026: triaged->designed", "confidence": 0.7, "outcome": "approved", "outcome_ts": "2026-11-20T20:08:41Z", "human_review": null, "metadata": {"ticket_id": "TCK-0026", "from": "triaged", "to": "designed", "forced": false, "ver_required": null}}
+ {"id": "DEC-20261120-200842808671", "ts": "2026-11-20T20:08:42Z", "classe": "done-closure", "decision": "TCK-0026: verifying->done", "confidence": 0.9, "outcome": null, "outcome_ts": null, "human_review": null, "metadata": {"ticket_id": "TCK-0026", "from": "verifying", "to": "done", "forced": false, "ver_required": true}}
++{"id": "DEC-20261120-201226997369", "ts": "2026-11-20T20:12:26Z", "classe": "triage", "decision": "TCK-0023: raw->triaged", "confidence": 0.8, "outcome": null, "outcome_ts": null, "human_review": null, "metadata": {"ticket_id": "TCK-0023", "from": "raw", "to": "triaged", "forced": false, "ver_required": null}}
++{"id": "DEC-20261120-201302202464", "ts": "2026-11-20T20:13:02Z", "classe": "design-approval", "decision": "TCK-0023: triaged->designed", "confidence": 0.7, "outcome": null, "outcome_ts": null, "human_review": null, "metadata": {"ticket_id": "TCK-0023", "from": "triaged", "to": "designed", "forced": false, "ver_required": null}}
+diff --git a/lib/core/mcp-server.ts b/lib/core/mcp-server.ts
+index 3825393..c1bff3d 100644
+--- a/lib/core/mcp-server.ts
++++ b/lib/core/mcp-server.ts
+@@ -182,8 +182,17 @@ export function createMCPServer(options: MCPServerOptions): Server {
+           if (profile) structuredContent = { profile };
+         }
+         if (result.source && Array.isArray(appMimeTypes) && appMimeTypes.includes(appMimeType)) {
+-          if (name === "ibge_localidades" && Array.isArray(result.data)) {
+-            structuredContent = { items: result.data, source: result.source };
++          if (name === "ibge_localidades") {
++            if (Array.isArray(result.data)) {
++              structuredContent = { items: result.data, source: result.source };
++            } else if (
++              result.data &&
++              typeof result.data === "object" &&
++              "items" in result.data &&
++              Array.isArray((result.data as { items?: unknown }).items)
++            ) {
++              structuredContent = { ...(result.data as Record<string, unknown>), source: result.source };
++            }
+           }
+           if ((name === "querido_diario" || name === "bacen_taxas" || name === "pncp_licitacoes")
+             && result.data && typeof result.data === "object" && !Array.isArray(result.data)) {
+diff --git a/lib/core/tool-schemas.ts b/lib/core/tool-schemas.ts
+index 5daa5dd..b886e83 100644
+--- a/lib/core/tool-schemas.ts
++++ b/lib/core/tool-schemas.ts
+@@ -98,6 +98,9 @@ export const IbgeSchema = z
+     tipo: z.enum(["estados", "municipios", "municipios_por_uf", "regioes"]),
+     uf: z.string().trim().min(1).max(10).optional(),
+     id: z.number().int().min(1).max(99999999).optional(),
++    nome: z.string().trim().min(1).max(200).optional(),
++    page: z.number().int().min(1).max(10000).optional(),
++    limit: z.number().int().min(1).max(1000).optional(),
+   })
+   .refine((v) => v.tipo !== "municipios_por_uf" || Boolean(v.uf), {
+     message: "UF is required for municipios_por_uf",
+diff --git a/lib/tools/company.ts b/lib/tools/company.ts
+index d92939e..a282031 100644
+--- a/lib/tools/company.ts
++++ b/lib/tools/company.ts
+@@ -73,16 +73,30 @@ No API key required. Local computation only.`,
+ 
+ interface WhoisArgs { domain: string; }
+ 
+-async function executeWhois(args: WhoisArgs): Promise<LookupResult> {
++async function executeWhois(args: WhoisArgs, cache?: Cache): Promise<LookupResult> {
+     const { domain } = args;
+     const cleanDomain = domain.replace(/^https?:\/\//, "").replace(/\/.*$/, "");
++    const cacheKey = `whois:${cleanDomain.toLowerCase()}`;
++    if (cache) {
++        const cached = await cache.get(cacheKey);
++        if (cached) return { ok: true, data: cached };
++    }
++
+     const rdapUrl = `https://rdap.registro.br/domain/${encodeURIComponent(cleanDomain)}`;
+     try {
+         const result = await httpJson(rdapUrl);
+-        if (result.ok) return { ok: true, data: { domain: cleanDomain, rdap: result.data, source: "RDAP — Registro.br" } };
++        if (result.ok) {
++            const payload = { domain: cleanDomain, rdap: result.data, source: "RDAP — Registro.br" };
++            if (cache) await cache.set(cacheKey, payload);
++            return { ok: true, data: payload };
++        }
+         const ianaUrl = `https://rdap.org/domain/${encodeURIComponent(cleanDomain)}`;
+         const ianaResult = await httpJson(ianaUrl);
+-        if (ianaResult.ok) return { ok: true, data: { domain: cleanDomain, rdap: ianaResult.data, source: "RDAP — IANA Bootstrap" } };
++        if (ianaResult.ok) {
++            const payload = { domain: cleanDomain, rdap: ianaResult.data, source: "RDAP — IANA Bootstrap" };
++            if (cache) await cache.set(cacheKey, payload);
++            return { ok: true, data: payload };
++        }
+         return { ok: false, error: `Domain not found in RDAP: ${cleanDomain}` };
+     } catch (err) {
+         return { ok: false, error: `WHOIS/RDAP error: ${err instanceof Error ? err.message : String(err)}` };
+@@ -100,19 +114,28 @@ OSINT value: Verify company digital presence, registration dates, nameservers.`,
+         required: ["domain"],
+     },
+     zodSchema: DomainWhoisSchema,
+-    execute: async (args) => executeWhois(args as WhoisArgs),
++    execute: async (args, _apiConfig, cache) => executeWhois(args as WhoisArgs, cache),
+ });
+ 
+ // ─── Consumidor.gov.br ──────────────────────────────────────────────────────
+ 
+ interface ConsumidorArgs { empresa: string; }
+ 
+-async function executeConsumidor(args: ConsumidorArgs): Promise<LookupResult> {
++async function executeConsumidor(args: ConsumidorArgs, cache?: Cache): Promise<LookupResult> {
+     const { empresa } = args;
++    const cacheKey = `consumidor:${empresa.trim().toLowerCase()}`;
+     const searchUrl = `https://www.consumidor.gov.br/pages/indicador/empresa/listar?nome=${encodeURIComponent(empresa)}`;
+     try {
++        if (cache) {
++            const cached = await cache.get(cacheKey);
++            if (cached) return { ok: true, data: cached };
++        }
+         const result = await httpJson(searchUrl);
+-        if (result.ok) return { ok: true, data: { empresa, results: result.data, source: "Consumidor.gov.br — SENACON" } };
++        if (result.ok) {
++            const payload = { empresa, results: result.data, source: "Consumidor.gov.br — SENACON" };
++            if (cache) await cache.set(cacheKey, payload);
++            return { ok: true, data: payload };
++        }
+     } catch { /* fall through */ }
+     return {
+         ok: true, data: {
+@@ -136,7 +159,7 @@ OSINT value: Assess company reputation and customer service quality.`,
+         required: ["empresa"],
+     },
+     zodSchema: ConsumidorSchema,
+-    execute: async (args) => executeConsumidor(args as ConsumidorArgs),
++    execute: async (args, _apiConfig, cache) => executeConsumidor(args as ConsumidorArgs, cache),
+ });
+ 
+ // ─── Deep Profile Orchestrator ──────────────────────────────────────────────
+@@ -150,6 +173,7 @@ interface DeepProfileArgs {
+ }
+ 
+ // Import sibling tool execute functions (need to avoid circular — import from typed exports)
++import { lookup } from "./core.js";
+ import { executeTransparencia } from "./government.js";
+ import { executeDatajud, executeListaSuja } from "./legal.js";
+ 
+@@ -160,22 +184,21 @@ async function executeDeepProfile(args: DeepProfileArgs, apiConfig: ApiConfig, c
+     const errors: string[] = [];
+     const tasks: Promise<void>[] = [];
+ 
+-    // CNPJ lookup
+-    const baseUrl = apiConfig.cnpjBaseUrl;
++    // Reuse shared lookup() so CNPJ fetch participates in cache + in-flight deduplication
+     tasks.push(
+-        httpJson(`${baseUrl}${cleanCnpj}`, apiConfig.authHeaders)
++        lookup("cnpj", cleanCnpj, apiConfig, cache)
+             .then(r => { results.cnpj_data = r.ok ? r.data : null; if (!r.ok) errors.push(`cnpj: ${r.error}`); })
+     );
+     if (include_government) {
+-        tasks.push(executeTransparencia({ cnpj: cleanCnpj, tipo: "contratos" }).then(r => { results.government_contracts = r.ok ? r.data : null; }));
++        tasks.push(executeTransparencia({ cnpj: cleanCnpj, tipo: "contratos" }, cache).then(r => { results.government_contracts = r.ok ? r.data : null; }));
+     }
+     if (include_legal) {
+-        tasks.push(executeDatajud({ query: cleanCnpj }).then(r => { results.court_records = r.ok ? r.data : null; }));
++        tasks.push(executeDatajud({ query: cleanCnpj }, cache).then(r => { results.court_records = r.ok ? r.data : null; }));
+     }
+     if (domain) {
+-        tasks.push(executeWhois({ domain }).then(r => { results.domain_whois = r.ok ? r.data : null; }));
++        tasks.push(executeWhois({ domain }, cache).then(r => { results.domain_whois = r.ok ? r.data : null; }));
+     }
+-    tasks.push(executeListaSuja({ query: cleanCnpj }).then(r => { results.lista_suja = r.ok ? r.data : null; }));
++    tasks.push(executeListaSuja({ query: cleanCnpj }, cache).then(r => { results.lista_suja = r.ok ? r.data : null; }));
+     if (include_news) {
+         tasks.push(executeSearch(cleanCnpj, 5, cache).then(r => { results.news_results = r.ok ? r.data : null; }));
+     }
+diff --git a/lib/tools/financial.ts b/lib/tools/financial.ts
+index d095cc6..91d3c4b 100644
+--- a/lib/tools/financial.ts
++++ b/lib/tools/financial.ts
+@@ -5,7 +5,7 @@
+ import { registerTool } from "../core/registry.js";
+ import { httpJson } from "../core/http-client.js";
+ import { BacenSchema, FipeSchema } from "../core/tool-schemas.js";
+-import { LookupResult } from "../types/index.js";
++import { Cache, LookupResult } from "../types/index.js";
+ import { BACEN_PERIODS, BACEN_SERIES, bacenWindow, isBacenIndicator, isBacenPeriod } from "../shared/bacen.js";
+ import type { BacenIndicator, BacenPeriod } from "../shared/bacen.js";
+ 
+@@ -14,7 +14,7 @@ import type { BacenIndicator, BacenPeriod } from "../shared/bacen.js";
+ const BACEN_API = "https://api.bcb.gov.br/dados/serie/bcdata.sgs";
+ interface BacenArgs { indicador: BacenIndicator; ultimos?: number; periodo_dias?: BacenPeriod; }
+ 
+-async function executeBacen(args: BacenArgs): Promise<LookupResult> {
++async function executeBacen(args: BacenArgs, cache?: Cache): Promise<LookupResult> {
+     const { indicador, ultimos = 10, periodo_dias } = args;
+     if (!isBacenIndicator(indicador)) return { ok: false, error: `Unknown indicator: ${indicador}. Valid: selic, ipca, dolar, euro, cdi` };
+     if (periodo_dias !== undefined && !isBacenPeriod(periodo_dias)) {
+@@ -29,18 +29,30 @@ async function executeBacen(args: BacenArgs): Promise<LookupResult> {
+     }
+     const path = window ? "dados" : `dados/ultimos/${encodeURIComponent(ultimos)}`;
+     const url = `${BACEN_API}.${serieId}/${path}?${query}`;
++    const cacheKey = `bacen:${url}`;
+     try {
++        if (cache) {
++            const cached = await cache.get<{ data: unknown; source: { url: string; fetchedAt: string } }>(cacheKey);
++            if (cached && typeof cached === "object" && "data" in cached && cached.source) {
++                return { ok: true, data: cached.data, source: cached.source };
++            }
++        }
+         const result = await httpJson(url);
+-        if (result.ok) return {
+-            ok: true,
+-            data: {
++        if (result.ok) {
++            const source = { url, fetchedAt: new Date().toISOString() };
++            const payload = {
+                 indicador, serie_id: serieId,
+                 ...(window ? { periodo_dias, data_inicial: window.start, data_final: window.end } : { ultimos }),
+                 results: result.data,
+                 source: "Banco Central do Brasil — SGS",
+-            },
+-            source: { url, fetchedAt: new Date().toISOString() },
+-        };
++            };
++            if (cache) await cache.set(cacheKey, { data: payload, source });
++            return {
++                ok: true,
++                data: payload,
++                source,
++            };
++        }
+         return { ok: false, error: `Banco Central API error: ${result.error}` };
+     } catch (err) {
+         return { ok: false, error: `Banco Central error: ${err instanceof Error ? err.message : String(err)}` };
+@@ -62,7 +74,7 @@ No API key required. Returns time series data.`,
+         required: ["indicador"],
+     },
+     zodSchema: BacenSchema,
+-    execute: async (args) => executeBacen(args as BacenArgs),
++    execute: async (args, _apiConfig, cache) => executeBacen(args as BacenArgs, cache),
+ });
+ 
+ // ─── FIPE ───────────────────────────────────────────────────────────────────
+@@ -73,7 +85,7 @@ const FIPE_CODE_REGEX = /^[0-9]+(?:-[0-9]+)?$/;
+ 
+ interface FipeArgs { codigo_fipe?: string; tipo?: "carros" | "motos" | "caminhoes"; }
+ 
+-async function executeFipe(args: FipeArgs): Promise<LookupResult> {
++async function executeFipe(args: FipeArgs, cache?: Cache): Promise<LookupResult> {
+     const { codigo_fipe, tipo } = args ?? {};
+     if (codigo_fipe !== undefined) {
+         if (typeof codigo_fipe !== "string") {
+@@ -83,9 +95,18 @@ async function executeFipe(args: FipeArgs): Promise<LookupResult> {
+         if (!trimmed || !FIPE_CODE_REGEX.test(trimmed)) {
+             return { ok: false, error: "Invalid codigo_fipe format (expected e.g. '001004-9')." };
+         }
++        const cacheKey = `fipe:preco:${trimmed}`;
+         try {
++            if (cache) {
++                const cached = await cache.get(cacheKey);
++                if (cached) return { ok: true, data: cached };
++            }
+             const result = await httpJson(`${FIPE_API}/preco/v1/${encodeURIComponent(trimmed)}`);
+-            if (result.ok) return { ok: true, data: { codigo_fipe: trimmed, results: result.data, source: "Tabela FIPE via BrasilAPI" } };
++            if (result.ok) {
++                const payload = { codigo_fipe: trimmed, results: result.data, source: "Tabela FIPE via BrasilAPI" };
++                if (cache) await cache.set(cacheKey, payload);
++                return { ok: true, data: payload };
++            }
+             return { ok: false, error: result.error || "FIPE lookup failed" };
+         } catch (err) { return { ok: false, error: `FIPE error: ${err instanceof Error ? err.message : String(err)}` }; }
+     }
+@@ -93,9 +114,18 @@ async function executeFipe(args: FipeArgs): Promise<LookupResult> {
+         if (typeof tipo !== "string" || !ALLOWED_FIPE_TYPES.has(tipo)) {
+             return { ok: false, error: "Invalid FIPE vehicle type. Valid: carros, motos, caminhoes." };
+         }
++        const cacheKey = `fipe:marcas:${tipo}`;
+         try {
++            if (cache) {
++                const cached = await cache.get(cacheKey);
++                if (cached) return { ok: true, data: cached };
++            }
+             const result = await httpJson(`${FIPE_API}/marcas/v1/${encodeURIComponent(tipo)}`);
+-            if (result.ok) return { ok: true, data: { tipo, brands: result.data, source: "Tabela FIPE via BrasilAPI", note: "Use the FIPE code to get prices." } };
++            if (result.ok) {
++                const payload = { tipo, brands: result.data, source: "Tabela FIPE via BrasilAPI", note: "Use the FIPE code to get prices." };
++                if (cache) await cache.set(cacheKey, payload);
++                return { ok: true, data: payload };
++            }
+             return { ok: false, error: result.error || "FIPE brands lookup failed" };
+         } catch (err) { return { ok: false, error: `FIPE error: ${err instanceof Error ? err.message : String(err)}` }; }
+     }
+@@ -115,5 +145,5 @@ Via BrasilAPI. No API key required.`,
+         },
+     },
+     zodSchema: FipeSchema,
+-    execute: async (args) => executeFipe(args as FipeArgs),
++    execute: async (args, _apiConfig, cache) => executeFipe(args as FipeArgs, cache),
+ });
+diff --git a/lib/tools/government.ts b/lib/tools/government.ts
+index 3517aba..ae3f657 100644
+--- a/lib/tools/government.ts
++++ b/lib/tools/government.ts
+@@ -11,7 +11,7 @@ import {
+     QueridoDiarioSchema,
+     TransparenciaSchema,
+ } from "../core/tool-schemas.js";
+-import { LookupResult } from "../types/index.js";
++import { Cache, LookupResult } from "../types/index.js";
+ import { PNCP_ORIGIN, pncpCnpj, pncpDate, positiveInteger } from "../shared/pncp.js";
+ 
+ // ─── IBGE Localidades ───────────────────────────────────────────────────────
+@@ -22,9 +22,41 @@ interface IBGEArgs {
+     tipo: "estados" | "municipios" | "municipios_por_uf" | "regioes";
+     uf?: string;
+     id?: number;
++    nome?: string;
++    page?: number;
++    limit?: number;
+ }
+ 
+-async function executeIBGE(args: IBGEArgs): Promise<LookupResult> {
++interface CachedPayload {
++    data: unknown;
++    source: { url: string; fetchedAt: string };
++}
++
++function normalizeSearchText(value: string): string {
++    return value.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
++}
++
++function filterIbgeItems(items: unknown[], id?: number, nome?: string): unknown[] {
++    let filtered = items;
++    if (id !== undefined) {
++        filtered = filtered.filter(
++            (item) => typeof item === "object" && item !== null && (item as { id?: unknown }).id === id
++        );
++    }
++    if (nome) {
++        const needle = normalizeSearchText(nome);
++        filtered = filtered.filter((item) => {
++            if (typeof item !== "object" || item === null) return false;
++            const entry = item as { nome?: unknown; sigla?: unknown };
++            const entryName = typeof entry.nome === "string" ? normalizeSearchText(entry.nome) : "";
++            const entrySigla = typeof entry.sigla === "string" ? normalizeSearchText(entry.sigla) : "";
++            return entryName.includes(needle) || entrySigla.includes(needle);
++        });
++    }
++    return filtered;
++}
++
++async function executeIBGE(args: IBGEArgs, cache?: Cache): Promise<LookupResult> {
+     let url: string;
+     switch (args.tipo) {
+         case "estados": url = `${IBGE_BASE}/estados?orderBy=nome`; break;
+@@ -35,13 +67,59 @@ async function executeIBGE(args: IBGEArgs): Promise<LookupResult> {
+         case "regioes": url = `${IBGE_BASE}/regioes`; break;
+         default: return { ok: false, error: `Unknown tipo: ${args.tipo}` };
+     }
+-    const result = await httpJson(url);
+-    if (!result.ok) return { ok: false, error: result.error || "IBGE API error" };
+-    return {
+-        ok: true,
+-        data: result.data,
+-        source: { url, fetchedAt: new Date().toISOString() },
+-    };
++
++    const cacheKey = `ibge:${url}`;
++    let rawData: unknown;
++    let source: { url: string; fetchedAt: string };
++
++    const cached = cache ? await cache.get<CachedPayload>(cacheKey) : null;
++    if (cached && typeof cached === "object" && "data" in cached && cached.source) {
++        rawData = cached.data;
++        source = cached.source;
++    } else {
++        const result = await httpJson(url);
++        if (!result.ok) return { ok: false, error: result.error || "IBGE API error" };
++        rawData = result.data;
++        source = { url, fetchedAt: new Date().toISOString() };
++        if (cache) await cache.set(cacheKey, { data: rawData, source });
++    }
++
++    if (!Array.isArray(rawData)) {
++        return { ok: true, data: rawData, source };
++    }
++
++    const filtered = filterIbgeItems(rawData, args.id, args.nome);
++    if (args.page !== undefined || args.limit !== undefined) {
++        const page = args.page ?? 1;
++        const limit = args.limit ?? 50;
++        const total = filtered.length;
++        const start = (page - 1) * limit;
++        const items = filtered.slice(start, start + limit);
++        return {
++            ok: true,
++            data: {
++                items,
++                pagination: {
++                    page,
++                    limit,
++                    total,
++                    total_pages: Math.ceil(total / limit),
++                    has_more: start + items.length < total,
++                },
++                ...(args.nome || args.id !== undefined
++                    ? {
++                        filter: {
++                            ...(args.nome ? { nome: args.nome } : {}),
++                            ...(args.id !== undefined ? { id: args.id } : {}),
++                        },
++                    }
++                    : {}),
++            },
++            source,
++        };
++    }
++
++    return { ok: true, data: filtered, source };
+ }
+ 
+ registerTool({
+@@ -50,7 +128,7 @@ registerTool({
+ 
+ Available queries:
+ - estados: List all 27 Brazilian states
+-- municipios: List all ~5,570 municipalities
++- municipios: List all ~5,570 municipalities (supports optional nome/id filtering and page/limit pagination)
+ - municipios_por_uf: List municipalities by state (requires UF code)
+ - regioes: List the 5 macro-regions
+ 
+@@ -61,11 +139,14 @@ No API key required.`,
+             tipo: { type: "string", enum: ["estados", "municipios", "municipios_por_uf", "regioes"], description: "Query type" },
+             uf: { type: "string", description: "State code (required for municipios_por_uf, e.g. 'SP')" },
+             id: { type: "number", description: "Specific entity ID (optional)" },
++            nome: { type: "string", description: "Optional case/accent-insensitive name or sigla filter" },
++            page: { type: "number", description: "Optional 1-indexed page number (defaults to 1 when limit is set)", minimum: 1, maximum: 10000 },
++            limit: { type: "number", description: "Optional page size (defaults to 50 when page is set)", minimum: 1, maximum: 1000 },
+         },
+         required: ["tipo"],
+     },
+     zodSchema: IbgeSchema,
+-    execute: async (args) => executeIBGE(args as IBGEArgs),
++    execute: async (args, _apiConfig, cache) => executeIBGE(args as IBGEArgs, cache),
+ });
+ 
+ // ─── Transparência ──────────────────────────────────────────────────────────
+@@ -80,7 +161,7 @@ interface TransparenciaArgs {
+     pagina?: number;
+ }
+ 
+-async function executeTransparencia(args: TransparenciaArgs): Promise<LookupResult> {
++async function executeTransparencia(args: TransparenciaArgs, cache?: Cache): Promise<LookupResult> {
+     const apiKey = process.env.TRANSPARENCIA_API_KEY;
+     if (!apiKey) {
+         return { ok: false, error: "TRANSPARENCIA_API_KEY not configured. Register at portaldatransparencia.gov.br/api-de-dados/cadastrar-email to get a free API key." };
+@@ -112,8 +193,16 @@ async function executeTransparencia(args: TransparenciaArgs): Promise<LookupResu
+         default:
+             return { ok: false, error: `Unknown tipo: ${tipo}. Valid: contratos, licitacoes, convenios, servidores, sancoes` };
+     }
++
++    const cacheKey = `transparencia:${url}`;
++    if (cache) {
++        const cached = await cache.get(cacheKey);
++        if (cached) return { ok: true, data: cached };
++    }
++
+     const result = await httpJson(url, { "chave-api-dados": apiKey });
+     if (!result.ok) return { ok: false, error: `Portal da Transparência API error: ${result.error}` };
++    if (cache) await cache.set(cacheKey, result.data);
+     return { ok: true, data: result.data };
+ }
+ 
+@@ -135,7 +224,7 @@ Requires a free API key from portaldatransparencia.gov.br.`,
+         required: ["cnpj", "tipo"],
+     },
+     zodSchema: TransparenciaSchema,
+-    execute: async (args) => executeTransparencia(args as TransparenciaArgs),
++    execute: async (args, _apiConfig, cache) => executeTransparencia(args as TransparenciaArgs, cache),
+ });
+ 
+ // ─── CEIS / CNEP / CEPIM ────────────────────────────────────────────────────
+@@ -148,7 +237,7 @@ type SanctionType = "ceis" | "cnep" | "cepim" | "all";
+ 
+ interface CeisCnepArgs { query: string; tipo?: SanctionType; pagina?: number; }
+ 
+-async function executeCeisCnep(args: CeisCnepArgs): Promise<LookupResult> {
++async function executeCeisCnep(args: CeisCnepArgs, cache?: Cache): Promise<LookupResult> {
+     const apiKey = process.env.TRANSPARENCIA_API_KEY;
+     if (!apiKey) {
+         return {
+@@ -167,6 +256,12 @@ async function executeCeisCnep(args: CeisCnepArgs): Promise<LookupResult> {
+     const headers = { "chave-api-dados": apiKey };
+     const tipo = args.tipo || "all";
+     const pagina = args.pagina || 1;
++    const cacheKey = `ceis_cnep:${tipo}:${pagina}:${args.query.trim().toLowerCase()}`;
++    if (cache) {
++        const cached = await cache.get(cacheKey);
++        if (cached) return { ok: true, data: cached };
++    }
++
+     const results: Record<string, unknown> = {};
+     const errors: string[] = [];
+ 
+@@ -187,17 +282,20 @@ async function executeCeisCnep(args: CeisCnepArgs): Promise<LookupResult> {
+     if (tipo === "cepim" || tipo === "all") tasks.push(fetchSanctions(CEPIM_API_URL, "cepim"));
+     await Promise.allSettled(tasks);
+ 
+-    return {
+-        ok: true, data: {
+-            query: args.query, sanctions: results, databases_checked: Object.keys(results),
+-            errors: errors.length > 0 ? errors : undefined,
+-            legend: {
+-                ceis: "Cadastro de Empresas Inidôneas e Suspensas — barred from public contracts",
+-                cnep: "Cadastro Nacional de Empresas Punidas — punished under Anti-Corruption Law (Lei 12.846)",
+-                cepim: "Cadastro de Entidades Sem Fins Lucrativos Impedidas — NGOs barred from federal agreements",
+-            },
++    const payload = {
++        query: args.query, sanctions: results, databases_checked: Object.keys(results),
++        errors: errors.length > 0 ? errors : undefined,
++        legend: {
++            ceis: "Cadastro de Empresas Inidôneas e Suspensas — barred from public contracts",
++            cnep: "Cadastro Nacional de Empresas Punidas — punished under Anti-Corruption Law (Lei 12.846)",
++            cepim: "Cadastro de Entidades Sem Fins Lucrativos Impedidas — NGOs barred from federal agreements",
+         },
+     };
++    if (cache && errors.length === 0) {
++        await cache.set(cacheKey, payload);
++    }
++
++    return { ok: true, data: payload };
+ }
+ 
+ registerTool({
+@@ -215,7 +313,7 @@ Requires TRANSPARENCIA_API_KEY — falls back to manual check URLs without it.`,
+         required: ["query"],
+     },
+     zodSchema: CeisCnepSchema,
+-    execute: async (args) => executeCeisCnep(args as CeisCnepArgs),
++    execute: async (args, _apiConfig, cache) => executeCeisCnep(args as CeisCnepArgs, cache),
+ });
+ 
+ // ─── PNCP ───────────────────────────────────────────────────────────────────
+@@ -232,7 +330,7 @@ interface PncpArgs {
+     pagina?: number;
+ }
+ 
+-async function executePncpPublication(args: PncpArgs): Promise<LookupResult> {
++async function executePncpPublication(args: PncpArgs, cache?: Cache): Promise<LookupResult> {
+     const { query = "", modalidade_id, pagina = 1 } = args;
+     if (query !== "") return { ok: false, error: "Use query vazia para consultar publicações por filtros." };
+     const from = pncpDate(args.data_inicial);
+@@ -255,26 +353,47 @@ async function executePncpPublication(args: PncpArgs): Promise<LookupResult> {
+     });
+     if (cnpj) params.set("cnpj", cnpj);
+     const url = `${PNCP_PUBLICACOES}?${params}`;
++    const cacheKey = `pncp:pub:${url}`;
++    if (cache) {
++        const cached = await cache.get<CachedPayload>(cacheKey);
++        if (cached && typeof cached === "object" && "data" in cached && cached.source) {
++            return { ok: true, data: cached.data, source: cached.source };
++        }
++    }
++
+     const emptyPage = { data: [], totalRegistros: 0, totalPaginas: 0, numeroPagina: pagina, paginasRestantes: 0, empty: true };
+     const result = await httpJson(url, undefined, undefined, { noContent: emptyPage });
+     if (!result.ok) return { ok: false, error: `Falha na consulta ao PNCP: ${result.error}` };
++    const payload = { query, results: result.data, source: PNCP_SOURCE, legal_basis: "Lei 14.133/2021" };
++    const source = { url, fetchedAt: new Date().toISOString() };
++    if (cache) await cache.set(cacheKey, { data: payload, source });
+     return {
+         ok: true,
+-        data: { query, results: result.data, source: PNCP_SOURCE, legal_basis: "Lei 14.133/2021" },
+-        source: { url, fetchedAt: new Date().toISOString() },
++        data: payload,
++        source,
+     };
+ }
+ 
+-async function executePncp(args: PncpArgs): Promise<LookupResult> {
+-    if (args.modalidade_id !== undefined) return executePncpPublication(args);
++async function executePncp(args: PncpArgs, cache?: Cache): Promise<LookupResult> {
++    if (args.modalidade_id !== undefined) return executePncpPublication(args, cache);
+     const { query, cnpj_orgao, data_inicial, data_final, pagina = 1 } = args;
+     const params = new URLSearchParams({ q: query, pagina: String(pagina), tamanhoPagina: "10" });
+     if (cnpj_orgao) params.set("cnpjOrgao", cnpj_orgao);
+     if (data_inicial) params.set("dataInicial", data_inicial);
+     if (data_final) params.set("dataFinal", data_final);
++    const url = `${PNCP_PUBLICACOES}?${params.toString()}`;
++    const cacheKey = `pncp:legacy:${url}`;
+     try {
+-        const result = await httpJson(`${PNCP_PUBLICACOES}?${params.toString()}`);
+-        if (result.ok) return { ok: true, data: { query, results: result.data, source: PNCP_SOURCE, legal_basis: "Lei 14.133/2021" } };
++        if (cache) {
++            const cached = await cache.get(cacheKey);
++            if (cached) return { ok: true, data: cached };
++        }
++        const result = await httpJson(url);
++        if (result.ok) {
++            const payload = { query, results: result.data, source: PNCP_SOURCE, legal_basis: "Lei 14.133/2021" };
++            if (cache) await cache.set(cacheKey, payload);
++            return { ok: true, data: payload };
++        }
+         return { ok: true, data: { query, note: "PNCP API may be temporarily unavailable.", search_url: `https://pncp.gov.br/app/editais?q=${encodeURIComponent(query)}` } };
+     } catch {
+         return { ok: true, data: { query, note: "PNCP API connection failed.", search_url: `https://pncp.gov.br/app/editais?q=${encodeURIComponent(query)}` } };
+@@ -299,7 +418,7 @@ For the legacy portal keyword search, provide query without modalidade_id. No AP
+         required: ["query"],
+     },
+     zodSchema: PncpSchema,
+-    execute: async (args) => executePncp(args as PncpArgs),
++    execute: async (args, _apiConfig, cache) => executePncp(args as PncpArgs, cache),
+ });
+ 
+ // ─── Querido Diário ─────────────────────────────────────────────────────────
+@@ -308,21 +427,33 @@ const QUERIDO_DIARIO_API = "https://api.queridodiario.org.br";
+ 
+ interface QueridoDiarioArgs { query: string; territory_id?: string; since?: string; until?: string; page?: number; size?: number; }
+ 
+-async function executeQueridoDiario(args: QueridoDiarioArgs): Promise<LookupResult> {
++async function executeQueridoDiario(args: QueridoDiarioArgs, cache?: Cache): Promise<LookupResult> {
+     const { query, territory_id, since, until, page = 0, size = 10 } = args;
+     const params = new URLSearchParams({ querystring: query, offset: String(page * size), size: String(size) });
+     if (territory_id) params.set("territory_ids", territory_id);
+     if (since) params.set("published_since", since);
+     if (until) params.set("published_until", until);
+     if (!query?.trim()) params.set("sort_by", "descending_date");
++    const url = `${QUERIDO_DIARIO_API}/gazettes?${params.toString()}`;
++    const cacheKey = `querido_diario:${url}`;
+     try {
+-        const url = `${QUERIDO_DIARIO_API}/gazettes?${params.toString()}`;
++        if (cache) {
++            const cached = await cache.get<CachedPayload>(cacheKey);
++            if (cached && typeof cached === "object" && "data" in cached && cached.source) {
++                return { ok: true, data: cached.data, source: cached.source };
++            }
++        }
+         const result = await httpJson(url);
+-        if (result.ok) return {
+-            ok: true,
+-            data: { query, results: result.data, source: "Querido Diário — Open Knowledge Brasil", note: "Municipal official gazettes. Territory IDs follow IBGE codes." },
+-            source: { url, fetchedAt: new Date().toISOString() },
+-        };
++        if (result.ok) {
++            const payload = { query, results: result.data, source: "Querido Diário — Open Knowledge Brasil", note: "Municipal official gazettes. Territory IDs follow IBGE codes." };
++            const source = { url, fetchedAt: new Date().toISOString() };
++            if (cache) await cache.set(cacheKey, { data: payload, source });
++            return {
++                ok: true,
++                data: payload,
++                source,
++            };
++        }
+         return { ok: false, error: result.error || "Querido Diário API request failed" };
+     } catch (err) {
+         return { ok: false, error: `Querido Diário error: ${err instanceof Error ? err.message : String(err)}` };
+@@ -347,7 +478,7 @@ OSINT value: Find company mentions in government publications, contracts, sancti
+         required: ["query"],
+     },
+     zodSchema: QueridoDiarioSchema,
+-    execute: async (args) => executeQueridoDiario(args as QueridoDiarioArgs),
++    execute: async (args, _apiConfig, cache) => executeQueridoDiario(args as QueridoDiarioArgs, cache),
+ });
+ 
+ // Export execute functions needed by deep_profile orchestrator
+diff --git a/lib/tools/health.ts b/lib/tools/health.ts
+index d66f8fe..c4328a3 100644
+--- a/lib/tools/health.ts
++++ b/lib/tools/health.ts
+@@ -5,13 +5,13 @@
+ import { registerTool } from "../core/registry.js";
+ import { httpJson } from "../core/http-client.js";
+ import { CnesSchema } from "../core/tool-schemas.js";
+-import { LookupResult } from "../types/index.js";
++import { Cache, LookupResult } from "../types/index.js";
+ 
+ const CNES_API = "https://apidadosabertos.saude.gov.br/cnes";
+ 
+ interface CnesArgs { tipo: "estabelecimento" | "profissional"; codigo_cnes?: string; nome?: string; uf?: string; municipio?: string; }
+ 
+-async function executeCnes(args: CnesArgs): Promise<LookupResult> {
++async function executeCnes(args: CnesArgs, cache?: Cache): Promise<LookupResult> {
+     const { tipo, codigo_cnes, nome, uf, municipio } = args;
+     const params = new URLSearchParams();
+     if (codigo_cnes) params.set("codigo_cnes", codigo_cnes);
+@@ -20,9 +20,19 @@ async function executeCnes(args: CnesArgs): Promise<LookupResult> {
+     if (municipio) params.set("codigo_municipio", municipio);
+     params.set("limit", "10"); params.set("offset", "0");
+     const endpoint = tipo === "profissional" ? `${CNES_API}/profissionais` : `${CNES_API}/estabelecimentos`;
++    const url = `${endpoint}?${params.toString()}`;
++    const cacheKey = `cnes:${url}`;
+     try {
+-        const result = await httpJson(`${endpoint}?${params.toString()}`);
+-        if (result.ok) return { ok: true, data: { ...args, results: result.data, source: "CNES — DataSUS" } };
++        if (cache) {
++            const cached = await cache.get(cacheKey);
++            if (cached) return { ok: true, data: cached };
++        }
++        const result = await httpJson(url);
++        if (result.ok) {
++            const payload = { ...args, results: result.data, source: "CNES — DataSUS" };
++            if (cache) await cache.set(cacheKey, payload);
++            return { ok: true, data: payload };
++        }
+     } catch { /* fall through */ }
+     return { ok: true, data: { ...args, source: "CNES (DataSUS)", search_url: "http://cnes.datasus.gov.br/", note: "CNES API unavailable. Use the DataSUS portal." } };
+ }
+@@ -44,5 +54,5 @@ No API key required.`,
+         required: ["tipo"],
+     },
+     zodSchema: CnesSchema,
+-    execute: async (args) => executeCnes(args as CnesArgs),
++    execute: async (args, _apiConfig, cache) => executeCnes(args as CnesArgs, cache),
+ });
+diff --git a/lib/tools/legal.ts b/lib/tools/legal.ts
+index 335e544..73935ec 100644
+--- a/lib/tools/legal.ts
++++ b/lib/tools/legal.ts
+@@ -4,6 +4,7 @@
+ 
+ import { registerTool } from "../core/registry.js";
+ import { formatTimeoutMessage, httpJson } from "../core/http-client.js";
++import { executeWithConcurrencyLimit } from "../core/intelligence.js";
+ import { TIMEOUTS } from "../config/timeouts.js";
+ import {
+     DatajudSchema,
+@@ -13,7 +14,7 @@ import {
+     ProcuradosSchema,
+ } from "../core/tool-schemas.js";
+ import { createTimeoutController, isAbortOrTimeoutError } from "../shared/utils/timeout.js";
+-import { LookupResult } from "../types/index.js";
++import { Cache, LookupResult } from "../types/index.js";
+ 
+ // ─── Datajud / CNJ ──────────────────────────────────────────────────────────
+ 
+@@ -29,13 +30,19 @@ const TRIBUNAL_MAP: Record<string, string> = {
+ 
+ interface DatajudArgs { query: string; tribunal?: string; tamanho?: number; }
+ 
+-async function executeDatajud(args: DatajudArgs): Promise<LookupResult> {
++async function executeDatajud(args: DatajudArgs, cache?: Cache): Promise<LookupResult> {
+     const apiKey = process.env.DATAJUD_API_KEY;
+     if (!apiKey) {
+         return { ok: false, error: "DATAJUD_API_KEY not configured. Register at datajud.cnj.jus.br to get a free API key." };
+     }
+     const { query, tribunal = "tjsp", tamanho = 10 } = args;
+     const apiName = TRIBUNAL_MAP[tribunal.toLowerCase()] || TRIBUNAL_MAP.tjsp;
++    const cacheKey = `datajud:${apiName}:${tamanho}:${query.trim().toLowerCase()}`;
++    if (cache) {
++        const cached = await cache.get(cacheKey);
++        if (cached) return { ok: true, data: cached };
++    }
++
+     const url = `${DATAJUD_BASE}/${apiName}/_search`;
+     const timeoutMs = TIMEOUTS.HTTP_REQUEST_MS;
+     const ctrl = createTimeoutController(timeoutMs);
+@@ -48,7 +55,9 @@ async function executeDatajud(args: DatajudArgs): Promise<LookupResult> {
+         });
+         if (!resp.ok) return { ok: false, error: `Datajud API error: HTTP ${resp.status}` };
+         const data = await resp.json();
+-        return { ok: true, data: { query, tribunal, results: data, source: `Datajud — CNJ (${tribunal.toUpperCase()})` } };
++        const payload = { query, tribunal, results: data, source: `Datajud — CNJ (${tribunal.toUpperCase()})` };
++        if (cache) await cache.set(cacheKey, payload);
++        return { ok: true, data: payload };
+     } catch (err) {
+         if (ctrl.didTimeout() || isAbortOrTimeoutError(err)) {
+             return { ok: false, error: `Datajud error: ${formatTimeoutMessage(timeoutMs)}` };
+@@ -74,23 +83,32 @@ Requires DATAJUD_API_KEY. Supports 17+ tribunals.`,
+         required: ["query"],
+     },
+     zodSchema: DatajudSchema,
+-    execute: async (args) => executeDatajud(args as DatajudArgs),
++    execute: async (args, _apiConfig, cache) => executeDatajud(args as DatajudArgs, cache),
+ });
+ 
+ // ─── OAB / CNA ──────────────────────────────────────────────────────────────
+ 
+ interface OabArgs { nome?: string; inscricao?: string; uf?: string; }
+ 
+-async function executeOab(args: OabArgs): Promise<LookupResult> {
++async function executeOab(args: OabArgs, cache?: Cache): Promise<LookupResult> {
+     const { nome, inscricao, uf } = args;
+     const params = new URLSearchParams();
+     if (nome) params.set("nome", nome);
+     if (inscricao) params.set("inscricao", inscricao);
+     if (uf) params.set("uf", uf);
+     params.set("pagina", "1"); params.set("tamanhoPagina", "10");
++    const cacheKey = `oab:${params.toString()}`;
+     try {
++        if (cache) {
++            const cached = await cache.get(cacheKey);
++            if (cached) return { ok: true, data: cached };
++        }
+         const result = await httpJson(`https://cna.oab.org.br/api/advogados?${params.toString()}`, { Accept: "application/json", Referer: "https://cna.oab.org.br/" });
+-        if (result.ok) return { ok: true, data: { ...args, results: result.data, source: "Cadastro Nacional dos Advogados (CNA) — OAB" } };
++        if (result.ok) {
++            const payload = { ...args, results: result.data, source: "Cadastro Nacional dos Advogados (CNA) — OAB" };
++            if (cache) await cache.set(cacheKey, payload);
++            return { ok: true, data: payload };
++        }
+     } catch { /* fall through */ }
+     return { ok: true, data: { ...args, source: "OAB — CNA", search_url: `https://cna.oab.org.br/search?q=${encodeURIComponent(nome || inscricao || "")}`, note: "CNA API requires CAPTCHA. Use the search portal.", manual_steps: ["1. Go to https://cna.oab.org.br/", "2. Enter name or registration number", "3. Select UF if known"] } };
+ }
+@@ -109,15 +127,21 @@ OSINT value: Verify legal representatives, check lawyer standing.`,
+         },
+     },
+     zodSchema: OabSchema,
+-    execute: async (args) => executeOab(args as OabArgs),
++    execute: async (args, _apiConfig, cache) => executeOab(args as OabArgs, cache),
+ });
+ 
+ // ─── BNMP — Arrest Warrants ─────────────────────────────────────────────────
+ 
+ interface BnmpArgs { nome: string; orgaoJulgador?: string; }
+ 
+-async function executeBnmp(args: BnmpArgs): Promise<LookupResult> {
++async function executeBnmp(args: BnmpArgs, cache?: Cache): Promise<LookupResult> {
+     const { nome, orgaoJulgador } = args;
++    const cacheKey = `bnmp:${nome.trim().toLowerCase()}:${(orgaoJulgador || "").trim().toLowerCase()}`;
++    if (cache) {
++        const cached = await cache.get(cacheKey);
++        if (cached) return { ok: true, data: cached };
++    }
++
+     const timeoutMs = TIMEOUTS.HTTP_REQUEST_MS;
+     const ctrl = createTimeoutController(timeoutMs);
+     let timedOut = false;
+@@ -132,7 +156,9 @@ async function executeBnmp(args: BnmpArgs): Promise<LookupResult> {
+         });
+         if (resp.ok) {
+             const data = await resp.json();
+-            return { ok: true, data: { query: nome, results: data, source: "BNMP — Banco Nacional de Mandados de Prisão (CNJ)" } };
++            const payload = { query: nome, results: data, source: "BNMP — Banco Nacional de Mandados de Prisão (CNJ)" };
++            if (cache) await cache.set(cacheKey, payload);
++            return { ok: true, data: payload };
+         }
+     } catch (err) {
+         timedOut = ctrl.didTimeout() || isAbortOrTimeoutError(err);
+@@ -168,72 +194,168 @@ OSINT value: Critical for background checks and criminal record verification.`,
+         required: ["nome"],
+     },
+     zodSchema: BnmpSchema,
+-    execute: async (args) => executeBnmp(args as BnmpArgs),
++    execute: async (args, _apiConfig, cache) => executeBnmp(args as BnmpArgs, cache),
+ });
+ 
+ // ─── Procurados — MJSP ──────────────────────────────────────────────────────
+ 
+ const PROCURADOS_BASE_URL = "https://www.gov.br/mj/pt-br/assuntos/sua-seguranca/seguranca-publica/operacoes-integradas/projeto-captura/lista-de-procurados";
++const PROCURADOS_PAGE_OFFSETS = [0, 15, 30, 45, 60, 75, 90, 105, 120, 135, 150, 165, 180] as const;
++export const PROCURADOS_CONCURRENCY = 4;
++export const PROCURADOS_CACHE_KEY = "procurados:entries:v1";
+ 
+ interface ProcuradosArgs { nome: string; }
+ 
+-async function executeProcurados(args: ProcuradosArgs): Promise<LookupResult> {
+-    const { nome } = args;
+-    const normalizedSearch = nome.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
++export interface ProcuradosEntry {
++    name: string;
++    state: string;
++    date: string;
++    url: string;
++    normalized: string;
++}
++
++function normalizeProcuradosText(text: string): string {
++    return text.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
++}
++
++function parseProcuradosHtml(html: string): ProcuradosEntry[] {
++    const entries: ProcuradosEntry[] = [];
++    const entryRegex = /lista-de-procurados\/([^/]+)\/view[^>]*>\s*\n?\s*([^<]+)\n\s*(\d{2}\/\d{2}\/\d{4})/g;
++    let match;
++    while ((match = entryRegex.exec(html)) !== null) {
++        const entryName = match[2].trim();
++        const parts = entryName.split(" - ");
++        entries.push({
++            name: parts[0]?.trim() || entryName,
++            state: parts[1]?.trim() || "N/A",
++            date: match[3].trim(),
++            url: `${PROCURADOS_BASE_URL}/${match[1]}/view`,
++            normalized: normalizeProcuradosText(entryName),
++        });
++    }
++    return entries;
++}
++
++function matchProcuradosEntries(
++    entries: ProcuradosEntry[],
++    searchParts: string[]
++): Array<{ name: string; state: string; date: string; url: string }> {
+     const matches: Array<{ name: string; state: string; date: string; url: string }> = [];
+-    const pageOffsets = [0, 15, 30, 45, 60, 75, 90, 105, 120, 135, 150, 165, 180];
+-    const totalPages = pageOffsets.length;
+-    let pagesChecked = 0;
+-    const pagesFailed: Array<{ offset: number; reason: string }> = [];
++    for (const entry of entries) {
++        if (searchParts.every((part) => entry.normalized.includes(part))) {
++            matches.push({ name: entry.name, state: entry.state, date: entry.date, url: entry.url });
++        }
++    }
++    return matches;
++}
++
++async function executeProcurados(args: ProcuradosArgs, cache?: Cache): Promise<LookupResult> {
++    const { nome } = args;
++    const searchParts = normalizeProcuradosText(nome).split(/\s+/).filter(Boolean);
++    const totalPages = PROCURADOS_PAGE_OFFSETS.length;
++
++    if (cache) {
++        const cachedEntries = await cache.get<ProcuradosEntry[]>(PROCURADOS_CACHE_KEY);
++        if (Array.isArray(cachedEntries)) {
++            const matches = matchProcuradosEntries(cachedEntries, searchParts);
++            if (matches.length > 0) {
++                return {
++                    ok: true,
++                    data: {
++                        query: nome,
++                        source: "Ministério da Justiça e Segurança Pública — Projeto Captura",
++                        total_matches: matches.length,
++                        matches,
++                        status: "FOUND",
++                        partial: false,
++                        cached: true,
++                        pages_checked: totalPages,
++                        pages_total: totalPages,
++                        pages_failed: 0,
++                        list_url: PROCURADOS_BASE_URL,
++                        note: `⚠️ "${nome}" matched ${matches.length} entry(ies).`,
++                    },
++                };
++            }
++            return {
++                ok: true,
++                data: {
++                    query: nome,
++                    source: "Ministério da Justiça e Segurança Pública — Projeto Captura",
++                    total_matches: 0,
++                    matches: [],
++                    status: "NOT_FOUND",
++                    partial: false,
++                    cached: true,
++                    pages_checked: totalPages,
++                    pages_total: totalPages,
++                    pages_failed: 0,
++                    list_url: PROCURADOS_BASE_URL,
++                    note: `"${nome}" was NOT found in the federal wanted persons list.`,
++                },
++            };
++        }
++    }
+ 
+     const perPageTimeoutMs = TIMEOUTS.HTTP_REQUEST_MS;
+-    const totalDeadline = Date.now() + Math.max(perPageTimeoutMs, TIMEOUTS.INTELLIGENCE_TOTAL_MS);
++    const totalTimeoutMs = Math.max(perPageTimeoutMs, TIMEOUTS.INTELLIGENCE_TOTAL_MS);
++    const totalCtrl = createTimeoutController(totalTimeoutMs);
++    const totalDeadline = Date.now() + totalTimeoutMs;
+ 
+-    for (let i = 0; i < pageOffsets.length; i++) {
+-        const offset = pageOffsets[i];
++    const pageEntries: ProcuradosEntry[][] = PROCURADOS_PAGE_OFFSETS.map(() => []);
++    const attemptedOffsets = new Set<number>();
++    const pagesFailedMap = new Map<number, string>();
++    let pagesChecked = 0;
++
++    const tasks = PROCURADOS_PAGE_OFFSETS.map((offset, pageIndex) => async () => {
++        attemptedOffsets.add(offset);
+         const remainingMs = totalDeadline - Date.now();
+-        if (remainingMs <= 0) {
+-            for (const remainingOffset of pageOffsets.slice(i)) {
+-                pagesFailed.push({ offset: remainingOffset, reason: "total timeout exceeded" });
+-            }
+-            break;
++        if (remainingMs <= 0 || totalCtrl.signal.aborted) {
++            pagesFailedMap.set(offset, "total timeout exceeded");
++            return;
+         }
+ 
+         const pageTimeoutMs = Math.min(perPageTimeoutMs, remainingMs);
+-        const ctrl = createTimeoutController(pageTimeoutMs);
++        const ctrl = createTimeoutController(pageTimeoutMs, totalCtrl.signal);
+         try {
+             const url = offset === 0 ? PROCURADOS_BASE_URL : `${PROCURADOS_BASE_URL}?b_start:int=${offset}`;
+             const resp = await fetch(url, { signal: ctrl.signal });
+             if (!resp.ok) {
+-                pagesFailed.push({ offset, reason: `HTTP ${resp.status}` });
+-                continue;
++                pagesFailedMap.set(offset, `HTTP ${resp.status}`);
++                return;
+             }
+             const html = await resp.text();
+             pagesChecked++;
+-            const entryRegex = /lista-de-procurados\/([^/]+)\/view[^>]*>\s*\n?\s*([^<]+)\n\s*(\d{2}\/\d{2}\/\d{4})/g;
+-            let match;
+-            while ((match = entryRegex.exec(html)) !== null) {
+-                const entryName = match[2].trim();
+-                const normalizedEntry = entryName.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+-                const searchParts = normalizedSearch.split(/\s+/);
+-                if (searchParts.every(part => normalizedEntry.includes(part))) {
+-                    const parts = entryName.split(" - ");
+-                    matches.push({ name: parts[0]?.trim() || entryName, state: parts[1]?.trim() || "N/A", date: match[3].trim(), url: `${PROCURADOS_BASE_URL}/${match[1]}/view` });
+-                }
+-            }
++            pageEntries[pageIndex] = parseProcuradosHtml(html);
+         } catch (err) {
+-            const timedOut = ctrl.didTimeout() || isAbortOrTimeoutError(err);
+-            pagesFailed.push({
++            const timedOut = ctrl.didTimeout() || totalCtrl.didTimeout() || isAbortOrTimeoutError(err);
++            pagesFailedMap.set(
+                 offset,
+-                reason: timedOut
++                timedOut
+                     ? formatTimeoutMessage(pageTimeoutMs)
+                     : err instanceof Error
+                         ? err.message
+                         : String(err),
+-            });
++            );
+         } finally {
+             ctrl.cleanup();
+         }
++    });
++
++    try {
++        await executeWithConcurrencyLimit(tasks, PROCURADOS_CONCURRENCY, totalCtrl.signal);
++    } finally {
++        totalCtrl.cleanup();
++    }
++
++    const pagesFailed: Array<{ offset: number; reason: string }> = [];
++    for (const offset of PROCURADOS_PAGE_OFFSETS) {
++        if (!attemptedOffsets.has(offset)) {
++            pagesFailed.push({ offset, reason: "total timeout exceeded" });
++        } else {
++            const reason = pagesFailedMap.get(offset);
++            if (reason !== undefined) pagesFailed.push({ offset, reason });
++        }
+     }
+ 
+     if (pagesChecked === 0) {
+@@ -243,6 +365,13 @@ async function executeProcurados(args: ProcuradosArgs): Promise<LookupResult> {
+         };
+     }
+ 
++    const allEntries = pageEntries.flat();
++    // Only cache when all 13 pages succeeded so partial scrapes never suppress future fail-closed checks
++    if (cache && pagesFailed.length === 0) {
++        await cache.set(PROCURADOS_CACHE_KEY, allEntries);
++    }
++
++    const matches = matchProcuradosEntries(allEntries, searchParts);
+     const partial = pagesFailed.length > 0;
+     if (matches.length > 0) {
+         return {
+@@ -315,19 +444,28 @@ OSINT value: Critical for background checks, due diligence, and security screeni
+         required: ["nome"],
+     },
+     zodSchema: ProcuradosSchema,
+-    execute: async (args) => executeProcurados(args as ProcuradosArgs),
++    execute: async (args, _apiConfig, cache) => executeProcurados(args as ProcuradosArgs, cache),
+ });
+ 
+ // ─── Lista Suja ─────────────────────────────────────────────────────────────
+ 
+ interface ListaSujaArgs { query: string; }
+ 
+-async function executeListaSuja(args: ListaSujaArgs): Promise<LookupResult> {
++async function executeListaSuja(args: ListaSujaArgs, cache?: Cache): Promise<LookupResult> {
+     const { query } = args;
++    const cacheKey = `lista_suja:${query.trim().toLowerCase()}`;
+     const searchUrl = `https://portaldatransparencia.gov.br/sancoes/consulta?paginacaoSimples=true&tamanhoPagina=20&offset=0&direcaoOrdenacao=asc&colunaOrdenacao=sancionado_razaoSocial&sancionado=${encodeURIComponent(query)}`;
+     try {
++        if (cache) {
++            const cached = await cache.get(cacheKey);
++            if (cached) return { ok: true, data: cached };
++        }
+         const result = await httpJson(searchUrl);
+-        if (result.ok && result.data) return { ok: true, data: { query, results: result.data, source: "Portal da Transparência — Lista Suja" } };
++        if (result.ok && result.data) {
++            const payload = { query, results: result.data, source: "Portal da Transparência — Lista Suja" };
++            if (cache) await cache.set(cacheKey, payload);
++            return { ok: true, data: payload };
++        }
+     } catch { /* fall through */ }
+     return {
+         ok: true, data: {
+@@ -352,7 +490,7 @@ OSINT value: Critical ESG/compliance indicator.`,
+         required: ["query"],
+     },
+     zodSchema: ListaSujaSchema,
+-    execute: async (args) => executeListaSuja(args as ListaSujaArgs),
++    execute: async (args, _apiConfig, cache) => executeListaSuja(args as ListaSujaArgs, cache),
+ });
+ 
+ // Export functions needed by deep_profile orchestrator and unit tests
+diff --git a/test/unit/legal-timeouts-intelligence.test.ts b/test/unit/legal-timeouts-intelligence.test.ts
+index 9fda551..a30522e 100644
+--- a/test/unit/legal-timeouts-intelligence.test.ts
++++ b/test/unit/legal-timeouts-intelligence.test.ts
+@@ -342,8 +342,9 @@ describe("FND-0007 / TCK-0019: Fetch timeouts, procurados fail-closed & intellig
+       await vi.advanceTimersByTimeAsync(10000);
+       const res = await pending;
+ 
+-      // 4000ms + 4000ms + 2000ms = 10000ms -> 3 fetches attempted, remaining 10 skipped at deadline
+-      expect(hangFetch).toHaveBeenCalledTimes(3);
++      // Concurrency=4 with 4000ms page timeout and 10000ms total deadline:
++      // 3 concurrent waves of 4 (t=0, t=4000, t=8000->10000) = 12 fetches attempted, 13th page skipped at deadline
++      expect(hangFetch).toHaveBeenCalledTimes(12);
+       expect(res.ok).toBe(false);
+       if (!res.ok) {
+         expect(res.error).toContain("13/13 pages failed");
+diff --git a/test/unit/performance-cache-pagination.test.ts b/test/unit/performance-cache-pagination.test.ts
+new file mode 100644
+index 0000000..2554986
+--- /dev/null
++++ b/test/unit/performance-cache-pagination.test.ts
+@@ -0,0 +1,421 @@
++import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
++import { Client } from "@modelcontextprotocol/sdk/client/index.js";
++import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
++import { MemoryCache } from "../../lib/core/cache.js";
++import { resolveApiConfig } from "../../lib/config/index.js";
++import { createMCPServer } from "../../lib/core/mcp-server.js";
++import { resetCircuitBreakers } from "../../lib/core/http-client.js";
++import { executeTool, resetMetrics } from "../../lib/core/tools.js";
++import {
++  PROCURADOS_CACHE_KEY,
++  PROCURADOS_CONCURRENCY,
++  executeProcurados,
++} from "../../lib/tools/legal.js";
++
++function jsonResponse(body: unknown, status = 200): Response {
++  return new Response(JSON.stringify(body), {
++    status,
++    headers: { "Content-Type": "application/json" },
++  });
++}
++
++function htmlResponse(body: string, status = 200): Response {
++  return new Response(body, {
++    status,
++    headers: { "Content-Type": "text/html" },
++  });
++}
++
++describe("FND-0011 / TCK-0023: Caching, IBGE Pagination/Filtering, DeepProfile Lookup Reuse & Bounded Procurados", () => {
++  const apiConfig = resolveApiConfig();
++  const originalEnv = { ...process.env };
++
++  beforeEach(() => {
++    delete process.env.DATAJUD_API_KEY;
++    delete process.env.TRANSPARENCIA_API_KEY;
++    delete process.env.TAVILY_API_KEY;
++    delete process.env.PERPLEXITY_API_KEY;
++    resetMetrics();
++    resetCircuitBreakers();
++  });
++
++  afterEach(() => {
++    process.env = { ...originalEnv };
++    resetMetrics();
++    resetCircuitBreakers();
++    vi.restoreAllMocks();
++    vi.unstubAllGlobals();
++    vi.useRealTimers();
++  });
++
++  describe("ibge_localidades caching, nome/id filtering & optional pagination", () => {
++    const municipalities = [
++      { id: 3550308, nome: "São Paulo" },
++      { id: 2111300, nome: "São Luís" },
++      { id: 3304557, nome: "Rio de Janeiro" },
++      { id: 3106200, nome: "Belo Horizonte" },
++      { id: 2927408, nome: "Salvador" },
++    ];
++
++    it("caches raw upstream IBGE list and paginates/filters in memory on a single fetch", async () => {
++      const cache = new MemoryCache(50, 60_000);
++      const fetchSpy = vi
++        .spyOn(globalThis, "fetch")
++        .mockImplementation(async () => jsonResponse(municipalities));
++
++      const page1 = await executeTool(
++        "ibge_localidades",
++        { tipo: "municipios", page: 1, limit: 2 },
++        apiConfig,
++        cache
++      );
++      expect(page1.ok).toBe(true);
++      expect(page1.source?.url).toContain("/municipios?orderBy=nome");
++      expect(page1.data).toEqual({
++        items: municipalities.slice(0, 2),
++        pagination: { page: 1, limit: 2, total: 5, total_pages: 3, has_more: true },
++      });
++
++      const page2 = await executeTool(
++        "ibge_localidades",
++        { tipo: "municipios", page: 2, limit: 2 },
++        apiConfig,
++        cache
++      );
++      expect(page2.ok).toBe(true);
++      expect(page2.source?.url).toContain("/municipios?orderBy=nome");
++      expect(page2.data).toEqual({
++        items: municipalities.slice(2, 4),
++        pagination: { page: 2, limit: 2, total: 5, total_pages: 3, has_more: true },
++      });
++
++      // Accent- and case-insensitive filter combined with pagination, hitting cache
++      const filtered = await executeTool(
++        "ibge_localidades",
++        { tipo: "municipios", nome: "sao", page: 1, limit: 1 },
++        apiConfig,
++        cache
++      );
++      expect(filtered.ok).toBe(true);
++      expect(filtered.data).toEqual({
++        items: [municipalities[0]],
++        pagination: { page: 1, limit: 1, total: 2, total_pages: 2, has_more: true },
++        filter: { nome: "sao" },
++      });
++
++      // Exact ID filter without pagination preserves raw array return
++      const byId = await executeTool(
++        "ibge_localidades",
++        { tipo: "municipios", id: 2927408 },
++        apiConfig,
++        cache
++      );
++      expect(byId.ok).toBe(true);
++      expect(byId.data).toEqual([municipalities[4]]);
++
++      expect(fetchSpy).toHaveBeenCalledTimes(1);
++    });
++
++    it("preserves MCP Apps structuredContent on both legacy arrays and paginated cache hits", async () => {
++      const cache = new MemoryCache(50, 60_000);
++      const fetchSpy = vi
++        .spyOn(globalThis, "fetch")
++        .mockImplementation(async () => jsonResponse(municipalities));
++
++      const server = createMCPServer({ apiConfig, cache });
++      const client = new Client(
++        { name: "ibge-pagination-test", version: "1.0.0" },
++        { capabilities: { extensions: { "io.modelcontextprotocol/ui": { mimeTypes: ["text/html;profile=mcp-app"] } } } }
++      );
++      const [cTransport, sTransport] = InMemoryTransport.createLinkedPair();
++
++      try {
++        await server.connect(sTransport);
++        await client.connect(cTransport);
++
++        const legacyRes = await client.callTool({
++          name: "ibge_localidades",
++          arguments: { tipo: "municipios" },
++        });
++        expect(legacyRes.structuredContent).toMatchObject({
++          items: municipalities,
++          source: { url: expect.any(String), fetchedAt: expect.any(String) },
++        });
++
++        const pagedRes = await client.callTool({
++          name: "ibge_localidades",
++          arguments: { tipo: "municipios", page: 2, limit: 2 },
++        });
++        expect(pagedRes.structuredContent).toMatchObject({
++          items: municipalities.slice(2, 4),
++          pagination: { page: 2, limit: 2, total: 5, total_pages: 3, has_more: true },
++          source: { url: expect.any(String), fetchedAt: expect.any(String) },
++        });
++        expect(fetchSpy).toHaveBeenCalledTimes(1);
++      } finally {
++        await client.close();
++        await server.close();
++      }
++    });
++
++    it("rejects out-of-range page and limit parameters at runtime Zod validation", async () => {
++      const badPage = await executeTool("ibge_localidades", { tipo: "estados", page: 0 }, apiConfig);
++      expect(badPage.ok).toBe(false);
++      const badLimit = await executeTool("ibge_localidades", { tipo: "estados", limit: 5000 }, apiConfig);
++      expect(badLimit.ok).toBe(false);
++    });
++  });
++
++  describe("Read-heavy tools caching & fail-closed guarantees", () => {
++    it("caches bacen_taxas, fipe_veiculos, pncp_licitacoes and querido_diario while preserving source", async () => {
++      const cache = new MemoryCache(50, 60_000);
++      const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
++        const url = String(input);
++        if (url.includes("api.bcb.gov.br")) return jsonResponse([{ data: "20/11/2026", valor: "11.25" }]);
++        if (url.includes("brasilapi.com.br/api/fipe/preco")) return jsonResponse([{ Valor: "R$ 50.000,00" }]);
++        if (url.includes("brasilapi.com.br/api/fipe/marcas")) return jsonResponse([{ nome: "Fiat", valor: "21" }]);
++        if (url.includes("pncp.gov.br")) return jsonResponse({ data: [{ numeroControlePNCP: "1" }] });
++        if (url.includes("api.queridodiario.org.br")) return jsonResponse({ total_gazettes: 1, gazettes: [] });
++        return jsonResponse({}, 404);
++      });
++
++      const b1 = await executeTool("bacen_taxas", { indicador: "selic", ultimos: 5 }, apiConfig, cache);
++      const b2 = await executeTool("bacen_taxas", { indicador: "selic", ultimos: 5 }, apiConfig, cache);
++      expect(b1.ok && b2.ok).toBe(true);
++      expect(b2.source).toEqual(b1.source);
++
++      const f1 = await executeTool("fipe_veiculos", { codigo_fipe: "001004-9" }, apiConfig, cache);
++      const f2 = await executeTool("fipe_veiculos", { codigo_fipe: "001004-9" }, apiConfig, cache);
++      expect(f1.ok && f2.ok).toBe(true);
++
++      const fm1 = await executeTool("fipe_veiculos", { tipo: "carros" }, apiConfig, cache);
++      const fm2 = await executeTool("fipe_veiculos", { tipo: "carros" }, apiConfig, cache);
++      expect(fm1.ok && fm2.ok).toBe(true);
++
++      const p1 = await executeTool(
++        "pncp_licitacoes",
++        { query: "", modalidade_id: 6, data_inicial: "2026-01-01", data_final: "2026-01-10" },
++        apiConfig,
++        cache
++      );
++      const p2 = await executeTool(
++        "pncp_licitacoes",
++        { query: "", modalidade_id: 6, data_inicial: "2026-01-01", data_final: "2026-01-10" },
++        apiConfig,
++        cache
++      );
++      expect(p1.ok && p2.ok).toBe(true);
++      expect(p2.source).toEqual(p1.source);
++
++      const q1 = await executeTool("querido_diario", { query: "contrato" }, apiConfig, cache);
++      const q2 = await executeTool("querido_diario", { query: "contrato" }, apiConfig, cache);
++      expect(q1.ok && q2.ok).toBe(true);
++      expect(q2.source).toEqual(q1.source);
++
++      // Exactly 5 upstream fetches across 10 calls (100% cache hit on repeat)
++      expect(fetchSpy).toHaveBeenCalledTimes(5);
++    });
++
++    it("caches authenticated transparencia/ceis/datajud only with keys present, omits keys from cache keys, and never caches errors or fallbacks", async () => {
++      const seenKeys: string[] = [];
++      const baseCache = new MemoryCache(50, 60_000);
++      const spyCache = {
++        get: <T = unknown>(key: string) => {
++          seenKeys.push(key);
++          return baseCache.get<T>(key);
++        },
++        set: <T = unknown>(key: string, data: T) => {
++          seenKeys.push(key);
++          return baseCache.set(key, data);
++        },
++      };
++
++      process.env.TRANSPARENCIA_API_KEY = "SECRET-TRANSP-TOKEN";
++      process.env.DATAJUD_API_KEY = "SECRET-DATAJUD-TOKEN";
++
++      const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
++        const url = String(input);
++        if (url.includes("/ceis?")) return jsonResponse({}, 404);
++        if (url.includes("/cnep?")) return jsonResponse([{ sancao: "ok" }]);
++        if (url.includes("portaldatransparencia.gov.br/api-de-dados/contratos")) return jsonResponse([{ id: 1 }]);
++        if (url.includes("api-publica.datajud.cnj.jus.br")) return jsonResponse({ hits: [] });
++        if (url.includes("cna.oab.org.br")) return jsonResponse({ Data: [] });
++        if (url.includes("portalbnmp.cnj.jus.br")) return jsonResponse({ content: [] });
++        if (url.includes("portaldatransparencia.gov.br/sancoes/consulta")) return jsonResponse({ rows: [] });
++        if (url.includes("apidadosabertos.saude.gov.br")) return jsonResponse({ estabelecimentos: [] });
++        if (url.includes("rdap.registro.br")) return jsonResponse({ ldhName: "exemplo.com.br" });
++        if (url.includes("consumidor.gov.br")) return jsonResponse({ empresas: [] });
++        return jsonResponse({}, 404);
++      });
++
++      // Cache hit on repeated authenticated calls
++      await executeTool("transparencia_lookup", { cnpj: "11222333000181", tipo: "contratos" }, apiConfig, spyCache);
++      await executeTool("transparencia_lookup", { cnpj: "11222333000181", tipo: "contratos" }, apiConfig, spyCache);
++      await executeTool("datajud_processos", { query: "11222333000181" }, apiConfig, spyCache);
++      await executeTool("datajud_processos", { query: "11222333000181" }, apiConfig, spyCache);
++
++      // Missing API key must still fail even though cache already holds the query result
++      delete process.env.TRANSPARENCIA_API_KEY;
++      delete process.env.DATAJUD_API_KEY;
++      const missingTransp = await executeTool(
++        "transparencia_lookup",
++        { cnpj: "11222333000181", tipo: "contratos" },
++        apiConfig,
++        spyCache
++      );
++      expect(missingTransp.ok).toBe(false);
++      const missingDatajud = await executeTool(
++        "datajud_processos",
++        { query: "11222333000181" },
++        apiConfig,
++        spyCache
++      );
++      expect(missingDatajud.ok).toBe(false);
++
++      // Partial errors in ceis_cnep_lookup must NOT be cached
++      process.env.TRANSPARENCIA_API_KEY = "SECRET-TRANSP-TOKEN";
++      const partial1 = await executeTool(
++        "ceis_cnep_lookup",
++        { query: "11222333000181", tipo: "all" },
++        apiConfig,
++        spyCache
++      );
++      expect(partial1.ok).toBe(true);
++      expect((partial1.data as { errors?: string[] }).errors?.length).toBeGreaterThan(0);
++
++      const callsBeforeSecondPartial = fetchSpy.mock.calls.length;
++      await executeTool("ceis_cnep_lookup", { query: "11222333000181", tipo: "all" }, apiConfig, spyCache);
++      expect(fetchSpy.mock.calls.length).toBeGreaterThan(callsBeforeSecondPartial);
++
++      // Public read-heavy tools hit cache on 2nd call
++      const callsBeforePublic = fetchSpy.mock.calls.length;
++      await executeTool("oab_advogado", { inscricao: "12345" }, apiConfig, spyCache);
++      await executeTool("oab_advogado", { inscricao: "12345" }, apiConfig, spyCache);
++      await executeTool("bnmp_mandados", { nome: "Maria Souza" }, apiConfig, spyCache);
++      await executeTool("bnmp_mandados", { nome: "Maria Souza" }, apiConfig, spyCache);
++      await executeTool("lista_suja_lookup", { query: "ACME" }, apiConfig, spyCache);
++      await executeTool("lista_suja_lookup", { query: "ACME" }, apiConfig, spyCache);
++      await executeTool("cnes_saude", { tipo: "estabelecimento", uf: "35" }, apiConfig, spyCache);
++      await executeTool("cnes_saude", { tipo: "estabelecimento", uf: "35" }, apiConfig, spyCache);
++      await executeTool("domain_whois", { domain: "exemplo.com.br" }, apiConfig, spyCache);
++      await executeTool("domain_whois", { domain: "exemplo.com.br" }, apiConfig, spyCache);
++      await executeTool("consumidor_reclamacoes", { empresa: "ACME" }, apiConfig, spyCache);
++      await executeTool("consumidor_reclamacoes", { empresa: "ACME" }, apiConfig, spyCache);
++      expect(fetchSpy.mock.calls.length - callsBeforePublic).toBe(6);
++
++      // Security invariant: cache keys must never contain API secrets
++      expect(seenKeys.every((k) => !k.includes("SECRET-TRANSP-TOKEN") && !k.includes("SECRET-DATAJUD-TOKEN"))).toBe(true);
++    });
++  });
++
++  describe("company_deep_profile lookup() reuse & deduplication", () => {
++    it("reuses cnpj_lookup cache and deduplicates concurrent company_deep_profile CNPJ fetches", async () => {
++      const cache = new MemoryCache(50, 60_000);
++      let resolveCnpjFetch!: (resp: Response) => void;
++      const cnpjDeferred = new Promise<Response>((resolve) => {
++        resolveCnpjFetch = resolve;
++      });
++
++      const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
++        const url = String(input);
++        if (url.includes("api.opencnpj.org")) return cnpjDeferred;
++        return jsonResponse({});
++      });
++
++      const p1 = executeTool(
++        "company_deep_profile",
++        { cnpj: "11222333000181", include_government: false, include_legal: false, include_news: false },
++        apiConfig,
++        cache
++      );
++      const p2 = executeTool(
++        "company_deep_profile",
++        { cnpj: "11222333000181", include_government: false, include_legal: false, include_news: false },
++        apiConfig,
++        cache
++      );
++
++      resolveCnpjFetch(jsonResponse({ cnpj: "11222333000181", razao_social: "DEDUP LTDA" }));
++      const [r1, r2] = await Promise.all([p1, p2]);
++      expect(r1.ok && r2.ok).toBe(true);
++
++      const cnpjFetches = fetchSpy.mock.calls.filter(([u]) => String(u).includes("api.opencnpj.org"));
++      expect(cnpjFetches).toHaveLength(1);
++
++      // Subsequent cnpj_lookup hits the same cache populated by deep_profile
++      const cachedCnpj = await executeTool("cnpj_lookup", { cnpj: "11222333000181" }, apiConfig, cache);
++      expect(cachedCnpj.ok).toBe(true);
++      expect(
++        fetchSpy.mock.calls.filter(([u]) => String(u).includes("api.opencnpj.org"))
++      ).toHaveLength(1);
++    });
++  });
++
++  describe("procurados_lookup bounded concurrency & fail-closed cache", () => {
++    it("scrapes with concurrency <= PROCURADOS_CONCURRENCY and serves subsequent different names from cache with 0 fetches", async () => {
++      const cache = new MemoryCache(50, 60_000);
++      let active = 0;
++      let peakActive = 0;
++
++      const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
++        const url = String(input);
++        active++;
++        peakActive = Math.max(peakActive, active);
++        // Yield a microtask so overlapping concurrent dispatches are observable
++        await Promise.resolve();
++        await Promise.resolve();
++        active--;
++
++        if (!url.includes("b_start:int=")) {
++          return htmlResponse(
++            '<a href="https://www.gov.br/mj/pt-br/assuntos/sua-seguranca/seguranca-publica/operacoes-integradas/projeto-captura/lista-de-procurados/carlos-souza/view">\nCarlos Eduardo de Souza - RJ\n20/11/2026</a>'
++          );
++        }
++        return htmlResponse("<html><body>Sem registros nesta pagina</body></html>");
++      });
++
++      const first = await executeProcurados({ nome: "Carlos Souza" }, cache);
++      expect(first.ok).toBe(true);
++      expect(first.data).toMatchObject({ status: "FOUND", total_matches: 1, pages_checked: 13 });
++      expect(fetchSpy).toHaveBeenCalledTimes(13);
++      expect(peakActive).toBeGreaterThan(1);
++      expect(peakActive).toBeLessThanOrEqual(PROCURADOS_CONCURRENCY);
++
++      // Different query uses cached entries without issuing any upstream fetch
++      const cachedHit = await executeProcurados({ nome: "Carlos Eduardo" }, cache);
++      expect(cachedHit.ok).toBe(true);
++      expect(cachedHit.data).toMatchObject({ status: "FOUND", total_matches: 1, cached: true });
++
++      const cachedMiss = await executeProcurados({ nome: "Pessoa Ausente" }, cache);
++      expect(cachedMiss.ok).toBe(true);
++      expect(cachedMiss.data).toMatchObject({ status: "NOT_FOUND", total_matches: 0, cached: true });
++
++      expect(fetchSpy).toHaveBeenCalledTimes(13);
++    });
++
++    it("never caches partial/INCONCLUSIVE scrapes so the next lookup retries upstream cleanly", async () => {
++      const cache = new MemoryCache(50, 60_000);
++      let attempt = 0;
++
++      const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
++        attempt++;
++        if (String(input).endsWith("b_start:int=15") && attempt <= 13) {
++          return new Response(null, { status: 403 });
++        }
++        return htmlResponse("<html><body>Sem registros</body></html>");
++      });
++
++      const partialRes = await executeProcurados({ nome: "Pessoa Inconclusiva" }, cache);
++      expect(partialRes.ok).toBe(true);
++      expect(partialRes.data).toMatchObject({ status: "INCONCLUSIVE", partial: true, pages_failed: 1 });
++      expect(cache.get(PROCURADOS_CACHE_KEY)).toBeNull();
++      expect(fetchSpy).toHaveBeenCalledTimes(13);
++
++      // Second lookup must re-fetch all 13 pages rather than trusting an incomplete scrape
++      const fullRes = await executeProcurados({ nome: "Pessoa Inconclusiva" }, cache);
++      expect(fullRes.ok).toBe(true);
++      expect(fullRes.data).toMatchObject({ status: "NOT_FOUND", partial: false, pages_failed: 0 });
++      expect(fetchSpy).toHaveBeenCalledTimes(26);
++    });
++  });
++});

@@ -98,6 +98,9 @@ export const IbgeSchema = z
     tipo: z.enum(["estados", "municipios", "municipios_por_uf", "regioes"]),
     uf: z.string().trim().min(1).max(10).optional(),
     id: z.number().int().min(1).max(99999999).optional(),
+    nome: z.string().trim().min(1).max(200).optional(),
+    page: z.number().int().min(1).max(10000).optional(),
+    limit: z.number().int().min(1).max(1000).optional(),
   })
   .refine((v) => v.tipo !== "municipios_por_uf" || Boolean(v.uf), {
     message: "UF is required for municipios_por_uf",

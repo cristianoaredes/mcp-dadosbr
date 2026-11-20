@@ -73,16 +73,30 @@ No API key required. Local computation only.`,
 
 interface WhoisArgs { domain: string; }
 
-async function executeWhois(args: WhoisArgs): Promise<LookupResult> {
+async function executeWhois(args: WhoisArgs, cache?: Cache): Promise<LookupResult> {
     const { domain } = args;
     const cleanDomain = domain.replace(/^https?:\/\//, "").replace(/\/.*$/, "");
+    const cacheKey = `whois:${cleanDomain.toLowerCase()}`;
+    if (cache) {
+        const cached = await cache.get(cacheKey);
+        if (cached) return { ok: true, data: cached };
+    }
+
     const rdapUrl = `https://rdap.registro.br/domain/${encodeURIComponent(cleanDomain)}`;
     try {
         const result = await httpJson(rdapUrl);
-        if (result.ok) return { ok: true, data: { domain: cleanDomain, rdap: result.data, source: "RDAP — Registro.br" } };
+        if (result.ok) {
+            const payload = { domain: cleanDomain, rdap: result.data, source: "RDAP — Registro.br" };
+            if (cache) await cache.set(cacheKey, payload);
+            return { ok: true, data: payload };
+        }
         const ianaUrl = `https://rdap.org/domain/${encodeURIComponent(cleanDomain)}`;
         const ianaResult = await httpJson(ianaUrl);
-        if (ianaResult.ok) return { ok: true, data: { domain: cleanDomain, rdap: ianaResult.data, source: "RDAP — IANA Bootstrap" } };
+        if (ianaResult.ok) {
+            const payload = { domain: cleanDomain, rdap: ianaResult.data, source: "RDAP — IANA Bootstrap" };
+            if (cache) await cache.set(cacheKey, payload);
+            return { ok: true, data: payload };
+        }
         return { ok: false, error: `Domain not found in RDAP: ${cleanDomain}` };
     } catch (err) {
         return { ok: false, error: `WHOIS/RDAP error: ${err instanceof Error ? err.message : String(err)}` };
@@ -100,19 +114,28 @@ OSINT value: Verify company digital presence, registration dates, nameservers.`,
         required: ["domain"],
     },
     zodSchema: DomainWhoisSchema,
-    execute: async (args) => executeWhois(args as WhoisArgs),
+    execute: async (args, _apiConfig, cache) => executeWhois(args as WhoisArgs, cache),
 });
 
 // ─── Consumidor.gov.br ──────────────────────────────────────────────────────
 
 interface ConsumidorArgs { empresa: string; }
 
-async function executeConsumidor(args: ConsumidorArgs): Promise<LookupResult> {
+async function executeConsumidor(args: ConsumidorArgs, cache?: Cache): Promise<LookupResult> {
     const { empresa } = args;
+    const cacheKey = `consumidor:${empresa.trim().toLowerCase()}`;
     const searchUrl = `https://www.consumidor.gov.br/pages/indicador/empresa/listar?nome=${encodeURIComponent(empresa)}`;
     try {
+        if (cache) {
+            const cached = await cache.get(cacheKey);
+            if (cached) return { ok: true, data: cached };
+        }
         const result = await httpJson(searchUrl);
-        if (result.ok) return { ok: true, data: { empresa, results: result.data, source: "Consumidor.gov.br — SENACON" } };
+        if (result.ok) {
+            const payload = { empresa, results: result.data, source: "Consumidor.gov.br — SENACON" };
+            if (cache) await cache.set(cacheKey, payload);
+            return { ok: true, data: payload };
+        }
     } catch { /* fall through */ }
     return {
         ok: true, data: {
@@ -136,7 +159,7 @@ OSINT value: Assess company reputation and customer service quality.`,
         required: ["empresa"],
     },
     zodSchema: ConsumidorSchema,
-    execute: async (args) => executeConsumidor(args as ConsumidorArgs),
+    execute: async (args, _apiConfig, cache) => executeConsumidor(args as ConsumidorArgs, cache),
 });
 
 // ─── Deep Profile Orchestrator ──────────────────────────────────────────────
@@ -150,6 +173,7 @@ interface DeepProfileArgs {
 }
 
 // Import sibling tool execute functions (need to avoid circular — import from typed exports)
+import { lookup } from "./core.js";
 import { executeTransparencia } from "./government.js";
 import { executeDatajud, executeListaSuja } from "./legal.js";
 
@@ -160,22 +184,21 @@ async function executeDeepProfile(args: DeepProfileArgs, apiConfig: ApiConfig, c
     const errors: string[] = [];
     const tasks: Promise<void>[] = [];
 
-    // CNPJ lookup
-    const baseUrl = apiConfig.cnpjBaseUrl;
+    // Reuse shared lookup() so CNPJ fetch participates in cache + in-flight deduplication
     tasks.push(
-        httpJson(`${baseUrl}${cleanCnpj}`, apiConfig.authHeaders)
+        lookup("cnpj", cleanCnpj, apiConfig, cache)
             .then(r => { results.cnpj_data = r.ok ? r.data : null; if (!r.ok) errors.push(`cnpj: ${r.error}`); })
     );
     if (include_government) {
-        tasks.push(executeTransparencia({ cnpj: cleanCnpj, tipo: "contratos" }).then(r => { results.government_contracts = r.ok ? r.data : null; }));
+        tasks.push(executeTransparencia({ cnpj: cleanCnpj, tipo: "contratos" }, cache).then(r => { results.government_contracts = r.ok ? r.data : null; }));
     }
     if (include_legal) {
-        tasks.push(executeDatajud({ query: cleanCnpj }).then(r => { results.court_records = r.ok ? r.data : null; }));
+        tasks.push(executeDatajud({ query: cleanCnpj }, cache).then(r => { results.court_records = r.ok ? r.data : null; }));
     }
     if (domain) {
-        tasks.push(executeWhois({ domain }).then(r => { results.domain_whois = r.ok ? r.data : null; }));
+        tasks.push(executeWhois({ domain }, cache).then(r => { results.domain_whois = r.ok ? r.data : null; }));
     }
-    tasks.push(executeListaSuja({ query: cleanCnpj }).then(r => { results.lista_suja = r.ok ? r.data : null; }));
+    tasks.push(executeListaSuja({ query: cleanCnpj }, cache).then(r => { results.lista_suja = r.ok ? r.data : null; }));
     if (include_news) {
         tasks.push(executeSearch(cleanCnpj, 5, cache).then(r => { results.news_results = r.ok ? r.data : null; }));
     }
