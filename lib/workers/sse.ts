@@ -4,6 +4,7 @@
  */
 
 import { Env, handleMCPRequest, corsHeaders } from "../adapters/cloudflare.js";
+import { SERVER_VERSION } from "../config/index.js";
 import { MCPRequest } from "../types/index.js";
 import { TIMEOUTS } from "../config/timeouts.js";
 import "./types.js";
@@ -155,7 +156,7 @@ export async function handleSSEEndpoint(
               type: "connection",
               status: "connected",
               server: "mcp-dadosbr",
-              version: "1.0.0",
+              version: SERVER_VERSION,
               timestamp: new Date().toISOString(),
             },
             "connection"
@@ -178,7 +179,7 @@ export async function handleSSEEndpoint(
                 },
                 serverInfo: {
                   name: "mcp-dadosbr",
-                  version: "1.0.0",
+                  version: SERVER_VERSION,
                 },
               },
             },

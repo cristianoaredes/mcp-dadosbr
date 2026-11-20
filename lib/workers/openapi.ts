@@ -3,6 +3,7 @@
  */
 
 import { Env, getCorsHeaders } from '../adapters/cloudflare.js';
+import { SERVER_VERSION } from '../config/index.js';
 
 /**
  * Generate OpenAPI 3.0 schema for the API
@@ -15,7 +16,7 @@ export function generateOpenAPISchema(requestUrl: string): unknown {
     info: {
       title: 'MCP DadosBR API',
       description: 'Brazilian public data lookup API for CNPJ (companies) and CEP (postal codes) with advanced search capabilities',
-      version: '1.0.0'
+      version: SERVER_VERSION
     },
     servers: [{ url: origin }],
     security: [

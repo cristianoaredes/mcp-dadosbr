@@ -2,15 +2,15 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { ApiConfig, ServerConfig, ConfigFile } from "../types/index.js";
 import { TIMEOUTS } from "./timeouts.js";
-import { CACHE } from "../shared/utils/constants.js";
+import { CACHE, SERVER } from "../shared/utils/constants.js";
 
 // Default API URLs
 export const DEFAULT_CNPJ_URL = "https://api.opencnpj.org/";
 export const DEFAULT_CEP_URL = "https://opencep.com/v1/";
 
 // Constants
-export const SERVER_NAME = "mcp-dadosbr";
-export const SERVER_VERSION = "1.0.0";
+export const SERVER_NAME = SERVER.NAME;
+export const SERVER_VERSION = SERVER.VERSION;
 
 // Allowed API hosts (SSRF protection)
 // Only these production hosts can be used for CNPJ and CEP APIs
