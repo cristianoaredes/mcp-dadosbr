@@ -36,7 +36,6 @@
     "cf:logs": "wrangler tail",
     "cf:kv:create": "wrangler kv:namespace create MCP_CACHE",
     "cf:kv:create:preview": "wrangler kv:namespace create MCP_CACHE --preview",
-    "test:sse": "node examples/sse-client.js",
     "release": "standard-version",
     "release:minor": "standard-version --release-as minor",
     "release:major": "standard-version --release-as major",

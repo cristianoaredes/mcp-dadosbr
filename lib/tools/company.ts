@@ -172,8 +172,8 @@ interface DeepProfileArgs {
     domain?: string;
 }
 
-// Import sibling tool execute functions (need to avoid circular — import from typed exports)
-import { lookup } from "./core.js";
+// Import shared lookup service from core and sibling tool executors
+import { lookup } from "../core/lookup.js";
 import { executeTransparencia } from "./government.js";
 import { executeDatajud, executeListaSuja } from "./legal.js";
 

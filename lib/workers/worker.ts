@@ -9,9 +9,12 @@ import {
   handleCORS,
   handleHealthCheck,
   withCorsHeaders,
+  syncWorkerEnv,
   corsHeaders,
   Env
 } from '../adapters/cloudflare.js';
+import { SERVER_VERSION } from '../config/index.js';
+import { TOOL_DEFINITIONS } from '../core/tools.js';
 import { authenticateRequest, isPublicPath } from './auth.js';
 import { checkRateLimit } from './rate-limit.js';
 import { handleSSEEndpoint } from './sse.js';
@@ -90,7 +93,7 @@ async function routeRequest(
         service: 'MCP DadosBR',
         description:
           'Model Context Protocol server for Brazilian public data',
-        version: '1.0.0',
+        version: SERVER_VERSION,
         runtime: 'cloudflare-workers',
         free_tier: {
           workers: '100,000 requests/day',
@@ -103,7 +106,7 @@ async function routeRequest(
           health: '/health',
           openapi: '/openapi.json',
         },
-        tools: ['cnpj_lookup', 'cep_lookup', 'cnpj_search', 'sequentialthinking', 'cnpj_intelligence'],
+        tools: TOOL_DEFINITIONS.map((tool) => tool.name),
         documentation: 'https://github.com/cristianoaredes/mcp-dadosbr',
         cloudflare_docs: {
           agents: 'https://developers.cloudflare.com/agents/',
@@ -160,11 +163,7 @@ export default {
     env: Env,
     ctx: ExecutionContext
   ): Promise<Response> {
-    // Inject Cloudflare Workers environment variables into process.env
-    // This allows tools to access secrets like TAVILY_API_KEY
-    if (env.TAVILY_API_KEY) {
-      process.env.TAVILY_API_KEY = env.TAVILY_API_KEY;
-    }
+    syncWorkerEnv(env);
 
     const url = new URL(request.url);
     const isPublic = isPublicPath(url.pathname);

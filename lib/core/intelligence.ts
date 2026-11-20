@@ -2,7 +2,7 @@
  * CNPJ Intelligence - Automatic intelligent search based on CNPJ data
  */
 
-import { lookup } from '../tools/core.js';
+import { lookup } from './lookup.js';
 import { ApiConfig, Cache, LookupResult } from '../types/index.js';
 import { getAvailableProvider, SearchProvider, SearchResult, ProviderType } from './search-providers.js';
 import { buildDorks, DorkCategory, CNPJData } from './dork-templates.js';
@@ -216,7 +216,8 @@ async function executeIntelligenceInternal(
   signal: AbortSignal
 ): Promise<LookupResult> {
   const startTime = Date.now();
-  const maskedCnpj = maskCnpj(options.cnpj);
+  const normalizedCnpj = normalizeCnpj(options.cnpj);
+  const maskedCnpj = maskCnpj(normalizedCnpj);
 
   try {
     // Step 1: Get company data (reuse cached if provided)
@@ -229,8 +230,8 @@ async function executeIntelligenceInternal(
       companyData = options.cachedCompanyData;
       console.error(`[intelligence] [${maskedCnpj}] Using cached company data`);
     } else {
-      // Try to get from cache first
-      const cacheKey = `cnpj:${apiConfig.cnpjBaseUrl}:${options.cnpj}`;
+      // Try to get from cache first using normalized CNPJ key (matching lookup())
+      const cacheKey = `cnpj:${apiConfig.cnpjBaseUrl}:${normalizedCnpj}`;
       const cachedData = cache ? await cache.get<CNPJData>(cacheKey) : null;
 
       if (cachedData) {
@@ -238,7 +239,7 @@ async function executeIntelligenceInternal(
         console.error(`[intelligence] [${maskedCnpj}] Using cache hit for company data`);
       } else {
         // Fetch from API only if not in cache
-        const cnpjResult = await lookup('cnpj', options.cnpj, apiConfig, cache);
+        const cnpjResult = await lookup('cnpj', normalizedCnpj, apiConfig, cache);
 
         if (!cnpjResult.ok) {
           return {
@@ -323,7 +324,7 @@ async function executeIntelligenceInternal(
 
           if (searchResult.ok) {
             // Filter results to ensure they contain the CNPJ
-            const filteredResults = filterResultsByCnpj(searchResult.value, options.cnpj);
+            const filteredResults = filterResultsByCnpj(searchResult.value, normalizedCnpj);
 
             const resultsWithMeta: SearchResultWithMeta[] = filteredResults.map(r => ({
               ...r,
@@ -469,8 +470,9 @@ Perfect for: Due diligence, company research, background checks, investigations.
 
 Provider options:
 - tavily (requires TAVILY_API_KEY env var)
+- perplexity (requires PERPLEXITY_API_KEY env var)
 
-Note: You must set TAVILY_API_KEY to enable web search queries.`,
+Note: Set TAVILY_API_KEY or PERPLEXITY_API_KEY on the server to enable web search queries.`,
   inputSchema: {
     type: "object",
     properties: {

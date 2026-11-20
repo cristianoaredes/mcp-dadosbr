@@ -32,6 +32,29 @@ export interface Env {
   MCP_TRUST_X_FORWARDED_FOR?: string;
   MCP_KV?: KVNamespace;
   TAVILY_API_KEY?: string; // Tavily search API key (secret)
+  PERPLEXITY_API_KEY?: string; // Perplexity search API key (secret)
+  TRANSPARENCIA_API_KEY?: string; // Portal da Transparência API key (secret)
+  DATAJUD_API_KEY?: string; // CNJ Datajud API key (secret)
+}
+
+const WORKER_ENV_KEYS = [
+  "TAVILY_API_KEY",
+  "PERPLEXITY_API_KEY",
+  "TRANSPARENCIA_API_KEY",
+  "DATAJUD_API_KEY",
+] as const;
+
+/**
+ * Propagate allowlisted Worker secret bindings into process.env for tool execution.
+ */
+export function syncWorkerEnv(env?: Env): void {
+  if (!env || typeof process === "undefined" || !process.env) return;
+  for (const key of WORKER_ENV_KEYS) {
+    const value = env[key];
+    if (typeof value === "string" && value.length > 0) {
+      process.env[key] = value;
+    }
+  }
 }
 
 
@@ -158,11 +181,7 @@ export async function handleMCPRequest(
   request: MCPRequest,
   env: Env
 ): Promise<MCPResponse> {
-  // Inject Cloudflare Workers environment variables into process.env
-  // This allows tools to access secrets like TAVILY_API_KEY
-  if (env.TAVILY_API_KEY) {
-    process.env.TAVILY_API_KEY = env.TAVILY_API_KEY;
-  }
+  syncWorkerEnv(env);
 
   const serverConfig: ServerConfig = {
     transport: env.MCP_TRANSPORT || "http",
@@ -258,11 +277,7 @@ export async function handleMCPEndpoint(
   request: Request,
   env: Env
 ): Promise<Response> {
-  // Inject Cloudflare Workers environment variables into process.env
-  // This allows tools to access secrets like TAVILY_API_KEY
-  if (env.TAVILY_API_KEY) {
-    process.env.TAVILY_API_KEY = env.TAVILY_API_KEY;
-  }
+  syncWorkerEnv(env);
 
   try {
     const body = await request.text();

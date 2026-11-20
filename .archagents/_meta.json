@@ -22,12 +22,12 @@
       {
         "path": "package.json",
         "sha1": "ecf86b08666fef537ffe4cc35c313937a2abe29e",
-        "lines_cited": "L109-L114"
+        "lines_cited": "L109-L111"
       },
       {
         "path": "lib/core/mcp-server.ts",
         "sha1": "ca2fd0fa21c7c18bc08f972684f31ce1dbf9f85d",
-        "lines_cited": "L17-L64"
+        "lines_cited": "L17-L66"
       }
     ],
     ".archagents/01-business-domain.md": [
@@ -270,25 +270,26 @@
     ]
   },
   "metrics": {
-    "total_tickets": 12,
-    "done_tickets": 12,
+    "total_tickets": 29,
+    "done_tickets": 28,
     "archived_tickets": 0,
-    "avg_cycle_time": 0.24,
+    "avg_cycle_time": 1.62,
     "avg_cycle_time_coverage": {
-      "measured": 12,
-      "total": 12,
+      "measured": 28,
+      "total": 28,
       "ratio": 1.0
     },
     "success_rate": 0.0,
     "success_rate_coverage": {
       "measured": 0,
-      "total": 7,
-      "discarded_non_outcome": 7,
+      "total": 8,
+      "discarded_non_outcome": 8,
       "ratio": 0.0,
       "source": "learning_log + taxonomia TCK-0820"
     },
     "status_breakdown": {
-      "done": 12
+      "done": 28,
+      "raw": 1
     }
   },
   "active_runs": [],
@@ -296,24 +297,24 @@
   "noncanonical_runs": [],
   "zombie_runs": [],
   "zombie_runs_coverage": "ok",
-  "health_score": 60.0,
+  "health_score": 58.62,
   "health_score_coverage": {
     "formula": "ad-hoc: 0.4*backlog + 0.4*recent_success + 0.2*drift - zombie_debt_penalty (cap 20, ver TCK-2693)",
     "approved_alternative": "lib/health_rubric (SPC-0086) — zero chamadores; trocar exige ADR",
     "components": {
       "backlog_health": {
-        "value": 100.0,
+        "value": 96.55,
         "weight": 0.4,
-        "measured": 12,
-        "total": 12,
-        "ratio": 1.0
+        "measured": 28,
+        "total": 29,
+        "ratio": 0.9655
       },
       "recent_success": {
         "value": 0.0,
         "weight": 0.4,
         "measured": 0,
-        "total": 7,
-        "discarded_non_outcome": 7,
+        "total": 8,
+        "discarded_non_outcome": 8,
         "ratio": 0.0,
         "source": "learning_log (últimos 10) + taxonomia TCK-0820"
       },
@@ -333,7 +334,7 @@
       "source": "zombie-run-scan.py (TCK-1447/TCK-2477) via .archagents/.zombie-runs-baseline.json"
     }
   },
-  "last_updated": "2026-11-19T18:12:46.343321Z",
+  "last_updated": "2026-11-20T21:04:17.301652Z",
   "learning_log": [
     {
       "run": "RUN-20261117-224844-querido-diario",
