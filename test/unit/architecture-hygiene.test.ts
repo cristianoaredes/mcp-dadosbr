@@ -142,7 +142,8 @@ describe("FND-0012 / TCK-0024: Architecture Hygiene, Contract Unification & Work
     };
     expect(openApi.info.version).toBe(pkg.version);
 
-    const healthJson = (await handleHealthCheck().json()) as { version: string };
+    const healthResp = await handleHealthCheck();
+    const healthJson = (await healthResp.json()) as { version: string };
     expect(healthJson.version).toBe(pkg.version);
 
     const ctx = {

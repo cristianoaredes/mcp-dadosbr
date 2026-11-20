@@ -5,6 +5,12 @@ import { TOOL_DEFINITIONS, executeTool } from "../core/tools.js";
 import { ServerConfig, MCPRequest, MCPResponse } from "../types/index.js";
 import { TIMEOUTS } from "../config/timeouts.js";
 import { CACHE } from "../shared/utils/constants.js";
+import { createLogger } from "../infrastructure/logger.js";
+import { RequestContext } from "../infrastructure/tracing.js";
+import { maskSensitiveText } from "../shared/log-redaction.js";
+
+const cloudflareLogger = createLogger("cloudflare");
+const DEFAULT_HEALTH_KV_TIMEOUT_MS = 1000;
 
 // Cloudflare Worker types
 declare global {
@@ -156,20 +162,84 @@ function withCorsHeaders(
   });
 }
 
-function handleHealthCheck(request?: Request, env?: Env): Response {
+async function handleHealthCheck(
+  request?: Request,
+  env?: Env,
+  options?: { kvTimeoutMs?: number; requestContext?: RequestContext }
+): Promise<Response> {
+  const kv = env?.MCP_CACHE ?? env?.MCP_KV;
+  let overallStatus: "healthy" | "degraded" = "healthy";
+  let httpStatus = 200;
+  let kvCheck:
+    | { status: "unconfigured" }
+    | { status: "ok"; latencyMs: number }
+    | { status: "degraded"; latencyMs: number; error: string } = {
+    status: "unconfigured",
+  };
+
+  if (kv) {
+    const kvTimeoutMs =
+      options?.kvTimeoutMs !== undefined &&
+      Number.isFinite(options.kvTimeoutMs) &&
+      options.kvTimeoutMs > 0
+        ? options.kvTimeoutMs
+        : DEFAULT_HEALTH_KV_TIMEOUT_MS;
+    const probeStart = Date.now();
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const timeoutPromise = new Promise<never>((_resolve, reject) => {
+        timeoutId = setTimeout(() => {
+          reject(new Error(`KV health probe timed out after ${kvTimeoutMs}ms`));
+        }, kvTimeoutMs);
+        (timeoutId as { unref?: () => void }).unref?.();
+      });
+      await Promise.race([kv.get("__health_check__"), timeoutPromise]);
+      kvCheck = {
+        status: "ok",
+        latencyMs: Date.now() - probeStart,
+      };
+    } catch (error) {
+      const latencyMs = Date.now() - probeStart;
+      overallStatus = "degraded";
+      httpStatus = 503;
+      kvCheck = {
+        status: "degraded",
+        latencyMs,
+        error: "kv_unavailable",
+      };
+      cloudflareLogger.warn(
+        "health.kv_degraded",
+        {
+          latencyMs,
+          reason: maskSensitiveText(
+            error instanceof Error ? error.message : String(error)
+          ),
+        },
+        options?.requestContext?.requestId
+      );
+    } finally {
+      if (timeoutId !== undefined) {
+        clearTimeout(timeoutId);
+      }
+    }
+  }
+
   const healthData = {
-    status: "healthy",
+    status: overallStatus,
     service: "mcp-dadosbr",
     version: SERVER_VERSION,
     timestamp: new Date().toISOString(),
     runtime: "cloudflare-workers",
+    checks: {
+      kv: kvCheck,
+    },
   };
   const headers = request
     ? getCorsHeaders(request, env, { isPublic: true })
     : corsHeaders;
 
   return new Response(JSON.stringify(healthData), {
-    status: 200,
+    status: httpStatus,
     headers: {
       "Content-Type": "application/json",
       ...headers,
@@ -179,9 +249,11 @@ function handleHealthCheck(request?: Request, env?: Env): Response {
 
 export async function handleMCPRequest(
   request: MCPRequest,
-  env: Env
+  env: Env,
+  requestContext?: RequestContext
 ): Promise<MCPResponse> {
   syncWorkerEnv(env);
+  const activeContext = requestContext ?? new RequestContext();
 
   const serverConfig: ServerConfig = {
     transport: env.MCP_TRANSPORT || "http",
@@ -210,7 +282,10 @@ export async function handleMCPRequest(
         const { name, arguments: args } = params;
 
         try {
-          const result = await executeTool(name, args, apiConfig, cache);
+          const result = await executeTool(name, args, apiConfig, cache, {
+            requestId: activeContext.requestId,
+            requestContext: activeContext,
+          });
 
           if (result.ok) {
             return {
@@ -275,9 +350,11 @@ export async function handleMCPRequest(
 
 export async function handleMCPEndpoint(
   request: Request,
-  env: Env
+  env: Env,
+  requestContext?: RequestContext
 ): Promise<Response> {
   syncWorkerEnv(env);
+  const activeContext = requestContext ?? new RequestContext();
 
   try {
     const body = await request.text();
@@ -306,7 +383,7 @@ export async function handleMCPEndpoint(
       );
     }
 
-    const response = await handleMCPRequest(mcpRequest, env);
+    const response = await handleMCPRequest(mcpRequest, env, activeContext);
 
     return new Response(JSON.stringify(response), {
       status: 200,
@@ -316,7 +393,11 @@ export async function handleMCPEndpoint(
       },
     });
   } catch (error) {
-    console.error("Error handling MCP request:", error);
+    cloudflareLogger.error(
+      "mcp.endpoint_error",
+      { error: maskSensitiveText(error instanceof Error ? error.message : String(error)) },
+      activeContext.requestId
+    );
 
     return new Response(
       JSON.stringify({

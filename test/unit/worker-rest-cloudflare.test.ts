@@ -383,7 +383,7 @@ describe("Workers REST API, Tokens, Worker Router & Cloudflare Adapter", () => {
       expect(internalBody.error).toMatchObject({ code: -32603, data: "stream aborted" });
       expect(errSpy).toHaveBeenCalled();
 
-      const healthResp = handleHealthCheck();
+      const healthResp = await handleHealthCheck();
       expect(healthResp.status).toBe(200);
       expect(await healthResp.json()).toMatchObject({
         status: "healthy",

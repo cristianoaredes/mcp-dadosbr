@@ -3,6 +3,10 @@
  */
 
 import { Env, getCorsHeaders } from "../adapters/cloudflare.js";
+import { createLogger } from "../infrastructure/logger.js";
+import type { RequestContext } from "../infrastructure/tracing.js";
+
+const authLogger = createLogger("worker-auth");
 
 export interface AuthResult {
   authenticated: boolean;
@@ -42,7 +46,8 @@ export function constantTimeEqual(a: string, b: string): boolean {
  */
 export async function authenticateRequest(
   request: Request,
-  env: Env
+  env: Env,
+  requestContext?: RequestContext
 ): Promise<AuthResult> {
   const url = new URL(request.url);
   if (isPublicPath(url.pathname)) {
@@ -63,7 +68,20 @@ export async function authenticateRequest(
     }
 
     if (!providedKey || !constantTimeEqual(providedKey, expectedApiKey)) {
-      console.error(`[Auth] Unauthorized request to ${url.pathname}`);
+      authLogger.warn(
+        "auth.unauthorized",
+        {
+          event: "auth_failure",
+          status: 401,
+          method: request.method,
+          path: url.pathname,
+          reason: providedKey ? "invalid_credentials" : "missing_credentials",
+          authHeaderPresent: Boolean(authHeader),
+          apiKeyHeaderPresent: Boolean(apiKey),
+          clientIp: request.headers.get("CF-Connecting-IP") || "unknown",
+        },
+        requestContext?.requestId
+      );
       return {
         authenticated: false,
         error: new Response(

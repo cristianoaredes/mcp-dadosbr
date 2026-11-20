@@ -30,13 +30,13 @@ export default defineConfig({
                 'examples/',
                 'apps/',
             ],
-            // Baseline measured in TCK-0029 across lib/**/*.ts (incl. workers/ & cloudflare.ts):
-            // 87.91% stmts, 80.27% branches, 86.89% funcs, 88.64% lines (FND-0014 target met; TCK-0025 will cover logger.ts/tracing.ts).
+            // Baseline measured in TCK-0025 across lib/**/*.ts (incl. logger.ts, tracing.ts, workers/ & cloudflare.ts):
+            // 91.32% stmts, 83.57% branches, 93.25% funcs, 92.09% lines
             thresholds: {
-                lines: 80,
-                functions: 80,
-                branches: 75,
-                statements: 80,
+                lines: 85,
+                functions: 85,
+                branches: 80,
+                statements: 85,
             },
         },
         testTimeout: 10000,

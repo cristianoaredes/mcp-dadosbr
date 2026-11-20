@@ -333,7 +333,11 @@ describe("TCK-0020 / FND-0008: Worker SSE lifecycle, KV TTL/rate-limit, RateLimi
       expect(doneSettled).toBe(true);
       await waitUntilPromises[0];
       expect(vi.getTimerCount()).toBe(0);
-      expect(errorSpy).not.toHaveBeenCalled();
+      const errorLevelLogs = errorSpy.mock.calls.filter((call) => {
+        const msg = String(call[0] ?? "");
+        return msg.includes('"level":"error"') || msg.includes("SSE write error") || msg.includes("enqueue");
+      });
+      expect(errorLevelLogs).toHaveLength(0);
 
       let count = 0;
       while (!(await reader.read()).done) {

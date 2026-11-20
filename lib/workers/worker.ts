@@ -15,6 +15,11 @@ import {
 } from '../adapters/cloudflare.js';
 import { SERVER_VERSION } from '../config/index.js';
 import { TOOL_DEFINITIONS } from '../core/tools.js';
+import {
+  extractRequestId,
+  REQUEST_ID_HEADER,
+  RequestContext,
+} from '../infrastructure/tracing.js';
 import { authenticateRequest, isPublicPath } from './auth.js';
 import { checkRateLimit } from './rate-limit.js';
 import { handleSSEEndpoint } from './sse.js';
@@ -39,11 +44,12 @@ async function routeRequest(
   request: Request,
   env: Env,
   url: URL,
-  ctx?: ExecutionContext
+  ctx?: ExecutionContext,
+  requestContext?: RequestContext
 ): Promise<Response> {
   switch (url.pathname) {
     case '/health':
-      return handleHealthCheck(request, env);
+      return await handleHealthCheck(request, env, { requestContext });
 
     case '/mcp':
       // HTTP JSON-RPC endpoint
@@ -53,7 +59,7 @@ async function routeRequest(
           headers: corsHeaders,
         });
       }
-      return await handleMCPEndpoint(request, env);
+      return await handleMCPEndpoint(request, env, requestContext);
 
     case '/sse':
       // Server-Sent Events endpoint for streaming MCP
@@ -63,7 +69,7 @@ async function routeRequest(
           headers: corsHeaders,
         });
       }
-      return await handleSSEEndpoint(request, env, ctx);
+      return await handleSSEEndpoint(request, env, ctx, requestContext);
 
     case '/.well-known/oauth-authorization-server':
     case '/.well-known/openid_configuration':
@@ -154,6 +160,16 @@ async function routeRequest(
   }
 }
 
+function withRequestId(response: Response, requestId: string): Response {
+  const headers = new Headers(response.headers);
+  headers.set(REQUEST_ID_HEADER, requestId);
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
+
 /**
  * Main Cloudflare Worker fetch handler
  */
@@ -164,6 +180,7 @@ export default {
     ctx: ExecutionContext
   ): Promise<Response> {
     syncWorkerEnv(env);
+    const requestContext = new RequestContext(extractRequestId(request.headers));
 
     const url = new URL(request.url);
     const isPublic = isPublicPath(url.pathname);
@@ -171,22 +188,31 @@ export default {
     // Handle CORS preflight
     const corsResponse = handleCORS(request, env, { isPublic });
     if (corsResponse) {
-      return corsResponse;
+      return withRequestId(corsResponse, requestContext.requestId);
     }
 
     // Apply rate limiting
     const rateLimitResult = await checkRateLimit(request, env);
     if (!rateLimitResult.allowed) {
-      return withCorsHeaders(rateLimitResult.error!, request, env, { isPublic });
+      return withRequestId(
+        withCorsHeaders(rateLimitResult.error!, request, env, { isPublic }),
+        requestContext.requestId
+      );
     }
 
     // Apply authentication
-    const authResult = await authenticateRequest(request, env);
+    const authResult = await authenticateRequest(request, env, requestContext);
     if (!authResult.authenticated) {
-      return withCorsHeaders(authResult.error!, request, env, { isPublic });
+      return withRequestId(
+        withCorsHeaders(authResult.error!, request, env, { isPublic }),
+        requestContext.requestId
+      );
     }
 
-    const response = await routeRequest(request, env, url, ctx);
-    return withCorsHeaders(response, request, env, { isPublic });
+    const response = await routeRequest(request, env, url, ctx, requestContext);
+    return withRequestId(
+      withCorsHeaders(response, request, env, { isPublic }),
+      requestContext.requestId
+    );
   },
 } satisfies WorkerExportedHandler<Env>;

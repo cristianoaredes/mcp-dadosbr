@@ -6,12 +6,15 @@
  */
 
 import type { ZodType } from "zod";
+import type { RequestContext } from "../infrastructure/tracing.js";
 import type { SequentialThinkingProcessor } from "./sequential-thinking.js";
 import { Cache, LookupResult, ApiConfig } from "../types/index.js";
 
 export interface ToolExecutionContext {
     sessionId?: string;
     thinkingProcessor?: SequentialThinkingProcessor;
+    requestId?: string;
+    requestContext?: RequestContext;
 }
 
 export interface ToolHandler {

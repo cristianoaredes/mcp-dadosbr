@@ -1,0 +1,1755 @@
+diff --git a/.archagents/10-runbooks.md b/.archagents/10-runbooks.md
+index 1f818e3..b4a1d18 100644
+--- a/.archagents/10-runbooks.md
++++ b/.archagents/10-runbooks.md
+@@ -1,6 +1,6 @@
+ # Operação local
+ 
+-Base revisada: `79aa712` (`v0.5.0`; base inicial: `037dae4c`).
++Base revisada: `786d7ed` (`0.6.0`, worktree `audit-remediation`; base inicial: `037dae4c`).
+ 
+ Execute `npm ci`, `npm run build` (inclui `npm run build:apps`), `npm test`, `npm run test:transport` e `npm run build:worker`. O smoke exige handshake, ping, catálogo de 23 ferramentas, os 5 recursos MCP Apps e 101 chamadas `stdio` sem erro de protocolo. O deploy deve seguir autorização e evidência do ambiente de destino.
+ 
+@@ -8,6 +8,18 @@ Execute `npm ci`, `npm run build` (inclui `npm run build:apps`), `npm test`, `np
+ 
+ - `package.json:L18-L48`
+ - `test/integration/transports.mjs:L44-L99`
++- `lib/infrastructure/logger.ts:L1-L122`
++- `lib/infrastructure/tracing.ts:L1-L150`
++- `lib/core/tools.ts:L1-L203`
++- `lib/adapters/cloudflare.ts:L165-L248`
++- `lib/workers/auth.ts:L47-L107`
++
++## Observabilidade, Logs Estruturados, Métricas RED e Health Check (`TCK-0025` / `FND-0013`)
++
++- **Logs JSON em `stderr` (`lib/infrastructure/logger.ts`)**: todos os níveis (`debug`, `info`, `warn`, `error`) escrevem exclusivamente em `console.error` para preservar `stdout` limpo para JSON-RPC no transporte `stdio`. Configure `LOG_LEVEL=debug|info|warn|error` (padrão `INFO`; `DEBUG` apenas quando `NODE_ENV=development` sem `LOG_LEVEL`).
++- **Correlação Web Crypto (`lib/infrastructure/tracing.ts`, `cli-http.ts`, `worker.ts`)**: requisições HTTP/SSE/Worker propagam ou geram `X-Request-Id` (`req_<uuid>`) via `globalThis.crypto.randomUUID()` / `getRandomValues()` e rejeitam cabeçalhos malformados/CRLF (`extractRequestId`).
++- **Métricas RED e `cacheHits` (`lib/core/tools.ts`, `mcp-server.ts`)**: `executeTool` rastreia `requests`, `errors`, `cacheHits` reais e `totalTimeMs`/`avgTimeMs`/`maxTimeMs` por ferramenta (`getToolMetrics()`), mantendo `[metrics] ...` a cada 100 requisições sem zerar contadores globais entre sessões SSE (`createMCPServer()`).
++- **Audit Log 401 & Health KV (`lib/workers/auth.ts`, `lib/adapters/cloudflare.ts`)**: falhas 401 no Worker registram JSON estruturado `auth.unauthorized` (`reason`, `method`, `path`, `requestId`) sem vazar API key ou query string. `/health` executa sonda KV com timeout limitado (`1000ms`), retornando `200` (`healthy`, `kv.status: "ok" | "unconfigured"`) ou `503` (`degraded`, `kv.status: "degraded"`). Diagnóstico e comportamento real no edge Workers via `wrangler tail` permanecem *a confirmar* em produção.
+ 
+ ## Runner próprio
+ 
+diff --git a/.archagents/13-execution/acceptance-lock.json b/.archagents/13-execution/acceptance-lock.json
+index d3ab901..3294e96 100644
+--- a/.archagents/13-execution/acceptance-lock.json
++++ b/.archagents/13-execution/acceptance-lock.json
+@@ -206,6 +206,15 @@
+     "updated_at": "2026-11-20T21:02:50Z",
+     "updated_by": "criteria-check"
+   },
++  "TCK-0025": {
++    "content_digest": "sha256:e053751f4bb384a28da653c251256a3450402ed1eac2f69e4f03719d0c27e456",
++    "criteria_digest": "sha256:30dcd4215d47d7998768ecae375353181b110b2577609851cb376504092458d8",
++    "head": "786d7ed613fb537985c49aae09896b1476482edf",
++    "passes": true,
++    "tree": "318cf4c04ff874569741e233310176708c15ba25",
++    "updated_at": "2026-11-20T21:17:25Z",
++    "updated_by": "criteria-check"
++  },
+   "TCK-0026": {
+     "content_digest": "sha256:79061db72d16bcbf14583fc85fc1d211fd22692b92b665c64ed23de1fe4c609f",
+     "criteria_digest": "sha256:b396b52dddddd0211821c83378e1e417dff0b72b03567c1c6330b94b4df6f995",
+diff --git a/.archagents/13-execution/criteria-attempts.jsonl b/.archagents/13-execution/criteria-attempts.jsonl
+index e3076a8..4a66c14 100644
+--- a/.archagents/13-execution/criteria-attempts.jsonl
++++ b/.archagents/13-execution/criteria-attempts.jsonl
+@@ -43,3 +43,6 @@
+ {"ts": "2026-11-20T20:52:07Z", "ticket": "TCK-0024", "verdict": "pass", "passed": 4, "total": 4}
+ {"ts": "2026-11-20T20:56:00Z", "ticket": "TCK-0024", "verdict": "pass", "passed": 4, "total": 4}
+ {"ts": "2026-11-20T21:02:50Z", "ticket": "TCK-0024", "verdict": "pass", "passed": 4, "total": 4}
++{"ts": "2026-11-20T21:12:41Z", "ticket": "TCK-0025", "verdict": "pass", "passed": 4, "total": 4}
++{"ts": "2026-11-20T21:15:52Z", "ticket": "TCK-0025", "verdict": "pass", "passed": 4, "total": 4}
++{"ts": "2026-11-20T21:17:25Z", "ticket": "TCK-0025", "verdict": "pass", "passed": 4, "total": 4}
+diff --git a/.archagents/15-backlog/tickets/TCK-0025-conectar-logger-estruturado-em-stderr-com-correlation-id-corrigir-metricas-de-ca.md b/.archagents/15-backlog/tickets/TCK-0025-conectar-logger-estruturado-em-stderr-com-correlation-id-corrigir-metricas-de-ca.md
+index 4f96a5f..69d49c7 100644
+--- a/.archagents/15-backlog/tickets/TCK-0025-conectar-logger-estruturado-em-stderr-com-correlation-id-corrigir-metricas-de-ca.md
++++ b/.archagents/15-backlog/tickets/TCK-0025-conectar-logger-estruturado-em-stderr-com-correlation-id-corrigir-metricas-de-ca.md
+@@ -5,8 +5,8 @@ title: "Conectar logger estruturado em stderr com correlation ID, corrigir metri
+ source: audit
+ created_at: 2026-11-20T15:16:22Z
+ created_by: ops
+-updated_at: 2026-11-20T15:16:22Z
+-status: raw
++updated_at: 2026-11-20T21:13:22Z
++status: verifying
+ severity: medium
+ category: observability
+ effort: M
+@@ -15,8 +15,10 @@ ceremony: full
+ business_impact: ""
+ linked_findings:
+   - FND-0013
+-linked_designs: []
+-linked_runs: []
++linked_designs:
++  - DES-0028
++linked_runs:
++  - RUN-20261120-210540-tck-0025
+ linked_verifications: []
+ linked_docs:
+   - .archagents/10-runbooks.md
+@@ -25,7 +27,21 @@ external_sync: []
+ blocks: []
+ blocked_by: []
+ related: []
+-acceptance: []
++acceptance:
++  - check: "npx vitest run test/unit/observability.test.ts test/unit/tools-company-health-osint-legal.test.ts test/unit/worker-auth-oauth-cors.test.ts test/unit/worker-rest-cloudflare.test.ts test/unit/worker-sse-kv-shutdown.test.ts && echo OBS_TESTS_OK"
++    expect: OBS_TESTS_OK
++  - check: "npm run test:coverage && npm test && echo TESTS_COVERAGE_OK"
++    expect: TESTS_COVERAGE_OK
++  - check: "npx tsc --noEmit && npx tsc -p tsconfig.worker.json --noEmit && echo TYPECHECK_OK"
++    expect: TYPECHECK_OK
++  - check: "npm run build && npm run build:worker && npm run test:transport && echo BUILD_TRANSPORT_OK"
++    expect: BUILD_TRANSPORT_OK
++depth_decision:
++  workflow: lightweight
++  design: lightweight
++  verify: completo
++  source: routing-classifier
++  classified_at: 2026-11-20T21:05:02Z
+ ---
+ # TCK-0025 - Conectar logger estruturado em stderr com correlation ID, corrigir metricas de cache/SSE e adicionar audit log em auth
+ 
+@@ -39,9 +55,20 @@ Originado por **FND-0013** (`observability` / `medium`, auditoria na revisão `6
+ 
+ ## Falsificador
+ 
+-<!-- O que reprova ANTES do fix: o comando que fica vermelho hoje, ou
+-     `arquivo:linha` da evidência. Sem isto o ticket não fecha. -->
++Evidências verificáveis no repositório antes do fix (`786d7ed`):
++- `lib/infrastructure/logger.ts:L68,L74`: `Logger.debug` e `Logger.info` chamam `console.log(...)` (escrevendo em `stdout` e quebrando transporte `stdio` JSON-RPC se conectados); `0` importadores em `lib/`.
++- `lib/infrastructure/tracing.ts:L16`: `generateRequestId()` utiliza `Math.random().toString(36)` em vez de Web Crypto CSPRNG; `0` importadores em `lib/`.
++- `lib/core/tools.ts:L37,L70,L73,L82-L90`: `executeTool()` passa sempre `false` em `recordMetrics(..., false, ...)` (mantendo `cacheHits` sempre `0`), `resetMetrics()` não zera `lastMetricsLog` (parando logs periódicos após um reset), e não há contagem RED por tool (`getToolMetrics()`).
++- `lib/core/mcp-server.ts:L88`: `createMCPServer()` invoca `resetMetrics()` a cada nova conexão SSE em `lib/adapters/cli-http.ts:L389`, zerando métricas globais do processo.
++- `lib/workers/auth.ts:L66`: 401 emite apenas `console.error(\`[Auth] Unauthorized request to ${url.pathname}\`)` sem JSON estruturado, `requestId` ou motivo.
++- `lib/adapters/cloudflare.ts:L159-L178`: `handleHealthCheck()` retorna JSON estático `{ status: "healthy" }` síncrono sem sondar binding KV (`MCP_CACHE`/`MCP_KV`).
++- `lib/workers/sse.ts:L147`: `console.log("SSE connection timeout reached, closing gracefully")` escreve em `stdout`.
++- Comando de inspeção estática antes do fix: `rg -n "console\.log" lib/infrastructure/logger.ts lib/workers/sse.ts` retorna 3 ocorrências (`logger.ts:68,74`, `sse.ts:147`), e `npx vitest run test/unit/observability.test.ts` falha (suíte ausente).
+ 
+ ## Log de transicoes
+ 
+ - 2026-11-20T15:16:22Z - **raw** - criado via scripts/ops/ticket/create.py.
++- 2026-11-20T21:05:02Z - **triaged** - Triagem FND-0013 (observability/medium): logger em stderr, tracing Web Crypto requestId, metricas RED e cacheHits, audit log 401 e health probe KV [aceite reescrito: 4 critério(s)] [depth_decision do routing-classifier: workflow lightweight, design lightweight, verify completo]
++- 2026-11-20T21:05:40Z - **designed** - Design DES-0028 e playbook aprovados
++- 2026-11-20T21:05:54Z - **executing** - Iniciando execucao DES-0028 em RUN-20261120-210540-tck-0025
++- 2026-11-20T21:13:22Z - **verifying** - Implementacao DES-0028 concluida em RUN-20261120-210540-tck-0025; criteria-check 4/4, 442/442 testes e V8 91.32/83.57/93.25/92.09 >= 85/80/85/85
+diff --git a/.archagents/99-memory/decisions/decisions.jsonl b/.archagents/99-memory/decisions/decisions.jsonl
+index 4d7ce83..4059b48 100644
+--- a/.archagents/99-memory/decisions/decisions.jsonl
++++ b/.archagents/99-memory/decisions/decisions.jsonl
+@@ -82,3 +82,5 @@
+ {"id": "DEC-20261120-204626457256", "ts": "2026-11-20T20:46:26Z", "classe": "triage", "decision": "TCK-0024: raw->triaged", "confidence": 0.8, "outcome": "approved", "outcome_ts": "2026-11-20T21:03:46Z", "human_review": null, "metadata": {"ticket_id": "TCK-0024", "from": "raw", "to": "triaged", "forced": false, "ver_required": null}}
+ {"id": "DEC-20261120-204702633460", "ts": "2026-11-20T20:47:02Z", "classe": "design-approval", "decision": "TCK-0024: triaged->designed", "confidence": 0.7, "outcome": "approved", "outcome_ts": "2026-11-20T21:03:46Z", "human_review": null, "metadata": {"ticket_id": "TCK-0024", "from": "triaged", "to": "designed", "forced": false, "ver_required": null}}
+ {"id": "DEC-20261120-210416577874", "ts": "2026-11-20T21:04:16Z", "classe": "done-closure", "decision": "TCK-0024: verifying->done", "confidence": 0.9, "outcome": null, "outcome_ts": null, "human_review": null, "metadata": {"ticket_id": "TCK-0024", "from": "verifying", "to": "done", "forced": false, "ver_required": true}}
++{"id": "DEC-20261120-210502798260", "ts": "2026-11-20T21:05:02Z", "classe": "triage", "decision": "TCK-0025: raw->triaged", "confidence": 0.8, "outcome": null, "outcome_ts": null, "human_review": null, "metadata": {"ticket_id": "TCK-0025", "from": "raw", "to": "triaged", "forced": false, "ver_required": null}}
++{"id": "DEC-20261120-210540303330", "ts": "2026-11-20T21:05:40Z", "classe": "design-approval", "decision": "TCK-0025: triaged->designed", "confidence": 0.7, "outcome": null, "outcome_ts": null, "human_review": null, "metadata": {"ticket_id": "TCK-0025", "from": "triaged", "to": "designed", "forced": false, "ver_required": null}}
+diff --git a/lib/adapters/cli-http.ts b/lib/adapters/cli-http.ts
+index b12e6e9..ddfd438 100644
+--- a/lib/adapters/cli-http.ts
++++ b/lib/adapters/cli-http.ts
+@@ -3,7 +3,16 @@ import express from "express";
+ import type http from "node:http";
+ import { createMCPServer } from "../core/mcp-server.js";
+ import { RateLimiter } from "../infrastructure/rate-limiter.js";
++import { createLogger } from "../infrastructure/logger.js";
++import {
++  extractRequestId,
++  REQUEST_ID_HEADER,
++  RequestContext,
++} from "../infrastructure/tracing.js";
++import { maskSensitiveText } from "../shared/log-redaction.js";
+ import { ApiConfig, Cache } from "../types/index.js";
++
++const cliHttpLogger = createLogger("cli-http");
+ import { TIMEOUTS } from "../config/timeouts.js";
+ 
+ export const DEFAULT_CLI_HTTP_HOST = "127.0.0.1";
+@@ -210,6 +219,14 @@ export function createCliHttpApp(options: CliHttpOptions): CliHttpContext {
+   const app = express();
+   app.disable("x-powered-by");
+ 
++  // Assign or propagate sanitized X-Request-Id across all CLI HTTP/SSE responses
++  app.use((req, res, next) => {
++    const requestContext = new RequestContext(extractRequestId(req.headers));
++    res.locals.requestContext = requestContext;
++    res.setHeader(REQUEST_ID_HEADER, requestContext.requestId);
++    next();
++  });
++
+   // Defensive security headers across all responses (including 4xx/5xx)
+   app.use((_req, res, next) => {
+     res.setHeader("X-Content-Type-Options", "nosniff");
+@@ -299,10 +316,15 @@ export function createCliHttpApp(options: CliHttpOptions): CliHttpContext {
+     const clientId = req.ip || req.socket.remoteAddress || "unknown";
+ 
+     if (!rateLimiter.checkLimit(clientId)) {
++      const requestContext = res.locals.requestContext as RequestContext | undefined;
+       const resetTime = rateLimiter.getResetTime(clientId);
+       const resetSeconds = Math.ceil(resetTime / 1000);
+       const logClientId = process.env.NODE_ENV !== "production" ? clientId : "[masked]";
+-      console.error(`[RateLimit] Client ${logClientId} exceeded rate limit`);
++      cliHttpLogger.warn(
++        "http.rate_limited",
++        { clientId: logClientId, path: req.path, retryAfter: resetSeconds },
++        requestContext?.requestId,
++      );
+ 
+       res.status(429).json({
+         error: "Rate limit exceeded",
+@@ -360,9 +382,20 @@ export function createCliHttpApp(options: CliHttpOptions): CliHttpContext {
+   };
+ 
+   // SSE endpoint - establishes the stream (GET)
+-  app.get("/mcp", rateLimitMiddleware, async (_req, res) => {
++  app.get("/mcp", rateLimitMiddleware, async (req, res) => {
++    const requestContext =
++      (res.locals.requestContext as RequestContext | undefined) ??
++      new RequestContext(extractRequestId(req.headers));
++    if (!res.headersSent) {
++      res.setHeader(REQUEST_ID_HEADER, requestContext.requestId);
++    }
+     debug("GET /mcp - Establishing SSE stream");
+     if (transports.size >= maxSessions) {
++      cliHttpLogger.warn(
++        "sse.max_sessions_reached",
++        { activeSessions: transports.size, maxSessions },
++        requestContext.requestId,
++      );
+       res.status(503).json({
+         error: "Service Unavailable",
+         message: "Maximum active SSE sessions reached",
+@@ -380,10 +413,20 @@ export function createCliHttpApp(options: CliHttpOptions): CliHttpContext {
+         lastActivity: now,
+       });
+       debug(`Created SSE transport with session ID: ${sessionId} (total sessions: ${transports.size})`);
++      cliHttpLogger.info(
++        "sse.session_connected",
++        { activeSessions: transports.size },
++        requestContext.requestId,
++      );
+ 
+       transport.onclose = () => {
+         debug(`SSE transport closed for session ${sessionId}`);
+         transports.delete(sessionId);
++        cliHttpLogger.info(
++          "sse.session_closed",
++          { activeSessions: transports.size },
++          requestContext.requestId,
++        );
+       };
+ 
+       const server = createMCPServer({ apiConfig: options.apiConfig, cache: options.cache });
+@@ -391,6 +434,11 @@ export function createCliHttpApp(options: CliHttpOptions): CliHttpContext {
+       debug(`MCP server connected to SSE transport ${sessionId}`);
+     } catch (error) {
+       debug("Error establishing SSE stream:", error);
++      cliHttpLogger.error(
++        "sse.connection_error",
++        { error: maskSensitiveText(error instanceof Error ? error.message : String(error)) },
++        requestContext.requestId,
++      );
+       if (!res.headersSent) {
+         res.status(500).send("Error establishing SSE stream");
+       }
+@@ -399,11 +447,22 @@ export function createCliHttpApp(options: CliHttpOptions): CliHttpContext {
+ 
+   // Messages endpoint - receives client JSON-RPC requests (POST)
+   app.post("/messages", rateLimitMiddleware, async (req, res) => {
++    const requestContext =
++      (res.locals.requestContext as RequestContext | undefined) ??
++      new RequestContext(extractRequestId(req.headers));
++    if (!res.headersSent) {
++      res.setHeader(REQUEST_ID_HEADER, requestContext.requestId);
++    }
+     debug("POST /messages");
+     try {
+       const sessionId = req.query.sessionId;
+       if (!isValidSessionId(sessionId)) {
+         debug("Invalid or missing sessionId parameter in request");
++        cliHttpLogger.warn(
++          "http.invalid_session_id",
++          { path: "/messages" },
++          requestContext.requestId,
++        );
+         res.status(400).json({
+           error: "Bad Request",
+           message: "Invalid or missing sessionId parameter",
+@@ -414,6 +473,11 @@ export function createCliHttpApp(options: CliHttpOptions): CliHttpContext {
+       const session = transports.get(sessionId);
+       if (!session) {
+         debug(`No transport found for session: ${sessionId}`);
++        cliHttpLogger.warn(
++          "http.session_not_found",
++          { path: "/messages" },
++          requestContext.requestId,
++        );
+         res.status(404).json({
+           error: "Not Found",
+           message: "Session not found",
+@@ -425,6 +489,11 @@ export function createCliHttpApp(options: CliHttpOptions): CliHttpContext {
+       await session.transport.handlePostMessage(req, res, req.body);
+     } catch (error) {
+       debug("Error handling message:", error);
++      cliHttpLogger.error(
++        "http.message_error",
++        { error: maskSensitiveText(error instanceof Error ? error.message : String(error)) },
++        requestContext.requestId,
++      );
+       if (!res.headersSent) {
+         res.status(500).send("Error handling request");
+       }
+diff --git a/lib/adapters/cloudflare.ts b/lib/adapters/cloudflare.ts
+index 76c6bb4..8b5abb8 100644
+--- a/lib/adapters/cloudflare.ts
++++ b/lib/adapters/cloudflare.ts
+@@ -5,6 +5,12 @@ import { TOOL_DEFINITIONS, executeTool } from "../core/tools.js";
+ import { ServerConfig, MCPRequest, MCPResponse } from "../types/index.js";
+ import { TIMEOUTS } from "../config/timeouts.js";
+ import { CACHE } from "../shared/utils/constants.js";
++import { createLogger } from "../infrastructure/logger.js";
++import { RequestContext } from "../infrastructure/tracing.js";
++import { maskSensitiveText } from "../shared/log-redaction.js";
++
++const cloudflareLogger = createLogger("cloudflare");
++const DEFAULT_HEALTH_KV_TIMEOUT_MS = 1000;
+ 
+ // Cloudflare Worker types
+ declare global {
+@@ -156,20 +162,84 @@ function withCorsHeaders(
+   });
+ }
+ 
+-function handleHealthCheck(request?: Request, env?: Env): Response {
++async function handleHealthCheck(
++  request?: Request,
++  env?: Env,
++  options?: { kvTimeoutMs?: number; requestContext?: RequestContext }
++): Promise<Response> {
++  const kv = env?.MCP_CACHE ?? env?.MCP_KV;
++  let overallStatus: "healthy" | "degraded" = "healthy";
++  let httpStatus = 200;
++  let kvCheck:
++    | { status: "unconfigured" }
++    | { status: "ok"; latencyMs: number }
++    | { status: "degraded"; latencyMs: number; error: string } = {
++    status: "unconfigured",
++  };
++
++  if (kv) {
++    const kvTimeoutMs =
++      options?.kvTimeoutMs !== undefined &&
++      Number.isFinite(options.kvTimeoutMs) &&
++      options.kvTimeoutMs > 0
++        ? options.kvTimeoutMs
++        : DEFAULT_HEALTH_KV_TIMEOUT_MS;
++    const probeStart = Date.now();
++    let timeoutId: ReturnType<typeof setTimeout> | undefined;
++    try {
++      const timeoutPromise = new Promise<never>((_resolve, reject) => {
++        timeoutId = setTimeout(() => {
++          reject(new Error(`KV health probe timed out after ${kvTimeoutMs}ms`));
++        }, kvTimeoutMs);
++        (timeoutId as { unref?: () => void }).unref?.();
++      });
++      await Promise.race([kv.get("__health_check__"), timeoutPromise]);
++      kvCheck = {
++        status: "ok",
++        latencyMs: Date.now() - probeStart,
++      };
++    } catch (error) {
++      const latencyMs = Date.now() - probeStart;
++      overallStatus = "degraded";
++      httpStatus = 503;
++      kvCheck = {
++        status: "degraded",
++        latencyMs,
++        error: "kv_unavailable",
++      };
++      cloudflareLogger.warn(
++        "health.kv_degraded",
++        {
++          latencyMs,
++          reason: maskSensitiveText(
++            error instanceof Error ? error.message : String(error)
++          ),
++        },
++        options?.requestContext?.requestId
++      );
++    } finally {
++      if (timeoutId !== undefined) {
++        clearTimeout(timeoutId);
++      }
++    }
++  }
++
+   const healthData = {
+-    status: "healthy",
++    status: overallStatus,
+     service: "mcp-dadosbr",
+     version: SERVER_VERSION,
+     timestamp: new Date().toISOString(),
+     runtime: "cloudflare-workers",
++    checks: {
++      kv: kvCheck,
++    },
+   };
+   const headers = request
+     ? getCorsHeaders(request, env, { isPublic: true })
+     : corsHeaders;
+ 
+   return new Response(JSON.stringify(healthData), {
+-    status: 200,
++    status: httpStatus,
+     headers: {
+       "Content-Type": "application/json",
+       ...headers,
+@@ -179,9 +249,11 @@ function handleHealthCheck(request?: Request, env?: Env): Response {
+ 
+ export async function handleMCPRequest(
+   request: MCPRequest,
+-  env: Env
++  env: Env,
++  requestContext?: RequestContext
+ ): Promise<MCPResponse> {
+   syncWorkerEnv(env);
++  const activeContext = requestContext ?? new RequestContext();
+ 
+   const serverConfig: ServerConfig = {
+     transport: env.MCP_TRANSPORT || "http",
+@@ -210,7 +282,10 @@ export async function handleMCPRequest(
+         const { name, arguments: args } = params;
+ 
+         try {
+-          const result = await executeTool(name, args, apiConfig, cache);
++          const result = await executeTool(name, args, apiConfig, cache, {
++            requestId: activeContext.requestId,
++            requestContext: activeContext,
++          });
+ 
+           if (result.ok) {
+             return {
+@@ -275,9 +350,11 @@ export async function handleMCPRequest(
+ 
+ export async function handleMCPEndpoint(
+   request: Request,
+-  env: Env
++  env: Env,
++  requestContext?: RequestContext
+ ): Promise<Response> {
+   syncWorkerEnv(env);
++  const activeContext = requestContext ?? new RequestContext();
+ 
+   try {
+     const body = await request.text();
+@@ -306,7 +383,7 @@ export async function handleMCPEndpoint(
+       );
+     }
+ 
+-    const response = await handleMCPRequest(mcpRequest, env);
++    const response = await handleMCPRequest(mcpRequest, env, activeContext);
+ 
+     return new Response(JSON.stringify(response), {
+       status: 200,
+@@ -316,7 +393,11 @@ export async function handleMCPEndpoint(
+       },
+     });
+   } catch (error) {
+-    console.error("Error handling MCP request:", error);
++    cloudflareLogger.error(
++      "mcp.endpoint_error",
++      { error: maskSensitiveText(error instanceof Error ? error.message : String(error)) },
++      activeContext.requestId
++    );
+ 
+     return new Response(
+       JSON.stringify({
+diff --git a/lib/core/mcp-server.ts b/lib/core/mcp-server.ts
+index c1bff3d..dc99013 100644
+--- a/lib/core/mcp-server.ts
++++ b/lib/core/mcp-server.ts
+@@ -10,9 +10,13 @@ import {
+ } from "@modelcontextprotocol/sdk/types.js";
+ import { SERVER_NAME, SERVER_VERSION } from "../config/index.js";
+ import { TIMEOUTS } from "../config/timeouts.js";
+-import { TOOL_DEFINITIONS, executeTool, resetMetrics } from "./tools.js";
++import { TOOL_DEFINITIONS, executeTool } from "./tools.js";
+ import { SequentialThinkingProcessor } from "./sequential-thinking.js";
+ import { RateLimiter } from "../infrastructure/rate-limiter.js";
++import { createLogger } from "../infrastructure/logger.js";
++import { RequestContext } from "../infrastructure/tracing.js";
++
++const mcpLogger = createLogger("mcp-server");
+ import { Cache, ApiConfig } from "../types/index.js";
+ import { formatErrorResponse, RateLimitError } from "../shared/errors.js";
+ import { readCnpjProfile } from "../shared/cnpj-profile.js";
+@@ -84,9 +88,6 @@ export interface MCPServerOptions {
+ export function createMCPServer(options: MCPServerOptions): Server {
+   const { apiConfig, cache, rateLimit } = options;
+ 
+-  // Reset metrics on server creation
+-  resetMetrics();
+-
+   // Session-local sequential thinking state (isolated per server/connection)
+   const thinkingProcessor = new SequentialThinkingProcessor();
+ 
+@@ -140,12 +141,19 @@ export function createMCPServer(options: MCPServerOptions): Server {
+   // Register call tool handler
+   server.setRequestHandler(CallToolRequestSchema, async (request) => {
+     const { name, arguments: args } = request.params;
++    const requestContext = new RequestContext();
++    requestContext.addMetadata("tool", name);
+ 
+     if (toolRateLimiter && !toolRateLimiter.checkLimit("mcp-session")) {
+       const retryAfter = Math.max(
+         1,
+         Math.ceil(toolRateLimiter.getResetTime("mcp-session") / 1000)
+       );
++      mcpLogger.warn(
++        "mcp.rate_limited",
++        { tool: name, retryAfter },
++        requestContext.requestId,
++      );
+       const errorDetails = formatErrorResponse(new RateLimitError(retryAfter));
+       return {
+         content: [
+@@ -169,6 +177,8 @@ export function createMCPServer(options: MCPServerOptions): Server {
+     try {
+       const result = await executeTool(name, args, apiConfig, cache, {
+         thinkingProcessor,
++        requestId: requestContext.requestId,
++        requestContext,
+       });
+ 
+       if (result.ok) {
+diff --git a/lib/core/registry.ts b/lib/core/registry.ts
+index c017c5b..f663737 100644
+--- a/lib/core/registry.ts
++++ b/lib/core/registry.ts
+@@ -6,12 +6,15 @@
+  */
+ 
+ import type { ZodType } from "zod";
++import type { RequestContext } from "../infrastructure/tracing.js";
+ import type { SequentialThinkingProcessor } from "./sequential-thinking.js";
+ import { Cache, LookupResult, ApiConfig } from "../types/index.js";
+ 
+ export interface ToolExecutionContext {
+     sessionId?: string;
+     thinkingProcessor?: SequentialThinkingProcessor;
++    requestId?: string;
++    requestContext?: RequestContext;
+ }
+ 
+ export interface ToolHandler {
+diff --git a/lib/core/tools.ts b/lib/core/tools.ts
+index 9d550d9..86669ed 100644
+--- a/lib/core/tools.ts
++++ b/lib/core/tools.ts
+@@ -5,8 +5,11 @@
+  * This file provides the public API (TOOL_DEFINITIONS, executeTool, metrics).
+  */
+ 
+-import { Cache, LookupResult, Metrics, ApiConfig } from "../types/index.js";
++import { Cache, LookupResult, Metrics, ApiConfig, ToolMetrics } from "../types/index.js";
+ import type { ToolExecutionContext } from "./registry.js";
++import { createLogger } from "../infrastructure/logger.js";
++import { RequestContext } from "../infrastructure/tracing.js";
++import { maskSensitiveText } from "../shared/log-redaction.js";
+ 
+ // Import barrel to trigger all tool registrations
+ import {
+@@ -15,8 +18,18 @@ import {
+   getToolCount,
+ } from "../tools/index.js";
+ 
++const toolsLogger = createLogger("tools");
++
+ // ─── Metrics ────────────────────────────────────────────────────────────────
+ 
++interface MutableToolMetrics {
++  requests: number;
++  errors: number;
++  cacheHits: number;
++  totalTimeMs: number;
++  maxTimeMs: number;
++}
++
+ let metrics: Metrics = {
+   requests: 0,
+   cacheHits: 0,
+@@ -25,6 +38,9 @@ let metrics: Metrics = {
+   startTime: Date.now(),
+ };
+ 
++const toolMetrics = new Map<string, MutableToolMetrics>();
++let lastMetricsLog = 0;
++
+ function logPerformanceMetrics(): void {
+   const uptime = (Date.now() - metrics.startTime) / 1000;
+   const avgTime = metrics.requests > 0 ? metrics.totalTime / metrics.requests : 0;
+@@ -34,19 +50,56 @@ function logPerformanceMetrics(): void {
+   );
+ }
+ 
+-let lastMetricsLog = 0;
+-
+-function recordMetrics(elapsed: number, fromCache: boolean, error: boolean): void {
++function recordMetrics(
++  elapsed: number,
++  fromCache: boolean,
++  error: boolean,
++  toolName?: string,
++): void {
+   metrics.requests++;
+   metrics.totalTime += elapsed;
+   if (fromCache) metrics.cacheHits++;
+   if (error) metrics.errors++;
++
++  if (toolName) {
++    const existing = toolMetrics.get(toolName) ?? {
++      requests: 0,
++      errors: 0,
++      cacheHits: 0,
++      totalTimeMs: 0,
++      maxTimeMs: 0,
++    };
++    existing.requests++;
++    existing.totalTimeMs += elapsed;
++    if (elapsed > existing.maxTimeMs) existing.maxTimeMs = elapsed;
++    if (fromCache) existing.cacheHits++;
++    if (error) existing.errors++;
++    toolMetrics.set(toolName, existing);
++  }
++
+   if (metrics.requests - lastMetricsLog >= 100) {
+     logPerformanceMetrics();
+     lastMetricsLog = metrics.requests;
+   }
+ }
+ 
++function createObservedCache(cache: Cache, onHit: () => void): Cache {
++  const observed: Cache = {
++    get: async <T = unknown>(key: string): Promise<T | null> => {
++      const value = await cache.get<T>(key);
++      if (value !== null && value !== undefined) {
++        onHit();
++      }
++      return value;
++    },
++    set: <T = unknown>(key: string, data: T): Promise<void> | void => cache.set(key, data),
++  };
++  if (cache.clear) {
++    observed.clear = () => cache.clear!();
++  }
++  return observed;
++}
++
+ // ─── Public API ─────────────────────────────────────────────────────────────
+ 
+ /**
+@@ -55,7 +108,7 @@ function recordMetrics(elapsed: number, fromCache: boolean, error: boolean): voi
+ export const TOOL_DEFINITIONS = getToolDefinitions();
+ 
+ /**
+- * Execute a tool by name.
++ * Execute a tool by name with correlation tracing and RED + cache-hit metrics.
+  */
+ export async function executeTool(
+   name: string,
+@@ -65,12 +118,55 @@ export async function executeTool(
+   context?: ToolExecutionContext,
+ ): Promise<LookupResult> {
+   const startTime = Date.now();
++  const requestContext = context?.requestContext ?? new RequestContext(context?.requestId);
++  let cacheHit = false;
++  const observedCache = cache
++    ? createObservedCache(cache, () => {
++        cacheHit = true;
++      })
++    : undefined;
++
+   try {
+-    const result = await executeRegisteredTool(name, args, apiConfig, cache, context);
+-    recordMetrics(Date.now() - startTime, false, !result.ok);
++    const result = await executeRegisteredTool(name, args, apiConfig, observedCache, {
++      ...context,
++      requestId: requestContext.requestId,
++      requestContext,
++    });
++    const elapsedMs = Date.now() - startTime;
++    recordMetrics(elapsedMs, cacheHit, !result.ok, name);
++    if (result.ok) {
++      toolsLogger.debug(
++        "tool.executed",
++        { tool: name, ok: true, cacheHit, elapsedMs },
++        requestContext.requestId,
++      );
++    } else {
++      toolsLogger.warn(
++        "tool.failed",
++        {
++          tool: name,
++          ok: false,
++          cacheHit,
++          elapsedMs,
++          error: maskSensitiveText(result.error || "unknown error"),
++        },
++        requestContext.requestId,
++      );
++    }
+     return result;
+   } catch (err) {
+-    recordMetrics(Date.now() - startTime, false, true);
++    const elapsedMs = Date.now() - startTime;
++    recordMetrics(elapsedMs, false, true, name);
++    const errMsg = err instanceof Error ? err.message : String(err);
++    toolsLogger.error(
++      "tool.exception",
++      {
++        tool: name,
++        elapsedMs,
++        error: maskSensitiveText(errMsg),
++      },
++      requestContext.requestId,
++    );
+     throw err;
+   }
+ }
+@@ -79,6 +175,21 @@ export function getMetrics(): Metrics {
+   return { ...metrics };
+ }
+ 
++export function getToolMetrics(): Record<string, ToolMetrics> {
++  const snapshot: Record<string, ToolMetrics> = {};
++  for (const [name, entry] of toolMetrics.entries()) {
++    snapshot[name] = {
++      requests: entry.requests,
++      errors: entry.errors,
++      cacheHits: entry.cacheHits,
++      totalTimeMs: entry.totalTimeMs,
++      avgTimeMs: entry.requests > 0 ? Math.round(entry.totalTimeMs / entry.requests) : 0,
++      maxTimeMs: entry.maxTimeMs,
++    };
++  }
++  return snapshot;
++}
++
+ export function resetMetrics(): void {
+   metrics = {
+     requests: 0,
+@@ -87,4 +198,6 @@ export function resetMetrics(): void {
+     totalTime: 0,
+     startTime: Date.now(),
+   };
++  lastMetricsLog = 0;
++  toolMetrics.clear();
+ }
+diff --git a/lib/infrastructure/logger.ts b/lib/infrastructure/logger.ts
+index 29ec0de..d2219cd 100644
+--- a/lib/infrastructure/logger.ts
++++ b/lib/infrastructure/logger.ts
+@@ -1,6 +1,6 @@
+ /**
+  * Structured logging system with levels
+- * Provides consistent logging across the application
++ * Always writes to stderr (console.error) so stdio MCP JSON-RPC framing on stdout is never corrupted.
+  */
+ 
+ export enum LogLevel {
+@@ -15,16 +15,17 @@ export interface LogContext {
+ }
+ 
+ export class Logger {
+-  private level: LogLevel;
++  private explicitLevel?: LogLevel;
+   private module: string;
+ 
+   constructor(module: string = 'app', level?: LogLevel) {
+     this.module = module;
+-    this.level = level ?? this.getLogLevelFromEnv();
++    this.explicitLevel = level;
+   }
+ 
+   private getLogLevelFromEnv(): LogLevel {
+-    const envLevel = process.env.LOG_LEVEL?.toLowerCase();
++    const env = typeof process !== 'undefined' && process.env ? process.env : undefined;
++    const envLevel = env?.LOG_LEVEL?.toLowerCase();
+     switch (envLevel) {
+       case 'debug':
+         return LogLevel.DEBUG;
+@@ -35,12 +36,20 @@ export class Logger {
+       case 'error':
+         return LogLevel.ERROR;
+       default:
+-        return process.env.NODE_ENV === 'production' ? LogLevel.INFO : LogLevel.DEBUG;
++        return env?.NODE_ENV === 'development' ? LogLevel.DEBUG : LogLevel.INFO;
+     }
+   }
+ 
++  getLevel(): LogLevel {
++    return this.explicitLevel ?? this.getLogLevelFromEnv();
++  }
++
++  setLevel(level: LogLevel): void {
++    this.explicitLevel = level;
++  }
++
+   private shouldLog(level: LogLevel): boolean {
+-    return level >= this.level;
++    return level >= this.getLevel();
+   }
+ 
+   private formatMessage(level: string, message: string, context?: LogContext, requestId?: string): string {
+@@ -56,28 +65,39 @@ export class Logger {
+       logObject.requestId = requestId;
+     }
+ 
+-    if (context) {
++    if (context !== undefined) {
+       logObject.context = context;
+     }
+ 
+-    return JSON.stringify(logObject);
++    try {
++      return JSON.stringify(logObject);
++    } catch {
++      return JSON.stringify({
++        timestamp,
++        level,
++        module: this.module,
++        message,
++        ...(requestId ? { requestId } : {}),
++        contextUnserializable: true,
++      });
++    }
+   }
+ 
+   debug(message: string, context?: LogContext, requestId?: string): void {
+     if (this.shouldLog(LogLevel.DEBUG)) {
+-      console.log(this.formatMessage('debug', message, context, requestId));
++      console.error(this.formatMessage('debug', message, context, requestId));
+     }
+   }
+ 
+   info(message: string, context?: LogContext, requestId?: string): void {
+     if (this.shouldLog(LogLevel.INFO)) {
+-      console.log(this.formatMessage('info', message, context, requestId));
++      console.error(this.formatMessage('info', message, context, requestId));
+     }
+   }
+ 
+   warn(message: string, context?: LogContext, requestId?: string): void {
+     if (this.shouldLog(LogLevel.WARN)) {
+-      console.warn(this.formatMessage('warn', message, context, requestId));
++      console.error(this.formatMessage('warn', message, context, requestId));
+     }
+   }
+ 
+@@ -97,6 +117,6 @@ export class Logger {
+ export const logger = new Logger('mcp-dadosbr');
+ 
+ // Create logger for specific module
+-export function createLogger(module: string): Logger {
+-  return new Logger(module);
++export function createLogger(module: string, level?: LogLevel): Logger {
++  return new Logger(module, level);
+ }
+diff --git a/lib/infrastructure/tracing.ts b/lib/infrastructure/tracing.ts
+index 8c2e5d5..d272cbf 100644
+--- a/lib/infrastructure/tracing.ts
++++ b/lib/infrastructure/tracing.ts
+@@ -1,20 +1,31 @@
+ /**
+  * Request tracing and correlation ID management
+- * Enables tracking requests across the system
++ * Uses Web Crypto APIs so tracing is portable across Node.js and Cloudflare Workers.
+  */
+ 
+ import { createLogger } from './logger.js';
+ 
+ const logger = createLogger('tracing');
+ 
++export const REQUEST_ID_HEADER = 'X-Request-Id';
++
++const VALID_REQUEST_ID_REGEX = /^[A-Za-z0-9._:-]{1,128}$/;
++
+ /**
+- * Generate a unique request ID for tracing
+- * Format: req_<timestamp>_<random>
++ * Generate a cryptographically random unique request ID for tracing.
+  */
+ export function generateRequestId(): string {
+-  const timestamp = Date.now().toString(36);
+-  const random = Math.random().toString(36).substring(2, 10);
+-  return `req_${timestamp}_${random}`;
++  const webCrypto = globalThis.crypto;
++  if (webCrypto && typeof webCrypto.randomUUID === 'function') {
++    return `req_${webCrypto.randomUUID()}`;
++  }
++  if (webCrypto && typeof webCrypto.getRandomValues === 'function') {
++    const bytes = new Uint8Array(16);
++    webCrypto.getRandomValues(bytes);
++    const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
++    return `req_${hex}`;
++  }
++  throw new Error('Web Crypto API is required to generate request IDs');
+ }
+ 
+ /**
+@@ -101,10 +112,39 @@ export class RequestContext {
+   }
+ }
+ 
++function sanitizeRequestId(raw: string | undefined): string | undefined {
++  if (typeof raw !== 'string') return undefined;
++  const trimmed = raw.trim();
++  if (!trimmed || !VALID_REQUEST_ID_REGEX.test(trimmed)) {
++    return undefined;
++  }
++  return trimmed;
++}
++
+ /**
+- * Extract request ID from HTTP headers
++ * Extract and sanitize request ID from HTTP Headers or plain header records.
++ * Rejects control characters (CR/LF), whitespace, and overly long values.
+  */
+-export function extractRequestId(headers: Record<string, string | string[] | undefined>): string | undefined {
+-  const headerId = headers['x-request-id'] || headers['X-Request-Id'];
+-  return typeof headerId === 'string' ? headerId : undefined;
++export function extractRequestId(
++  headers: Headers | Record<string, string | string[] | undefined>,
++): string | undefined {
++  if (typeof (headers as Headers).get === 'function') {
++    const val = (headers as Headers).get(REQUEST_ID_HEADER);
++    return sanitizeRequestId(val ?? undefined);
++  }
++
++  const record = headers as Record<string, string | string[] | undefined>;
++  let raw: string | string[] | undefined =
++    record['x-request-id'] ?? record['X-Request-Id'];
++  if (raw === undefined) {
++    for (const [key, value] of Object.entries(record)) {
++      if (key.toLowerCase() === 'x-request-id') {
++        raw = value;
++        break;
++      }
++    }
++  }
++
++  const candidate = Array.isArray(raw) ? raw[0] : raw;
++  return sanitizeRequestId(candidate);
+ }
+diff --git a/lib/types/index.ts b/lib/types/index.ts
+index f5fff0e..4ee9b68 100644
+--- a/lib/types/index.ts
++++ b/lib/types/index.ts
+@@ -50,6 +50,15 @@ export interface Metrics {
+   startTime: number;
+ }
+ 
++export interface ToolMetrics {
++  requests: number;
++  errors: number;
++  cacheHits: number;
++  totalTimeMs: number;
++  avgTimeMs: number;
++  maxTimeMs: number;
++}
++
+ // Cache interfaces
+ export interface CacheEntry {
+   data: unknown;
+diff --git a/lib/workers/auth.ts b/lib/workers/auth.ts
+index e1b1493..f4e1714 100644
+--- a/lib/workers/auth.ts
++++ b/lib/workers/auth.ts
+@@ -3,6 +3,10 @@
+  */
+ 
+ import { Env, getCorsHeaders } from "../adapters/cloudflare.js";
++import { createLogger } from "../infrastructure/logger.js";
++import type { RequestContext } from "../infrastructure/tracing.js";
++
++const authLogger = createLogger("worker-auth");
+ 
+ export interface AuthResult {
+   authenticated: boolean;
+@@ -42,7 +46,8 @@ export function constantTimeEqual(a: string, b: string): boolean {
+  */
+ export async function authenticateRequest(
+   request: Request,
+-  env: Env
++  env: Env,
++  requestContext?: RequestContext
+ ): Promise<AuthResult> {
+   const url = new URL(request.url);
+   if (isPublicPath(url.pathname)) {
+@@ -63,7 +68,20 @@ export async function authenticateRequest(
+     }
+ 
+     if (!providedKey || !constantTimeEqual(providedKey, expectedApiKey)) {
+-      console.error(`[Auth] Unauthorized request to ${url.pathname}`);
++      authLogger.warn(
++        "auth.unauthorized",
++        {
++          event: "auth_failure",
++          status: 401,
++          method: request.method,
++          path: url.pathname,
++          reason: providedKey ? "invalid_credentials" : "missing_credentials",
++          authHeaderPresent: Boolean(authHeader),
++          apiKeyHeaderPresent: Boolean(apiKey),
++          clientIp: request.headers.get("CF-Connecting-IP") || "unknown",
++        },
++        requestContext?.requestId
++      );
+       return {
+         authenticated: false,
+         error: new Response(
+diff --git a/lib/workers/sse.ts b/lib/workers/sse.ts
+index 48c4743..1c163d3 100644
+--- a/lib/workers/sse.ts
++++ b/lib/workers/sse.ts
+@@ -7,8 +7,13 @@ import { Env, handleMCPRequest, corsHeaders } from "../adapters/cloudflare.js";
+ import { SERVER_VERSION } from "../config/index.js";
+ import { MCPRequest } from "../types/index.js";
+ import { TIMEOUTS } from "../config/timeouts.js";
++import { createLogger } from "../infrastructure/logger.js";
++import type { RequestContext } from "../infrastructure/tracing.js";
++import { maskSensitiveText } from "../shared/log-redaction.js";
+ import "./types.js";
+ 
++const sseLogger = createLogger("worker-sse");
++
+ type SSECloseReason = "timeout" | "abort" | "closed" | "error";
+ 
+ const SSE_STREAM_HIGH_WATER_MARK = 16;
+@@ -20,7 +25,8 @@ const SSE_STREAM_HIGH_WATER_MARK = 16;
+ export async function handleSSEEndpoint(
+   request: Request,
+   env: Env,
+-  ctx?: ExecutionContext
++  ctx?: ExecutionContext,
++  requestContext?: RequestContext
+ ): Promise<Response> {
+   // Check if client accepts SSE (relaxed for MCP connectors)
+   const acceptHeader = request.headers.get("Accept");
+@@ -122,7 +128,11 @@ export async function handleSSEEndpoint(
+       streamController.enqueue(encoder.encode(message));
+       return true;
+     } catch (error) {
+-      console.error("SSE write error:", error);
++      sseLogger.error(
++        "sse.write_error",
++        { error: maskSensitiveText(error instanceof Error ? error.message : String(error)) },
++        requestContext?.requestId
++      );
+       cleanup("error");
+       return false;
+     }
+@@ -144,7 +154,11 @@ export async function handleSSEEndpoint(
+ 
+         // Arm connection timeout cleanly so stalled clients always close & settle waitUntil
+         timeoutHandle = setTimeout(() => {
+-          console.log("SSE connection timeout reached, closing gracefully");
++          sseLogger.info(
++            "sse.connection_timeout",
++            { reason: "timeout" },
++            requestContext?.requestId
++          );
+           cleanup("timeout");
+         }, TIMEOUTS.SSE_CONNECTION_MS);
+         (timeoutHandle as { unref?: () => void }).unref?.();
+@@ -214,7 +228,7 @@ export async function handleSSEEndpoint(
+               const body = await request.text();
+               if (body && !closed) {
+                 const mcpRequest: MCPRequest = JSON.parse(body);
+-                const response = await handleMCPRequest(mcpRequest, env);
++                const response = await handleMCPRequest(mcpRequest, env, requestContext);
+                 if (!closed) {
+                   sendSSEMessage(
+                     response,
+@@ -224,7 +238,11 @@ export async function handleSSEEndpoint(
+                 }
+               }
+             } catch (error) {
+-              console.error("SSE request processing error:", error);
++              sseLogger.error(
++                "sse.request_error",
++                { error: maskSensitiveText(error instanceof Error ? error.message : String(error)) },
++                requestContext?.requestId
++              );
+               if (!closed) {
+                 sendSSEMessage(
+                   {
+diff --git a/lib/workers/worker.ts b/lib/workers/worker.ts
+index d22db20..d5df166 100644
+--- a/lib/workers/worker.ts
++++ b/lib/workers/worker.ts
+@@ -15,6 +15,11 @@ import {
+ } from '../adapters/cloudflare.js';
+ import { SERVER_VERSION } from '../config/index.js';
+ import { TOOL_DEFINITIONS } from '../core/tools.js';
++import {
++  extractRequestId,
++  REQUEST_ID_HEADER,
++  RequestContext,
++} from '../infrastructure/tracing.js';
+ import { authenticateRequest, isPublicPath } from './auth.js';
+ import { checkRateLimit } from './rate-limit.js';
+ import { handleSSEEndpoint } from './sse.js';
+@@ -39,11 +44,12 @@ async function routeRequest(
+   request: Request,
+   env: Env,
+   url: URL,
+-  ctx?: ExecutionContext
++  ctx?: ExecutionContext,
++  requestContext?: RequestContext
+ ): Promise<Response> {
+   switch (url.pathname) {
+     case '/health':
+-      return handleHealthCheck(request, env);
++      return await handleHealthCheck(request, env, { requestContext });
+ 
+     case '/mcp':
+       // HTTP JSON-RPC endpoint
+@@ -53,7 +59,7 @@ async function routeRequest(
+           headers: corsHeaders,
+         });
+       }
+-      return await handleMCPEndpoint(request, env);
++      return await handleMCPEndpoint(request, env, requestContext);
+ 
+     case '/sse':
+       // Server-Sent Events endpoint for streaming MCP
+@@ -63,7 +69,7 @@ async function routeRequest(
+           headers: corsHeaders,
+         });
+       }
+-      return await handleSSEEndpoint(request, env, ctx);
++      return await handleSSEEndpoint(request, env, ctx, requestContext);
+ 
+     case '/.well-known/oauth-authorization-server':
+     case '/.well-known/openid_configuration':
+@@ -154,6 +160,16 @@ async function routeRequest(
+   }
+ }
+ 
++function withRequestId(response: Response, requestId: string): Response {
++  const headers = new Headers(response.headers);
++  headers.set(REQUEST_ID_HEADER, requestId);
++  return new Response(response.body, {
++    status: response.status,
++    statusText: response.statusText,
++    headers,
++  });
++}
++
+ /**
+  * Main Cloudflare Worker fetch handler
+  */
+@@ -164,6 +180,7 @@ export default {
+     ctx: ExecutionContext
+   ): Promise<Response> {
+     syncWorkerEnv(env);
++    const requestContext = new RequestContext(extractRequestId(request.headers));
+ 
+     const url = new URL(request.url);
+     const isPublic = isPublicPath(url.pathname);
+@@ -171,22 +188,31 @@ export default {
+     // Handle CORS preflight
+     const corsResponse = handleCORS(request, env, { isPublic });
+     if (corsResponse) {
+-      return corsResponse;
++      return withRequestId(corsResponse, requestContext.requestId);
+     }
+ 
+     // Apply rate limiting
+     const rateLimitResult = await checkRateLimit(request, env);
+     if (!rateLimitResult.allowed) {
+-      return withCorsHeaders(rateLimitResult.error!, request, env, { isPublic });
++      return withRequestId(
++        withCorsHeaders(rateLimitResult.error!, request, env, { isPublic }),
++        requestContext.requestId
++      );
+     }
+ 
+     // Apply authentication
+-    const authResult = await authenticateRequest(request, env);
++    const authResult = await authenticateRequest(request, env, requestContext);
+     if (!authResult.authenticated) {
+-      return withCorsHeaders(authResult.error!, request, env, { isPublic });
++      return withRequestId(
++        withCorsHeaders(authResult.error!, request, env, { isPublic }),
++        requestContext.requestId
++      );
+     }
+ 
+-    const response = await routeRequest(request, env, url, ctx);
+-    return withCorsHeaders(response, request, env, { isPublic });
++    const response = await routeRequest(request, env, url, ctx, requestContext);
++    return withRequestId(
++      withCorsHeaders(response, request, env, { isPublic }),
++      requestContext.requestId
++    );
+   },
+ } satisfies WorkerExportedHandler<Env>;
+diff --git a/test/unit/architecture-hygiene.test.ts b/test/unit/architecture-hygiene.test.ts
+index 53ec881..5c10739 100644
+--- a/test/unit/architecture-hygiene.test.ts
++++ b/test/unit/architecture-hygiene.test.ts
+@@ -142,7 +142,8 @@ describe("FND-0012 / TCK-0024: Architecture Hygiene, Contract Unification & Work
+     };
+     expect(openApi.info.version).toBe(pkg.version);
+ 
+-    const healthJson = (await handleHealthCheck().json()) as { version: string };
++    const healthResp = await handleHealthCheck();
++    const healthJson = (await healthResp.json()) as { version: string };
+     expect(healthJson.version).toBe(pkg.version);
+ 
+     const ctx = {
+diff --git a/test/unit/observability.test.ts b/test/unit/observability.test.ts
+new file mode 100644
+index 0000000..340d162
+--- /dev/null
++++ b/test/unit/observability.test.ts
+@@ -0,0 +1,483 @@
++import http from "node:http";
++import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
++import { Client } from "@modelcontextprotocol/sdk/client/index.js";
++import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
++import { resolveApiConfig } from "../../lib/config/index.js";
++import { MemoryCache } from "../../lib/core/cache.js";
++import { createMCPServer } from "../../lib/core/mcp-server.js";
++import {
++  executeTool,
++  getMetrics,
++  getToolMetrics,
++  resetMetrics,
++} from "../../lib/core/tools.js";
++import { resetCircuitBreakers } from "../../lib/core/http-client.js";
++import { createLogger, Logger, LogLevel } from "../../lib/infrastructure/logger.js";
++import {
++  extractRequestId,
++  generateRequestId,
++  REQUEST_ID_HEADER,
++  RequestContext,
++} from "../../lib/infrastructure/tracing.js";
++import { createCliHttpApp, type CliHttpContext } from "../../lib/adapters/cli-http.js";
++import { handleHealthCheck, type Env } from "../../lib/adapters/cloudflare.js";
++import { authenticateRequest } from "../../lib/workers/auth.js";
++import { handleSSEEndpoint } from "../../lib/workers/sse.js";
++import worker from "../../lib/workers/worker.js";
++
++function jsonResponse(body: unknown, status = 200): Response {
++  return new Response(JSON.stringify(body), {
++    status,
++    headers: { "Content-Type": "application/json" },
++  });
++}
++
++describe("FND-0013 / TCK-0025: Observability (Logger, Tracing, RED Metrics, Auth Audit & Health)", () => {
++  const apiConfig = resolveApiConfig();
++  const originalEnv = { ...process.env };
++  const activeServers: Array<{ server: http.Server; ctx: CliHttpContext }> = [];
++
++  beforeEach(() => {
++    resetMetrics();
++    resetCircuitBreakers();
++    delete process.env.LOG_LEVEL;
++  });
++
++  afterEach(async () => {
++    vi.unstubAllGlobals();
++    while (activeServers.length > 0) {
++      const entry = activeServers.pop()!;
++      entry.ctx.closeAll();
++      await new Promise<void>((resolve) => {
++        if (!entry.server.listening) {
++          resolve();
++          return;
++        }
++        entry.server.close(() => resolve());
++      });
++    }
++    process.env = { ...originalEnv };
++    resetMetrics();
++    resetCircuitBreakers();
++    vi.restoreAllMocks();
++    vi.useRealTimers();
++  });
++
++  describe("Logger (stderr-only & Worker-safe)", () => {
++    it("emits all log levels strictly via console.error (zero stdout console.log)", () => {
++      const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
++      const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
++
++      const modLogger = createLogger("obs-test", LogLevel.DEBUG);
++      expect(modLogger.getLevel()).toBe(LogLevel.DEBUG);
++      modLogger.debug("debug-msg", { step: 1 }, "req-1");
++      modLogger.info("info-msg", { step: 2 }, "req-1");
++      modLogger.warn("warn-msg", { step: 3 }, "req-1");
++      modLogger.error("error-msg", { step: 4 }, "req-1");
++      modLogger.legacyLog("legacy-msg");
++
++      expect(logSpy).not.toHaveBeenCalled();
++      expect(errSpy).toHaveBeenCalledTimes(5);
++
++      const parsedFirst = JSON.parse(String(errSpy.mock.calls[0][0])) as Record<string, unknown>;
++      expect(parsedFirst).toMatchObject({
++        level: "debug",
++        module: "obs-test",
++        message: "debug-msg",
++        requestId: "req-1",
++        context: { step: 1 },
++      });
++    });
++
++    it("resolves LOG_LEVEL dynamically, falls back cleanly across NODE_ENV and handles circular context / missing process", () => {
++      const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
++      const dynamicLogger = new Logger("dyn");
++
++      process.env.NODE_ENV = "production";
++      expect(dynamicLogger.getLevel()).toBe(LogLevel.INFO);
++
++      process.env.NODE_ENV = "development";
++      expect(dynamicLogger.getLevel()).toBe(LogLevel.DEBUG);
++
++      process.env.LOG_LEVEL = "warn";
++      expect(dynamicLogger.getLevel()).toBe(LogLevel.WARN);
++      dynamicLogger.info("filtered-info");
++      expect(errSpy).not.toHaveBeenCalled();
++
++      process.env.LOG_LEVEL = "error";
++      expect(dynamicLogger.getLevel()).toBe(LogLevel.ERROR);
++      dynamicLogger.warn("filtered-warn");
++      expect(errSpy).not.toHaveBeenCalled();
++
++      dynamicLogger.setLevel(LogLevel.INFO);
++      expect(dynamicLogger.getLevel()).toBe(LogLevel.INFO);
++
++      // Circular reference safety fallback
++      const circular: Record<string, unknown> = {};
++      circular.self = circular;
++      dynamicLogger.info("circular-safe", circular, "req-circ");
++      expect(errSpy).toHaveBeenCalledTimes(1);
++      expect(JSON.parse(String(errSpy.mock.calls[0][0]))).toMatchObject({
++        message: "circular-safe",
++        requestId: "req-circ",
++        contextUnserializable: true,
++      });
++
++      // Missing process object simulation (Cloudflare Workers without nodejs_compat process)
++      const workerLogger = new Logger("worker-env");
++      let workerLevel: LogLevel;
++      const savedProcess = globalThis.process;
++      try {
++        Object.defineProperty(globalThis, "process", {
++          value: undefined,
++          configurable: true,
++          writable: true,
++        });
++        workerLevel = workerLogger.getLevel();
++        workerLogger.info("worker-safe-msg");
++      } finally {
++        Object.defineProperty(globalThis, "process", {
++          value: savedProcess,
++          configurable: true,
++          writable: true,
++        });
++      }
++      expect(workerLevel).toBe(LogLevel.INFO);
++      expect(errSpy).toHaveBeenCalledTimes(2);
++    });
++  });
++
++  describe("Tracing & Web Crypto Correlation IDs", () => {
++    it("generates CSPRNG requestIds via Web Crypto without Math.random and validates extractRequestId", () => {
++      const randomSpy = vi.spyOn(Math, "random");
++
++      const idUuid = generateRequestId();
++      expect(idUuid).toMatch(/^req_[0-9a-f-]{36}$/i);
++      expect(randomSpy).not.toHaveBeenCalled();
++
++      // Fallback to crypto.getRandomValues when randomUUID is absent
++      vi.stubGlobal("crypto", {
++        getRandomValues: (arr: Uint8Array) => {
++          for (let i = 0; i < arr.length; i++) arr[i] = i + 1;
++          return arr;
++        },
++      });
++      const idRandomValues = generateRequestId();
++      expect(idRandomValues).toBe("req_0102030405060708090a0b0c0d0e0f10");
++      expect(randomSpy).not.toHaveBeenCalled();
++
++      // Fail-closed when Web Crypto is missing
++      vi.stubGlobal("crypto", undefined);
++      expect(() => generateRequestId()).toThrow(/Web Crypto API/i);
++
++      // Header extraction & CRLF / malformed rejection
++      expect(extractRequestId(new Headers({ "X-Request-Id": "  trace_abc-123.4:5  " }))).toBe(
++        "trace_abc-123.4:5"
++      );
++      expect(extractRequestId({ "x-request-id": ["arr-id-1", "arr-id-2"] })).toBe("arr-id-1");
++      expect(extractRequestId({ "X-REQUEST-ID": "upper-case-header" })).toBe("upper-case-header");
++      expect(extractRequestId({ "x-request-id": "bad id with spaces" })).toBeUndefined();
++      expect(extractRequestId({ "x-request-id": "bad\r\ninject" })).toBeUndefined();
++      expect(extractRequestId({ "x-request-id": "a".repeat(129) })).toBeUndefined();
++    });
++
++    it("tracks metadata, elapsed time, and structured logs in RequestContext", () => {
++      const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
++      process.env.LOG_LEVEL = "debug";
++      const ctx = new RequestContext("req-fixed-123");
++
++      ctx.addMetadata("tenant", "public-data");
++      expect(ctx.getMetadata("tenant")).toBe("public-data");
++      expect(ctx.getAllMetadata()).toEqual({ tenant: "public-data" });
++      expect(ctx.getElapsedMs()).toBeGreaterThanOrEqual(0);
++
++      ctx.debug("trace-debug", { op: "d" });
++      ctx.info("trace-info", { op: "i" });
++      ctx.warn("trace-warn", { op: "w" });
++      ctx.error("trace-error", { op: "e" });
++
++      expect(errSpy).toHaveBeenCalledTimes(4);
++      const last = JSON.parse(String(errSpy.mock.calls[3][0])) as Record<string, unknown>;
++      expect(last).toMatchObject({
++        level: "error",
++        module: "tracing",
++        requestId: "req-fixed-123",
++        message: "trace-error",
++        context: expect.objectContaining({
++          tenant: "public-data",
++          op: "e",
++          elapsedMs: expect.any(Number),
++        }),
++      });
++    });
++  });
++
++  describe("Tools RED Metrics, Real cacheHits & Multi-Session Stability", () => {
++    it("records real cacheHits, per-tool RED metrics, resets lastMetricsLog, and preserves metrics across createMCPServer sessions", async () => {
++      const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
++      const cache = new MemoryCache(50, 60_000);
++      vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
++        jsonResponse({ cnpj: "11222333000181", razao_social: "ACME SA" })
++      );
++
++      const missRes = await executeTool("cnpj_lookup", { cnpj: "11222333000181" }, apiConfig, cache, {
++        requestId: "req-miss",
++      });
++      expect(missRes.ok).toBe(true);
++      expect(getMetrics().cacheHits).toBe(0);
++
++      const hitRes = await executeTool("cnpj_lookup", { cnpj: "11.222.333/0001-81" }, apiConfig, cache, {
++        requestId: "req-hit",
++      });
++      expect(hitRes.ok).toBe(true);
++      expect(getMetrics()).toMatchObject({ requests: 2, cacheHits: 1, errors: 0 });
++      expect(getToolMetrics().cnpj_lookup).toMatchObject({
++        requests: 2,
++        cacheHits: 1,
++        errors: 0,
++      });
++
++      // Second SSE / MCP session creation MUST NOT wipe accumulated global metrics
++      const server2 = createMCPServer({ apiConfig, cache, rateLimit: false });
++      const client2 = new Client({ name: "obs-client", version: "1.0.0" });
++      const [cT, sT] = InMemoryTransport.createLinkedPair();
++      try {
++        await server2.connect(sT);
++        await client2.connect(cT);
++        expect(getMetrics().requests).toBe(2);
++        const callRes = await client2.callTool({
++          name: "cpf_validate",
++          arguments: { cpf: "52998224725" },
++        });
++        expect(callRes.isError).toBeFalsy();
++      } finally {
++        await client2.close();
++        await server2.close();
++      }
++
++      expect(getMetrics().requests).toBe(3);
++      expect(getToolMetrics().cpf_validate.requests).toBe(1);
++
++      // resetMetrics() must reset lastMetricsLog so another 100 calls emit [metrics] again
++      resetMetrics();
++      expect(getMetrics()).toMatchObject({ requests: 0, cacheHits: 0, errors: 0 });
++      expect(getToolMetrics()).toEqual({});
++
++      for (let i = 0; i < 100; i++) {
++        await executeTool("cpf_validate", { cpf: "52998224725" }, apiConfig);
++      }
++      resetMetrics();
++      errSpy.mockClear();
++      for (let i = 0; i < 100; i++) {
++        await executeTool("cpf_validate", { cpf: "52998224725" }, apiConfig);
++      }
++      expect(errSpy).toHaveBeenCalledWith(expect.stringMatching(/^\[metrics\] requests=100 /));
++    });
++  });
++
++  describe("Worker Auth 401 Audit Log, X-Request-Id, Bounded KV Health & SSE Logs", () => {
++    it("emits structured 401 audit log with requestId without leaking secrets or query params", async () => {
++      const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
++      const ctx = {
++        waitUntil: vi.fn(),
++        passThroughOnException: vi.fn(),
++      } as unknown as ExecutionContext;
++      const env: Env = {
++        MCP_API_KEY: "super-secret-master-key",
++        MCP_DISABLE_RATE_LIMIT: "true",
++      };
++
++      const badToken = "wrong-token-do-not-log";
++      const req = new Request(`https://worker.example/mcp?secretQuery=shouldNotLog`, {
++        method: "POST",
++        headers: {
++          "Content-Type": "application/json",
++          Authorization: `Bearer ${badToken}`,
++          "CF-Connecting-IP": "198.51.100.77",
++          [REQUEST_ID_HEADER]: "client-corr-01",
++        },
++        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }),
++      });
++
++      const res = await worker.fetch(req, env, ctx);
++      expect(res.status).toBe(401);
++      expect(res.headers.get(REQUEST_ID_HEADER)).toBe("client-corr-01");
++
++      const combinedLogs = errSpy.mock.calls.map((c) => String(c[0])).join("\n");
++      expect(combinedLogs).not.toContain(badToken);
++      expect(combinedLogs).not.toContain("super-secret-master-key");
++      expect(combinedLogs).not.toContain("shouldNotLog");
++
++      const authLogCall = errSpy.mock.calls
++        .map((c) => {
++          try {
++            return JSON.parse(String(c[0])) as Record<string, unknown>;
++          } catch {
++            return null;
++          }
++        })
++        .find((entry) => entry?.message === "auth.unauthorized");
++
++      expect(authLogCall).toMatchObject({
++        level: "warn",
++        module: "worker-auth",
++        requestId: "client-corr-01",
++        context: {
++          event: "auth_failure",
++          status: 401,
++          method: "POST",
++          path: "/mcp",
++          reason: "invalid_credentials",
++          authHeaderPresent: true,
++          apiKeyHeaderPresent: false,
++          clientIp: "198.51.100.77",
++        },
++      });
++
++      // Missing credentials direct authenticateRequest check
++      const missingRes = await authenticateRequest(
++        new Request("https://worker.example/search", { method: "POST" }),
++        env
++      );
++      expect(missingRes.authenticated).toBe(false);
++    });
++
++    it("probes KV in /health with bounded timeout (200 ok / unconfigured, 503 degraded on error or timeout)", async () => {
++      const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
++
++      // Unconfigured
++      const unconfRes = await handleHealthCheck(new Request("https://worker.example/health"), {});
++      expect(unconfRes.status).toBe(200);
++      expect(await unconfRes.json()).toMatchObject({
++        status: "healthy",
++        checks: { kv: { status: "unconfigured" } },
++      });
++
++      // Healthy KV
++      const okKv = {
++        get: vi.fn().mockResolvedValue(null),
++        put: vi.fn(),
++        delete: vi.fn(),
++      } as unknown as KVNamespace;
++      const okRes = await handleHealthCheck(new Request("https://worker.example/health"), {
++        MCP_CACHE: okKv,
++      });
++      expect(okRes.status).toBe(200);
++      expect(await okRes.json()).toMatchObject({
++        status: "healthy",
++        checks: { kv: { status: "ok", latencyMs: expect.any(Number) } },
++      });
++
++      // Failing KV
++      const failKv = {
++        get: vi.fn().mockRejectedValue(new Error("KV internal token-xyz failure")),
++        put: vi.fn(),
++        delete: vi.fn(),
++      } as unknown as KVNamespace;
++      const failRes = await handleHealthCheck(new Request("https://worker.example/health"), {
++        MCP_KV: failKv,
++      });
++      expect(failRes.status).toBe(503);
++      const failBody = (await failRes.json()) as Record<string, unknown>;
++      expect(failBody).toMatchObject({
++        status: "degraded",
++        checks: { kv: { status: "degraded", error: "kv_unavailable" } },
++      });
++      expect(JSON.stringify(failBody)).not.toContain("token-xyz");
++      expect(errSpy).toHaveBeenCalled();
++
++      // Slow KV timing out cleanly
++      vi.useFakeTimers();
++      const slowKv = {
++        get: vi.fn(() => new Promise<string | null>(() => {})),
++        put: vi.fn(),
++        delete: vi.fn(),
++      } as unknown as KVNamespace;
++      const timeoutPromise = handleHealthCheck(
++        new Request("https://worker.example/health"),
++        { MCP_CACHE: slowKv },
++        { kvTimeoutMs: 50, requestContext: new RequestContext("req-health-to") }
++      );
++      await vi.advanceTimersByTimeAsync(50);
++      const slowRes = await timeoutPromise;
++      expect(slowRes.status).toBe(503);
++      expect(vi.getTimerCount()).toBe(0);
++    });
++
++    it("propagates sanitized X-Request-Id in CLI HTTP app and avoids console.log on Worker SSE timeout", async () => {
++      const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
++      const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
++
++      // CLI HTTP X-Request-Id echo & invalid injection override
++      const ctx = createCliHttpApp({
++        apiConfig,
++        cache: new MemoryCache(10, 1000),
++        host: "127.0.0.1",
++      });
++      const server = http.createServer(ctx.app);
++      await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", () => resolve()));
++      activeServers.push({ server, ctx });
++      const addr = server.address() as { port: number };
++
++      const validResp = await fetch(`http://127.0.0.1:${addr.port}/messages?sessionId=missing`, {
++        method: "POST",
++        headers: {
++          Host: `127.0.0.1:${addr.port}`,
++          "Content-Type": "application/json",
++          "X-Request-Id": "cli-req-99",
++        },
++        body: "{}",
++      });
++      expect(validResp.status).toBe(404);
++      expect(validResp.headers.get("x-request-id")).toBe("cli-req-99");
++
++      const badHeaderResp = await fetch(`http://127.0.0.1:${addr.port}/messages`, {
++        method: "POST",
++        headers: {
++          Host: `127.0.0.1:${addr.port}`,
++          "Content-Type": "application/json",
++          "X-Request-Id": "invalid request id!",
++        },
++        body: "{}",
++      });
++      expect(badHeaderResp.status).toBe(400);
++      expect(badHeaderResp.headers.get("x-request-id")).toMatch(/^req_/);
++
++      // Worker SSE timeout must log structured stderr info and never console.log
++      vi.useFakeTimers();
++      process.env.MCP_PING_INTERVAL = "500";
++      process.env.MCP_SSE_TIMEOUT = "50";
++      const workerCtx = {
++        waitUntil: vi.fn(),
++        passThroughOnException: vi.fn(),
++      } as unknown as ExecutionContext;
++      const sseRes = await handleSSEEndpoint(
++        new Request("https://worker.example/sse"),
++        {},
++        workerCtx,
++        new RequestContext("req-sse-to")
++      );
++      const reader = sseRes.body!.getReader();
++      await vi.advanceTimersByTimeAsync(60);
++      await Promise.resolve();
++      await reader.cancel();
++
++      expect(logSpy).not.toHaveBeenCalled();
++      const timeoutLog = errSpy.mock.calls
++        .map((c) => {
++          try {
++            return JSON.parse(String(c[0])) as Record<string, unknown>;
++          } catch {
++            return null;
++          }
++        })
++        .find((entry) => entry?.message === "sse.connection_timeout");
++      expect(timeoutLog).toMatchObject({
++        level: "info",
++        module: "worker-sse",
++        requestId: "req-sse-to",
++        context: { reason: "timeout" },
++      });
++    });
++  });
++});
+diff --git a/test/unit/worker-rest-cloudflare.test.ts b/test/unit/worker-rest-cloudflare.test.ts
+index 36e8fcb..a573be4 100644
+--- a/test/unit/worker-rest-cloudflare.test.ts
++++ b/test/unit/worker-rest-cloudflare.test.ts
+@@ -383,7 +383,7 @@ describe("Workers REST API, Tokens, Worker Router & Cloudflare Adapter", () => {
+       expect(internalBody.error).toMatchObject({ code: -32603, data: "stream aborted" });
+       expect(errSpy).toHaveBeenCalled();
+ 
+-      const healthResp = handleHealthCheck();
++      const healthResp = await handleHealthCheck();
+       expect(healthResp.status).toBe(200);
+       expect(await healthResp.json()).toMatchObject({
+         status: "healthy",
+diff --git a/test/unit/worker-sse-kv-shutdown.test.ts b/test/unit/worker-sse-kv-shutdown.test.ts
+index f3eaa3e..53460e3 100644
+--- a/test/unit/worker-sse-kv-shutdown.test.ts
++++ b/test/unit/worker-sse-kv-shutdown.test.ts
+@@ -333,7 +333,11 @@ describe("TCK-0020 / FND-0008: Worker SSE lifecycle, KV TTL/rate-limit, RateLimi
+       expect(doneSettled).toBe(true);
+       await waitUntilPromises[0];
+       expect(vi.getTimerCount()).toBe(0);
+-      expect(errorSpy).not.toHaveBeenCalled();
++      const errorLevelLogs = errorSpy.mock.calls.filter((call) => {
++        const msg = String(call[0] ?? "");
++        return msg.includes('"level":"error"') || msg.includes("SSE write error") || msg.includes("enqueue");
++      });
++      expect(errorLevelLogs).toHaveLength(0);
+ 
+       let count = 0;
+       while (!(await reader.read()).done) {
+diff --git a/vitest.config.ts b/vitest.config.ts
+index e932f33..f66efac 100644
+--- a/vitest.config.ts
++++ b/vitest.config.ts
+@@ -30,13 +30,13 @@ export default defineConfig({
+                 'examples/',
+                 'apps/',
+             ],
+-            // Baseline measured in TCK-0029 across lib/**/*.ts (incl. workers/ & cloudflare.ts):
+-            // 87.91% stmts, 80.27% branches, 86.89% funcs, 88.64% lines (FND-0014 target met; TCK-0025 will cover logger.ts/tracing.ts).
++            // Baseline measured in TCK-0025 across lib/**/*.ts (incl. logger.ts, tracing.ts, workers/ & cloudflare.ts):
++            // 91.32% stmts, 83.57% branches, 93.25% funcs, 92.09% lines
+             thresholds: {
+-                lines: 80,
+-                functions: 80,
+-                branches: 75,
+-                statements: 80,
++                lines: 85,
++                functions: 85,
++                branches: 80,
++                statements: 85,
+             },
+         },
+         testTimeout: 10000,

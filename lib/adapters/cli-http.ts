@@ -3,7 +3,16 @@ import express from "express";
 import type http from "node:http";
 import { createMCPServer } from "../core/mcp-server.js";
 import { RateLimiter } from "../infrastructure/rate-limiter.js";
+import { createLogger } from "../infrastructure/logger.js";
+import {
+  extractRequestId,
+  REQUEST_ID_HEADER,
+  RequestContext,
+} from "../infrastructure/tracing.js";
+import { maskSensitiveText } from "../shared/log-redaction.js";
 import { ApiConfig, Cache } from "../types/index.js";
+
+const cliHttpLogger = createLogger("cli-http");
 import { TIMEOUTS } from "../config/timeouts.js";
 
 export const DEFAULT_CLI_HTTP_HOST = "127.0.0.1";
@@ -210,6 +219,14 @@ export function createCliHttpApp(options: CliHttpOptions): CliHttpContext {
   const app = express();
   app.disable("x-powered-by");
 
+  // Assign or propagate sanitized X-Request-Id across all CLI HTTP/SSE responses
+  app.use((req, res, next) => {
+    const requestContext = new RequestContext(extractRequestId(req.headers));
+    res.locals.requestContext = requestContext;
+    res.setHeader(REQUEST_ID_HEADER, requestContext.requestId);
+    next();
+  });
+
   // Defensive security headers across all responses (including 4xx/5xx)
   app.use((_req, res, next) => {
     res.setHeader("X-Content-Type-Options", "nosniff");
@@ -299,10 +316,15 @@ export function createCliHttpApp(options: CliHttpOptions): CliHttpContext {
     const clientId = req.ip || req.socket.remoteAddress || "unknown";
 
     if (!rateLimiter.checkLimit(clientId)) {
+      const requestContext = res.locals.requestContext as RequestContext | undefined;
       const resetTime = rateLimiter.getResetTime(clientId);
       const resetSeconds = Math.ceil(resetTime / 1000);
       const logClientId = process.env.NODE_ENV !== "production" ? clientId : "[masked]";
-      console.error(`[RateLimit] Client ${logClientId} exceeded rate limit`);
+      cliHttpLogger.warn(
+        "http.rate_limited",
+        { clientId: logClientId, path: req.path, retryAfter: resetSeconds },
+        requestContext?.requestId,
+      );
 
       res.status(429).json({
         error: "Rate limit exceeded",
@@ -360,9 +382,20 @@ export function createCliHttpApp(options: CliHttpOptions): CliHttpContext {
   };
 
   // SSE endpoint - establishes the stream (GET)
-  app.get("/mcp", rateLimitMiddleware, async (_req, res) => {
+  app.get("/mcp", rateLimitMiddleware, async (req, res) => {
+    const requestContext =
+      (res.locals.requestContext as RequestContext | undefined) ??
+      new RequestContext(extractRequestId(req.headers));
+    if (!res.headersSent) {
+      res.setHeader(REQUEST_ID_HEADER, requestContext.requestId);
+    }
     debug("GET /mcp - Establishing SSE stream");
     if (transports.size >= maxSessions) {
+      cliHttpLogger.warn(
+        "sse.max_sessions_reached",
+        { activeSessions: transports.size, maxSessions },
+        requestContext.requestId,
+      );
       res.status(503).json({
         error: "Service Unavailable",
         message: "Maximum active SSE sessions reached",
@@ -380,10 +413,20 @@ export function createCliHttpApp(options: CliHttpOptions): CliHttpContext {
         lastActivity: now,
       });
       debug(`Created SSE transport with session ID: ${sessionId} (total sessions: ${transports.size})`);
+      cliHttpLogger.info(
+        "sse.session_connected",
+        { activeSessions: transports.size },
+        requestContext.requestId,
+      );
 
       transport.onclose = () => {
         debug(`SSE transport closed for session ${sessionId}`);
         transports.delete(sessionId);
+        cliHttpLogger.info(
+          "sse.session_closed",
+          { activeSessions: transports.size },
+          requestContext.requestId,
+        );
       };
 
       const server = createMCPServer({ apiConfig: options.apiConfig, cache: options.cache });
@@ -391,6 +434,11 @@ export function createCliHttpApp(options: CliHttpOptions): CliHttpContext {
       debug(`MCP server connected to SSE transport ${sessionId}`);
     } catch (error) {
       debug("Error establishing SSE stream:", error);
+      cliHttpLogger.error(
+        "sse.connection_error",
+        { error: maskSensitiveText(error instanceof Error ? error.message : String(error)) },
+        requestContext.requestId,
+      );
       if (!res.headersSent) {
         res.status(500).send("Error establishing SSE stream");
       }
@@ -399,11 +447,22 @@ export function createCliHttpApp(options: CliHttpOptions): CliHttpContext {
 
   // Messages endpoint - receives client JSON-RPC requests (POST)
   app.post("/messages", rateLimitMiddleware, async (req, res) => {
+    const requestContext =
+      (res.locals.requestContext as RequestContext | undefined) ??
+      new RequestContext(extractRequestId(req.headers));
+    if (!res.headersSent) {
+      res.setHeader(REQUEST_ID_HEADER, requestContext.requestId);
+    }
     debug("POST /messages");
     try {
       const sessionId = req.query.sessionId;
       if (!isValidSessionId(sessionId)) {
         debug("Invalid or missing sessionId parameter in request");
+        cliHttpLogger.warn(
+          "http.invalid_session_id",
+          { path: "/messages" },
+          requestContext.requestId,
+        );
         res.status(400).json({
           error: "Bad Request",
           message: "Invalid or missing sessionId parameter",
@@ -414,6 +473,11 @@ export function createCliHttpApp(options: CliHttpOptions): CliHttpContext {
       const session = transports.get(sessionId);
       if (!session) {
         debug(`No transport found for session: ${sessionId}`);
+        cliHttpLogger.warn(
+          "http.session_not_found",
+          { path: "/messages" },
+          requestContext.requestId,
+        );
         res.status(404).json({
           error: "Not Found",
           message: "Session not found",
@@ -425,6 +489,11 @@ export function createCliHttpApp(options: CliHttpOptions): CliHttpContext {
       await session.transport.handlePostMessage(req, res, req.body);
     } catch (error) {
       debug("Error handling message:", error);
+      cliHttpLogger.error(
+        "http.message_error",
+        { error: maskSensitiveText(error instanceof Error ? error.message : String(error)) },
+        requestContext.requestId,
+      );
       if (!res.headersSent) {
         res.status(500).send("Error handling request");
       }
