@@ -205,5 +205,14 @@
     "tree": "513031d0c0ea4f289cb6c88c62349734e83e1ee5",
     "updated_at": "2026-11-20T19:37:50Z",
     "updated_by": "criteria-check"
+  },
+  "TCK-0029": {
+    "content_digest": "sha256:79061db72d16bcbf14583fc85fc1d211fd22692b92b665c64ed23de1fe4c609f",
+    "criteria_digest": "sha256:a49bcdb8f4bbb7ee7c8310e3d563ad529ee152d4bd9cad2a8ec559fdfd624a11",
+    "head": "a4cd423a7c76f275490a4415c06bf34fab58a25c",
+    "passes": true,
+    "tree": "7c887015e9062d36354a6fc52570ef7365849715",
+    "updated_at": "2026-11-20T20:01:33Z",
+    "updated_by": "criteria-check"
   }
 }

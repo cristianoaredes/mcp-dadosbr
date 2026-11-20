@@ -1,0 +1,1227 @@
+diff --git a/.archagents/08-conventions.md b/.archagents/08-conventions.md
+index 542ec4b..04f9355 100644
+--- a/.archagents/08-conventions.md
++++ b/.archagents/08-conventions.md
+@@ -6,11 +6,11 @@ Base revisada: `79aa712` (`v0.5.0`; base inicial: `037dae4c`).
+ - As 23 ferramentas registradas usam nomes em `snake_case`; os 5 recursos MCP Apps usam URIs `ui://dadosbr/<id>.html` com MIME `text/html;profile=mcp-app`.
+ - No transporte Node `stdio`, `stdout` é exclusivo para mensagens JSON-RPC; métricas e logs devem ir para `stderr` (`lib/core/tools.ts`).
+ - O teste de transporte (`npm run test:transport`) exige `initialize`, `ping`, catálogo explícito de 23 ferramentas, descoberta/leitura dos 5 recursos MCP Apps e 101 chamadas `stdio` sem erro de protocolo.
+-- **Cobertura e Fake Timers (`TCK-0027`, `TCK-0028`):** `npm run test:coverage` utiliza `@vitest/coverage-v8` (`^4.1.12`) cobrindo `lib/**/*.ts` (incluindo `lib/workers/` e `lib/adapters/cloudflare.ts`, excluindo apenas tipos/entrypoints CLI/UI), com ratchet elevado em `TCK-0028` para `76% lines / 73% functions / 68% branches / 74% statements` (baseline medido `78.26% / 75.66% / 70.17% / 76.62%`). Suítes baseadas em tempo (`circuit-breaker.test.ts`, `concurrency.test.ts`, `deduplication.test.ts`, `sse.test.ts`) importam implementações reais de `lib/` (sem réplicas locais) e utilizam `vi.useFakeTimers()` (restaurando mocks antes de `vi.useRealTimers()`).
++- **Cobertura e Fake Timers (`TCK-0027`, `TCK-0028`, `TCK-0029` / `FND-0014`):** `npm run test:coverage` utiliza `@vitest/coverage-v8` (`^4.1.12`) cobrindo `lib/**/*.ts` (incluindo `lib/workers/` e `lib/adapters/cloudflare.ts`, excluindo apenas tipos/entrypoints CLI/UI), com ratchet elevado em `TCK-0029` para `80% lines / 80% functions / 75% branches / 80% statements` (baseline medido `88.64% lines / 86.89% functions / 80.27% branches / 87.91% statements` em `28` suítes / `420` testes, incluindo `worker-rest-cloudflare.test.ts` e `tools-company-health-osint-legal.test.ts`). Suítes baseadas em tempo (`circuit-breaker.test.ts`, `concurrency.test.ts`, `deduplication.test.ts`, `sse.test.ts`) importam implementações reais de `lib/` (sem réplicas locais) e utilizam `vi.useFakeTimers()` (restaurando mocks antes de `vi.useRealTimers()`).
+ 
+ ## Fontes
+ 
+ - `package.json:L5-L48`
+-- `vitest.config.ts:L1-L46`
++- `vitest.config.ts:L1-L45`
+ - `test/integration/transports.mjs:L12-L99`
+ - `lib/core/tools.ts:L27-L47`
+diff --git a/.archagents/13-execution/acceptance-lock.json b/.archagents/13-execution/acceptance-lock.json
+index 7d5949d..bdc458f 100644
+--- a/.archagents/13-execution/acceptance-lock.json
++++ b/.archagents/13-execution/acceptance-lock.json
+@@ -205,5 +205,14 @@
+     "tree": "513031d0c0ea4f289cb6c88c62349734e83e1ee5",
+     "updated_at": "2026-11-20T19:37:50Z",
+     "updated_by": "criteria-check"
++  },
++  "TCK-0029": {
++    "content_digest": "sha256:79061db72d16bcbf14583fc85fc1d211fd22692b92b665c64ed23de1fe4c609f",
++    "criteria_digest": "sha256:a49bcdb8f4bbb7ee7c8310e3d563ad529ee152d4bd9cad2a8ec559fdfd624a11",
++    "head": "a4cd423a7c76f275490a4415c06bf34fab58a25c",
++    "passes": true,
++    "tree": "7c887015e9062d36354a6fc52570ef7365849715",
++    "updated_at": "2026-11-20T20:01:33Z",
++    "updated_by": "criteria-check"
+   }
+ }
+diff --git a/.archagents/13-execution/criteria-attempts.jsonl b/.archagents/13-execution/criteria-attempts.jsonl
+index 81ec910..97de85a 100644
+--- a/.archagents/13-execution/criteria-attempts.jsonl
++++ b/.archagents/13-execution/criteria-attempts.jsonl
+@@ -35,3 +35,5 @@
+ {"ts": "2026-11-20T19:13:48Z", "ticket": "TCK-0022", "verdict": "pass", "passed": 4, "total": 4}
+ {"ts": "2026-11-20T19:25:16Z", "ticket": "TCK-0027", "verdict": "pass", "passed": 4, "total": 4}
+ {"ts": "2026-11-20T19:37:50Z", "ticket": "TCK-0028", "verdict": "pass", "passed": 4, "total": 4}
++{"ts": "2026-11-20T19:54:44Z", "ticket": "TCK-0029", "verdict": "pass", "passed": 4, "total": 4}
++{"ts": "2026-11-20T20:01:33Z", "ticket": "TCK-0029", "verdict": "pass", "passed": 4, "total": 4}
+diff --git a/.archagents/15-backlog/tickets/TCK-0029-cobrir-modulos-criticos-restantes-workers-rest-worker-cloudflare-tools-company-h.md b/.archagents/15-backlog/tickets/TCK-0029-cobrir-modulos-criticos-restantes-workers-rest-worker-cloudflare-tools-company-h.md
+index 6d318d9..e2174d3 100644
+--- a/.archagents/15-backlog/tickets/TCK-0029-cobrir-modulos-criticos-restantes-workers-rest-worker-cloudflare-tools-company-h.md
++++ b/.archagents/15-backlog/tickets/TCK-0029-cobrir-modulos-criticos-restantes-workers-rest-worker-cloudflare-tools-company-h.md
+@@ -5,8 +5,8 @@ title: "Cobrir modulos criticos restantes (workers/rest, worker, cloudflare, too
+ source: audit
+ created_at: 2026-11-20T19:21:49Z
+ created_by: ops
+-updated_at: 2026-11-20T19:21:49Z
+-status: raw
++updated_at: 2026-11-20T19:56:39Z
++status: verifying
+ severity: high
+ category: test-coverage
+ effort: M
+@@ -15,8 +15,10 @@ ceremony: full
+ business_impact: ""
+ linked_findings:
+   - FND-0014
+-linked_designs: []
+-linked_runs: []
++linked_designs:
++  - DES-0025
++linked_runs:
++  - RUN-20261120-195035-tck-0029
+ linked_verifications: []
+ linked_docs:
+   - .archagents/08-conventions.md
+@@ -27,8 +29,20 @@ blocked_by:
+   - TCK-0028
+ related: []
+ acceptance:
+-  - check: "npm run test:coverage"
+-    expect: passed
++  - check: "npm run test:coverage && echo COVERAGE_OK"
++    expect: COVERAGE_OK
++  - check: "npm test && echo TESTS_OK"
++    expect: TESTS_OK
++  - check: "npx tsc --noEmit && npx tsc -p tsconfig.worker.json --noEmit && echo TYPECHECK_OK"
++    expect: TYPECHECK_OK
++  - check: "npm run build && npm run build:worker && npm run test:transport && echo BUILD_TRANSPORT_OK"
++    expect: BUILD_TRANSPORT_OK
++depth_decision:
++  workflow: lightweight
++  design: lightweight
++  verify: completo
++  source: routing-classifier
++  classified_at: 2026-11-20T19:49:25Z
+ ---
+ # TCK-0029 - Cobrir modulos criticos restantes (workers/rest, worker, cloudflare, tools company/health/osint/legal) e elevar ratchet de cobertura (TCK-0026c)
+ 
+@@ -38,9 +52,26 @@ Criado via scripts/ops/ticket/create.py a partir de source=audit.
+ 
+ ## Falsificador
+ 
+-<!-- O que reprova ANTES do fix: o comando que fica vermelho hoje, ou
+-     `arquivo:linha` da evidência. Sem isto o ticket não fecha. -->
++Baseline medido na revisao `a4cd423` (`TCK-0028`) antes de `TCK-0029`:
++
++- Coverage global (`npm run test:coverage`, V8 em `lib/**/*.ts`): **76.62% Stmts / 70.17% Branch / 75.66% Funcs / 78.26% Lines** — abaixo da meta `80/80/75/80` (ratchet atual em `vitest.config.ts:36-41`: `lines: 76`, `functions: 73`, `branches: 68`, `statements: 74`).
++- Modulos criticos em `0%` ou cobertura parcial:
++  - `lib/workers/rest.ts:17-255` (`0%` Stmts / `0%` Branch / `0%` Funcs / `0%` Lines)
++  - `lib/workers/tokens.ts:10-17` (`0%` Stmts / `0%` Branch / `0%` Funcs / `0%` Lines)
++  - `lib/workers/worker.ts:87-149` (`60.46%` Stmts / `46.51%` Branch)
++  - `lib/adapters/cloudflare.ts:189-255` (`76.81%` Stmts / `78.18%` Branch)
++  - `lib/tools/company.ts:20-215` (`16.27%` Stmts / `11.32%` Branch / `16.66%` Funcs / `19.4%` Lines)
++  - `lib/tools/health.ts:14-48` (`9.52%` Stmts / `0%` Branch / `0%` Funcs / `13.33%` Lines)
++  - `lib/tools/osint.ts:95-140` (`22.22%` Stmts / `0%` Branch / `0%` Funcs)
++  - `lib/tools/legal.ts:32-360` (`73.91%` Stmts / `36.36%` Funcs)
++  - `lib/core/tools.ts:28-90` (`62.5%` Stmts / `50%` Branch / `60%` Funcs)
++- Nota nao-bloqueante herdada de `VER-20261120-194215-tck-0028`: `lib/tools/core.ts:22,34-49` nao cancelava `existing.timeoutId` ao sobrescrever entrada expirada por timestamp em `deduplicate` e tipava `PendingRequest.promise` como `Promise<LookupResult>`.
+ 
+ ## Log de transicoes
+ 
+ - 2026-11-20T19:21:49Z - **raw** - criado via scripts/ops/ticket/create.py.
++- 2026-11-20T19:49:25Z - **triaged** - Falsificador a4cd423 e criterios mecanicos de aceite registrados para TCK-0029 [aceite reescrito: 4 critério(s)] [depth_decision do routing-classifier: workflow lightweight, design lightweight, verify completo]
++- 2026-11-20T19:49:53Z - **noted** - body:falsifier (replace): Registrar baseline de cobertura a4cd423 e modulos descobertos para FND-0014 (TCK-0029)
++- 2026-11-20T19:50:24Z - **designed** - DES-0025 aprovado para cobrir modulos criticos restantes e elevar ratchet
++- 2026-11-20T19:50:36Z - **executing** - Iniciando execucao de DES-0025 (RUN-20261120-195035-tck-0029)
++- 2026-11-20T19:56:39Z - **verifying** - Execucao RUN-20261120-195035-tck-0029 concluida com todas as verificacoes locais verdes
+diff --git a/.archagents/99-memory/decisions/decisions.jsonl b/.archagents/99-memory/decisions/decisions.jsonl
+index f3b517f..5955add 100644
+--- a/.archagents/99-memory/decisions/decisions.jsonl
++++ b/.archagents/99-memory/decisions/decisions.jsonl
+@@ -70,3 +70,5 @@
+ {"id": "DEC-20261120-193227091274", "ts": "2026-11-20T19:32:27Z", "classe": "triage", "decision": "TCK-0028: raw->triaged", "confidence": 0.8, "outcome": "approved", "outcome_ts": "2026-11-20T19:42:52Z", "human_review": null, "metadata": {"ticket_id": "TCK-0028", "from": "raw", "to": "triaged", "forced": false, "ver_required": null}}
+ {"id": "DEC-20261120-193311830579", "ts": "2026-11-20T19:33:11Z", "classe": "design-approval", "decision": "TCK-0028: triaged->designed", "confidence": 0.7, "outcome": "approved", "outcome_ts": "2026-11-20T19:42:52Z", "human_review": null, "metadata": {"ticket_id": "TCK-0028", "from": "triaged", "to": "designed", "forced": false, "ver_required": null}}
+ {"id": "DEC-20261120-194253603075", "ts": "2026-11-20T19:42:53Z", "classe": "done-closure", "decision": "TCK-0028: verifying->done", "confidence": 0.9, "outcome": null, "outcome_ts": null, "human_review": null, "metadata": {"ticket_id": "TCK-0028", "from": "verifying", "to": "done", "forced": false, "ver_required": true}}
++{"id": "DEC-20261120-194925996381", "ts": "2026-11-20T19:49:25Z", "classe": "triage", "decision": "TCK-0029: raw->triaged", "confidence": 0.8, "outcome": null, "outcome_ts": null, "human_review": null, "metadata": {"ticket_id": "TCK-0029", "from": "raw", "to": "triaged", "forced": false, "ver_required": null}}
++{"id": "DEC-20261120-195024127257", "ts": "2026-11-20T19:50:24Z", "classe": "design-approval", "decision": "TCK-0029: triaged->designed", "confidence": 0.7, "outcome": null, "outcome_ts": null, "human_review": null, "metadata": {"ticket_id": "TCK-0029", "from": "triaged", "to": "designed", "forced": false, "ver_required": null}}
+diff --git a/lib/tools/core.ts b/lib/tools/core.ts
+index c3cc179..0ba182b 100644
+--- a/lib/tools/core.ts
++++ b/lib/tools/core.ts
+@@ -19,7 +19,7 @@ import { TIMEOUTS } from "../config/timeouts.js";
+ // ─── Shared lookup with caching and deduplication ───────────────────────────
+ 
+ interface PendingRequest {
+-    promise: Promise<LookupResult>;
++    promise: Promise<unknown>;
+     timestamp: number;
+     timeoutId: ReturnType<typeof setTimeout>;
+ }
+@@ -32,8 +32,11 @@ export function getPendingRequestCount(): number {
+ export async function deduplicate<T>(key: string, fn: () => Promise<T>): Promise<T> {
+     const timeoutMs = TIMEOUTS.DEDUP_TIMEOUT_MS;
+     const existing = pendingRequests.get(key);
+-    if (existing && Date.now() - existing.timestamp < timeoutMs) {
+-        return existing.promise as Promise<T>;
++    if (existing) {
++        if (Date.now() - existing.timestamp < timeoutMs) {
++            return existing.promise as Promise<T>;
++        }
++        clearTimeout(existing.timeoutId);
+     }
+     const promise = fn();
+     const timeoutId = setTimeout(() => {
+@@ -43,7 +46,7 @@ export async function deduplicate<T>(key: string, fn: () => Promise<T>): Promise
+     }, timeoutMs);
+     (timeoutId as { unref?: () => void }).unref?.();
+     pendingRequests.set(key, {
+-        promise: promise as Promise<LookupResult>,
++        promise,
+         timestamp: Date.now(),
+         timeoutId,
+     });
+diff --git a/test/unit/tools-company-health-osint-legal.test.ts b/test/unit/tools-company-health-osint-legal.test.ts
+new file mode 100644
+index 0000000..c80117e
+--- /dev/null
++++ b/test/unit/tools-company-health-osint-legal.test.ts
+@@ -0,0 +1,522 @@
++import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
++import { executeTool, getMetrics, resetMetrics } from "../../lib/core/tools.js";
++import { MemoryCache } from "../../lib/core/cache.js";
++import { deduplicate, getPendingRequestCount, lookup } from "../../lib/tools/core.js";
++import { resetCircuitBreakers } from "../../lib/core/http-client.js";
++import { resolveApiConfig } from "../../lib/config/index.js";
++
++function jsonResponse(body: unknown, status = 200): Response {
++  return new Response(JSON.stringify(body), {
++    status,
++    headers: { "Content-Type": "application/json" },
++  });
++}
++
++function textResponse(body: string, status = 200): Response {
++  return new Response(body, {
++    status,
++    headers: { "Content-Type": "text/html" },
++  });
++}
++
++describe("MCP Tools (Company, Health, OSINT, Legal, Government) & Tool Orchestrator", () => {
++  const apiConfig = resolveApiConfig();
++  const originalDatajud = process.env.DATAJUD_API_KEY;
++  const originalTransparencia = process.env.TRANSPARENCIA_API_KEY;
++  const originalTavily = process.env.TAVILY_API_KEY;
++  const originalPerplexity = process.env.PERPLEXITY_API_KEY;
++
++  beforeEach(() => {
++    delete process.env.DATAJUD_API_KEY;
++    delete process.env.TRANSPARENCIA_API_KEY;
++    delete process.env.TAVILY_API_KEY;
++    delete process.env.PERPLEXITY_API_KEY;
++    resetMetrics();
++    resetCircuitBreakers();
++  });
++
++  afterEach(() => {
++    if (originalDatajud === undefined) delete process.env.DATAJUD_API_KEY;
++    else process.env.DATAJUD_API_KEY = originalDatajud;
++
++    if (originalTransparencia === undefined) delete process.env.TRANSPARENCIA_API_KEY;
++    else process.env.TRANSPARENCIA_API_KEY = originalTransparencia;
++
++    if (originalTavily === undefined) delete process.env.TAVILY_API_KEY;
++    else process.env.TAVILY_API_KEY = originalTavily;
++
++    if (originalPerplexity === undefined) delete process.env.PERPLEXITY_API_KEY;
++    else process.env.PERPLEXITY_API_KEY = originalPerplexity;
++
++    resetMetrics();
++    resetCircuitBreakers();
++    vi.restoreAllMocks();
++    vi.useRealTimers();
++  });
++
++  describe("lib/core/tools.ts & lib/tools/core.ts", () => {
++    it("tracks requests, errors, thrown exceptions, and logs periodic metrics every 100 calls to stderr", async () => {
++      const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
++
++      const okRes = await executeTool("cpf_validate", { cpf: "52998224725" }, apiConfig);
++      expect(okRes.ok).toBe(true);
++      expect(getMetrics()).toMatchObject({ requests: 1, errors: 0 });
++
++      const failRes = await executeTool("cpf_validate", { cpf: "123" }, apiConfig);
++      expect(failRes.ok).toBe(false);
++      expect(getMetrics()).toMatchObject({ requests: 2, errors: 1 });
++
++      const failingCache = {
++        get: vi.fn().mockRejectedValue(new Error("cache broken")),
++        set: vi.fn().mockResolvedValue(undefined),
++      };
++      await expect(
++        executeTool("cnpj_lookup", { cnpj: "11222333000181" }, apiConfig, failingCache)
++      ).rejects.toThrow("cache broken");
++      expect(getMetrics()).toMatchObject({ requests: 3, errors: 2 });
++
++      for (let i = 0; i < 97; i++) {
++        await executeTool("cpf_validate", { cpf: "52998224725" }, apiConfig);
++      }
++      expect(getMetrics().requests).toBe(100);
++      expect(errSpy).toHaveBeenCalledWith(expect.stringMatching(/^\[metrics\] requests=100 /));
++
++      resetMetrics();
++      expect(getMetrics()).toMatchObject({ requests: 0, errors: 0, cacheHits: 0, totalTime: 0 });
++    });
++
++    it("clears stale timeout when overwriting timestamp-expired entry in deduplicate and handles lookup 404/cache", async () => {
++      vi.useFakeTimers();
++      vi.setSystemTime(new Date("2026-11-20T12:00:00Z"));
++      const clearTimeoutSpy = vi.spyOn(globalThis, "clearTimeout");
++
++      let resolveStale!: (v: string) => void;
++      const stalePromise = deduplicate(
++        "stale-key",
++        () =>
++          new Promise<string>((resolve) => {
++            resolveStale = resolve;
++          })
++      );
++
++      // Advance system clock past DEDUP_TIMEOUT_MS without running timer callback yet
++      vi.setSystemTime(new Date("2026-11-20T12:00:35Z"));
++
++      const freshPromise = deduplicate("stale-key", async () => "fresh");
++      // Existing stale timeout must be cleared synchronously before the fresh promise settles
++      expect(clearTimeoutSpy).toHaveBeenCalledTimes(1);
++      const freshValue = await freshPromise;
++      expect(freshValue).toBe("fresh");
++      expect(clearTimeoutSpy).toHaveBeenCalledTimes(2);
++
++      resolveStale("stale");
++      expect(await stalePromise).toBe("stale");
++      expect(getPendingRequestCount()).toBe(0);
++
++      // lookup cache miss + cache hit + 404 message
++      const cache = new MemoryCache(10, 60000);
++      const fetchSpy = vi
++        .spyOn(globalThis, "fetch")
++        .mockResolvedValueOnce(jsonResponse({ cep: "01310100", logradouro: "Av Paulista" }))
++        .mockResolvedValueOnce(jsonResponse({ message: "not found" }, 404));
++
++      const cepOk = await lookup("cep", "01310100", apiConfig, cache);
++      expect(cepOk.ok).toBe(true);
++      const cepCached = await lookup("cep", "01310100", apiConfig, cache);
++      expect(cepCached.ok).toBe(true);
++      expect(fetchSpy).toHaveBeenCalledTimes(1);
++
++      const cepNotFound = await lookup("cep", "99999999", apiConfig, cache);
++      expect(cepNotFound).toEqual({ ok: false, error: "CEP not found" });
++    });
++  });
++
++  describe("lib/tools/company.ts", () => {
++    it("cpf_validate validates mod-11 checksums across fiscal regions and rejects invalid/repeated CPFs", async () => {
++      const validSp = await executeTool("cpf_validate", { cpf: "52998224725" }, apiConfig);
++      expect(validSp.ok).toBe(true);
++      expect(validSp.data).toMatchObject({ cpf: "529.982.247-25", valid: true, region: "ES/RJ" });
++
++      // Exercises remainder < 2 -> check digit 0 branches
++      const validZeroFirst = await executeTool("cpf_validate", { cpf: "123.456.783-05" }, apiConfig);
++      expect(validZeroFirst.ok).toBe(true);
++      expect(validZeroFirst.data).toMatchObject({ valid: true, region: "CE/MA/PI" });
++
++      const validZeroBoth = await executeTool("cpf_validate", { cpf: "11111111200" }, apiConfig);
++      expect(validZeroBoth.ok).toBe(true);
++      expect(validZeroBoth.data).toMatchObject({ valid: true, region: "AC/AM/AP/PA/RO/RR" });
++
++      const repeated = await executeTool("cpf_validate", { cpf: "111.111.111-11" }, apiConfig);
++      expect(repeated.ok).toBe(true);
++      expect(repeated.data).toMatchObject({ valid: false, region: undefined });
++
++      const badCheck2 = await executeTool("cpf_validate", { cpf: "52998224726" }, apiConfig);
++      expect(badCheck2.ok).toBe(true);
++      expect(badCheck2.data).toMatchObject({ valid: false });
++
++      const shortCpf = await executeTool("cpf_validate", { cpf: "12345" }, apiConfig);
++      expect(shortCpf).toEqual({ ok: false, error: "CPF must have exactly 11 digits" });
++    });
++
++    it("domain_whois queries Registro.br RDAP, falls back to IANA, and reports errors cleanly", async () => {
++      const fetchSpy = vi
++        .spyOn(globalThis, "fetch")
++        .mockResolvedValueOnce(jsonResponse({ ldhName: "nubank.com.br" }))
++        .mockResolvedValueOnce(jsonResponse({}, 404))
++        .mockResolvedValueOnce(jsonResponse({ ldhName: "example.com" }))
++        .mockResolvedValueOnce(jsonResponse({}, 404))
++        .mockResolvedValueOnce(jsonResponse({}, 404));
++
++      const brOk = await executeTool(
++        "domain_whois",
++        { domain: "https://nubank.com.br/contato" },
++        apiConfig
++      );
++      expect(brOk.ok).toBe(true);
++      expect(brOk.data).toMatchObject({ domain: "nubank.com.br", source: "RDAP — Registro.br" });
++      expect(fetchSpy.mock.calls[0][0]).toContain("rdap.registro.br/domain/nubank.com.br");
++
++      const ianaOk = await executeTool("domain_whois", { domain: "example.com" }, apiConfig);
++      expect(ianaOk.ok).toBe(true);
++      expect(ianaOk.data).toMatchObject({ domain: "example.com", source: "RDAP — IANA Bootstrap" });
++
++      const notFound = await executeTool("domain_whois", { domain: "missing.invalid" }, apiConfig);
++      expect(notFound).toEqual({ ok: false, error: "Domain not found in RDAP: missing.invalid" });
++    });
++
++    it("consumidor_reclamacoes returns API results on 200 and structured portal fallback on error", async () => {
++      vi.spyOn(globalThis, "fetch")
++        .mockResolvedValueOnce(jsonResponse({ empresas: [{ nome: "ACME" }] }))
++        .mockResolvedValueOnce(jsonResponse({}, 404));
++
++      const apiOk = await executeTool("consumidor_reclamacoes", { empresa: "ACME" }, apiConfig);
++      expect(apiOk.ok).toBe(true);
++      expect(apiOk.data).toMatchObject({ source: "Consumidor.gov.br — SENACON" });
++
++      const fallback = await executeTool("consumidor_reclamacoes", { empresa: "ACME" }, apiConfig);
++      expect(fallback.ok).toBe(true);
++      expect(fallback.data).toMatchObject({
++        source: "Consumidor.gov.br",
++        open_data: expect.stringContaining("dados.gov.br"),
++      });
++    });
++
++    it("company_deep_profile orchestrates full profile (with keys + domain) and partial failure recovery", async () => {
++      process.env.TRANSPARENCIA_API_KEY = "transp-key";
++      process.env.DATAJUD_API_KEY = "datajud-key";
++      process.env.PERPLEXITY_API_KEY = "pplx-key";
++
++      vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
++        const url = String(input);
++        if (url.includes("api.opencnpj.org")) return jsonResponse({ cnpj: "11222333000181", uf: "SP" });
++        if (url.includes("portaldatransparencia.gov.br/api-de-dados")) return jsonResponse([{ id: 1 }]);
++        if (url.includes("api-publica.datajud.cnj.jus.br")) return jsonResponse({ hits: { total: 2 } });
++        if (url.includes("rdap.registro.br")) return jsonResponse({ ldhName: "acme.com.br" });
++        if (url.includes("portaldatransparencia.gov.br/sancoes")) return jsonResponse({ itens: [] });
++        if (url.includes("perplexity.ai")) {
++          return jsonResponse({ choices: [{ message: { content: "news item" } }] });
++        }
++        return jsonResponse({}, 404);
++      });
++
++      const fullProfile = await executeTool(
++        "company_deep_profile",
++        {
++          cnpj: "11.222.333/0001-81",
++          include_government: true,
++          include_legal: true,
++          include_news: true,
++          domain: "acme.com.br",
++        },
++        apiConfig
++      );
++      expect(fullProfile.ok).toBe(true);
++      expect(fullProfile.data).toMatchObject({
++        cnpj: "11222333000181",
++        errors_encountered: undefined,
++      });
++      const sources = (fullProfile.data as { sources_queried: string[] }).sources_queried;
++      expect(sources).toEqual(
++        expect.arrayContaining([
++          "cnpj_data",
++          "government_contracts",
++          "court_records",
++          "domain_whois",
++          "lista_suja",
++          "news_results",
++        ])
++      );
++
++      // Partial failures: CNPJ upstream 404 + flags false -> recovers cleanly & records errors_encountered
++      delete process.env.TRANSPARENCIA_API_KEY;
++      delete process.env.DATAJUD_API_KEY;
++      vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
++        jsonResponse({ error: "not found" }, 404)
++      );
++
++      const partialProfile = await executeTool(
++        "company_deep_profile",
++        {
++          cnpj: "11222333000181",
++          include_government: false,
++          include_legal: false,
++          include_news: false,
++        },
++        apiConfig
++      );
++      expect(partialProfile.ok).toBe(true);
++      const partialData = partialProfile.data as {
++        errors_encountered?: string[];
++        sources_unavailable: string[];
++      };
++      expect(partialData.errors_encountered?.length).toBeGreaterThan(0);
++      expect(partialData.sources_unavailable).toContain("cnpj_data");
++    });
++  });
++
++  describe("lib/tools/health.ts & lib/tools/osint.ts", () => {
++    it("cnes_saude covers estabelecimento, profissional, optional filters, and DataSUS fallback", async () => {
++      const fetchSpy = vi
++        .spyOn(globalThis, "fetch")
++        .mockResolvedValueOnce(jsonResponse({ estabelecimentos: [{ codigo_cnes: "2077485" }] }))
++        .mockResolvedValueOnce(jsonResponse({ profissionais: [{ nome: "Dra Maria" }] }))
++        .mockResolvedValueOnce(jsonResponse({}, 404));
++
++      const est = await executeTool(
++        "cnes_saude",
++        {
++          tipo: "estabelecimento",
++          codigo_cnes: "2077485",
++          nome: "HOSPITAL",
++          uf: "35",
++          municipio: "3550308",
++        },
++        apiConfig
++      );
++      expect(est.ok).toBe(true);
++      expect(est.data).toMatchObject({ source: "CNES — DataSUS" });
++      expect(fetchSpy.mock.calls[0][0]).toContain("/estabelecimentos");
++
++      const prof = await executeTool(
++        "cnes_saude",
++        { tipo: "profissional", nome: "Maria" },
++        apiConfig
++      );
++      expect(prof.ok).toBe(true);
++      expect(fetchSpy.mock.calls[1][0]).toContain("/profissionais");
++
++      const fallback = await executeTool(
++        "cnes_saude",
++        { tipo: "estabelecimento", uf: "35" },
++        apiConfig
++      );
++      expect(fallback.ok).toBe(true);
++      expect(fallback.data).toMatchObject({
++        source: "CNES (DataSUS)",
++        search_url: "http://cnes.datasus.gov.br/",
++      });
++    });
++
++    it("strategic_osint_prompt renders all 5 templates cleanly with and without optional placeholders", async () => {
++      const templates = [
++        "due_diligence",
++        "competitor_analysis",
++        "fraud_detection",
++        "esg_compliance",
++        "investment_screening",
++      ] as const;
++
++      for (const template of templates) {
++        const res = await executeTool(
++          "strategic_osint_prompt",
++          {
++            template,
++            company_name: "ACME Brasil S/A",
++            cnpj: "11.222.333/0001-81",
++            context: "Foco em contratos federais",
++          },
++          apiConfig
++        );
++        expect(res.ok).toBe(true);
++        const data = res.data as { template: string; prompt: string };
++        expect(data.template).toBe(template);
++        expect(data.prompt).toContain("ACME Brasil S/A");
++        expect(data.prompt).toContain("11.222.333/0001-81");
++        expect(data.prompt).toContain("Foco em contratos federais");
++        expect(data.prompt).not.toMatch(/\{(company|cnpj|context)\}/);
++      }
++
++      const defaultsRes = await executeTool(
++        "strategic_osint_prompt",
++        { template: "due_diligence" },
++        apiConfig
++      );
++      expect(defaultsRes.ok).toBe(true);
++      const defaultPrompt = (defaultsRes.data as { prompt: string }).prompt;
++      expect(defaultPrompt).toContain("the target company");
++      expect(defaultPrompt).toContain("[CNPJ not provided]");
++    });
++  });
++
++  describe("lib/tools/legal.ts", () => {
++    it("datajud_processos covers missing key, HTTP 200, HTTP 500, and network error", async () => {
++      const noKey = await executeTool("datajud_processos", { query: "11222333000181" }, apiConfig);
++      expect(noKey.ok).toBe(false);
++      expect(noKey.error).toContain("DATAJUD_API_KEY");
++
++      process.env.DATAJUD_API_KEY = "cnj-key";
++      vi.spyOn(globalThis, "fetch")
++        .mockResolvedValueOnce(jsonResponse({ hits: { total: { value: 1 } } }))
++        .mockResolvedValueOnce(jsonResponse({}, 500))
++        .mockRejectedValueOnce(new Error("socket hangup"));
++
++      const okRes = await executeTool(
++        "datajud_processos",
++        { query: "11222333000181", tribunal: "TJDF", tamanho: 5 },
++        apiConfig
++      );
++      expect(okRes.ok).toBe(true);
++      expect(okRes.data).toMatchObject({ source: "Datajud — CNJ (TJDF)" });
++
++      const errHttp = await executeTool("datajud_processos", { query: "abc" }, apiConfig);
++      expect(errHttp).toEqual({ ok: false, error: "Datajud API error: HTTP 500" });
++
++      const errNet = await executeTool("datajud_processos", { query: "abc" }, apiConfig);
++      expect(errNet).toEqual({ ok: false, error: "Datajud error: socket hangup" });
++    });
++
++    it("oab_advogado, bnmp_mandados, lista_suja_lookup and procurados_lookup cover happy paths and fallbacks", async () => {
++      vi.spyOn(globalThis, "fetch")
++        // OAB ok + fallback
++        .mockResolvedValueOnce(jsonResponse({ Data: [{ Nome: "Dr Fulano", UF: "SP" }] }))
++        .mockResolvedValueOnce(jsonResponse({}, 403))
++        // BNMP ok + non-timeout 403 fallback
++        .mockResolvedValueOnce(jsonResponse({ content: [] }))
++        .mockResolvedValueOnce(jsonResponse({ message: "captcha" }, 403))
++        // Lista Suja ok + fallback
++        .mockResolvedValueOnce(jsonResponse({ data: [] }))
++        .mockResolvedValueOnce(jsonResponse({}, 403));
++
++      const oabOk = await executeTool(
++        "oab_advogado",
++        { nome: "Fulano", inscricao: "123456", uf: "SP" },
++        apiConfig
++      );
++      expect(oabOk.ok).toBe(true);
++      expect(oabOk.data).toMatchObject({ source: "Cadastro Nacional dos Advogados (CNA) — OAB" });
++
++      const oabFallback = await executeTool("oab_advogado", { inscricao: "123456" }, apiConfig);
++      expect(oabFallback.ok).toBe(true);
++      expect(oabFallback.data).toMatchObject({ source: "OAB — CNA" });
++
++      const bnmpOk = await executeTool(
++        "bnmp_mandados",
++        { nome: "Joao Silva", orgaoJulgador: "TJSP" },
++        apiConfig
++      );
++      expect(bnmpOk.ok).toBe(true);
++      expect(bnmpOk.data).toMatchObject({
++        source: "BNMP — Banco Nacional de Mandados de Prisão (CNJ)",
++      });
++
++      const bnmpCaptcha = await executeTool("bnmp_mandados", { nome: "Joao Silva" }, apiConfig);
++      expect(bnmpCaptcha.ok).toBe(true);
++      expect((bnmpCaptcha.data as { timed_out?: boolean }).timed_out).toBeUndefined();
++
++      const listaOk = await executeTool("lista_suja_lookup", { query: "ACME" }, apiConfig);
++      expect(listaOk.ok).toBe(true);
++      expect(listaOk.data).toMatchObject({ source: "Portal da Transparência — Lista Suja" });
++
++      const listaFallback = await executeTool("lista_suja_lookup", { query: "ACME" }, apiConfig);
++      expect(listaFallback.ok).toBe(true);
++      expect(listaFallback.data).toMatchObject({ source: "Portal da Transparência / dados.gov.br" });
++
++      // Procurados FOUND + NOT_FOUND (13 paginated pages each)
++      vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
++        const url = String(input);
++        if (!url.includes("b_start:int=")) {
++          return textResponse(
++            '<a href="https://www.gov.br/mj/pt-br/assuntos/sua-seguranca/seguranca-publica/operacoes-integradas/projeto-captura/lista-de-procurados/joao-silva/view">\nJoão da Silva - SP\n20/11/2026</a>'
++          );
++        }
++        return textResponse("<html><body>Sem registros</body></html>");
++      });
++
++      const procFound = await executeTool("procurados_lookup", { nome: "Joao Silva" }, apiConfig);
++      expect(procFound.ok).toBe(true);
++      expect(procFound.data).toMatchObject({
++        status: "FOUND",
++        total_matches: 1,
++        matches: [expect.objectContaining({ name: "João da Silva", state: "SP", date: "20/11/2026" })],
++      });
++
++      const procNotFound = await executeTool(
++        "procurados_lookup",
++        { nome: "Nome Inexistente" },
++        apiConfig
++      );
++      expect(procNotFound.ok).toBe(true);
++      expect(procNotFound.data).toMatchObject({
++        status: "NOT_FOUND",
++        total_matches: 0,
++        pages_checked: 13,
++      });
++    });
++  });
++
++  describe("lib/tools/government.ts happy/error coverage", () => {
++    it("covers ibge_localidades, transparencia_lookup, ceis_cnep_lookup, and querido_diario via executeTool", async () => {
++      process.env.TRANSPARENCIA_API_KEY = "transp-key";
++
++      vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
++        const url = String(input);
++        if (url.includes("servicodados.ibge.gov.br")) {
++          return jsonResponse([{ id: 35, sigla: "SP", nome: "São Paulo" }]);
++        }
++        if (url.includes("api.portaldatransparencia.gov.br/api-de-dados/servidores")) {
++          return jsonResponse([{ nome: "SERVIDOR EXEMPLO" }]);
++        }
++        if (url.includes("api.portaldatransparencia.gov.br/api-de-dados/cnep")) {
++          return jsonResponse([{ sancao: "MULTA" }]);
++        }
++        if (url.includes("api.queridodiario.org.br")) {
++          return jsonResponse({ total_gazettes: 1, gazettes: [] });
++        }
++        return jsonResponse({}, 404);
++      });
++
++      const ibgeEstados = await executeTool("ibge_localidades", { tipo: "estados" }, apiConfig);
++      expect(ibgeEstados.ok).toBe(true);
++
++      const ibgeMunUf = await executeTool(
++        "ibge_localidades",
++        { tipo: "municipios_por_uf", uf: "SP" },
++        apiConfig
++      );
++      expect(ibgeMunUf.ok).toBe(true);
++
++      const transpServ = await executeTool(
++        "transparencia_lookup",
++        { cnpj: "12345678909", tipo: "servidores", pagina: 1 },
++        apiConfig
++      );
++      expect(transpServ.ok).toBe(true);
++
++      const ceisCnep = await executeTool(
++        "ceis_cnep_lookup",
++        { query: "ACME LTDA", tipo: "cnep", pagina: 1 },
++        apiConfig
++      );
++      expect(ceisCnep.ok).toBe(true);
++      expect(ceisCnep.data).toMatchObject({ databases_checked: ["cnep"] });
++
++      const qdOk = await executeTool(
++        "querido_diario",
++        { query: "", territory_id: "3550308", since: "2026-01-01", until: "2026-01-31" },
++        apiConfig
++      );
++      expect(qdOk.ok).toBe(true);
++      expect(qdOk.data).toMatchObject({ source: "Querido Diário — Open Knowledge Brasil" });
++    });
++  });
++});
+diff --git a/test/unit/worker-rest-cloudflare.test.ts b/test/unit/worker-rest-cloudflare.test.ts
+new file mode 100644
+index 0000000..36e8fcb
+--- /dev/null
++++ b/test/unit/worker-rest-cloudflare.test.ts
+@@ -0,0 +1,495 @@
++import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
++import {
++  handleHealthCheck,
++  handleMCPEndpoint,
++  handleMCPRequest,
++  type Env,
++} from "../../lib/adapters/cloudflare.js";
++import {
++  handleIntelligenceEndpoint,
++  handleLookupEndpoint,
++  handleSearchEndpoint,
++  handleThinkingEndpoint,
++} from "../../lib/workers/rest.js";
++import { generateSecureToken } from "../../lib/workers/tokens.js";
++import worker from "../../lib/workers/worker.js";
++import { TOOL_DEFINITIONS } from "../../lib/core/tools.js";
++import { resetCircuitBreakers } from "../../lib/core/http-client.js";
++
++function createMemoryKv(initial: Record<string, string> = {}): KVNamespace & {
++  store: Map<string, { value: string; options?: unknown }>;
++} {
++  const store = new Map<string, { value: string; options?: unknown }>(
++    Object.entries(initial).map(([k, v]) => [k, { value: v }])
++  );
++  return {
++    store,
++    async get(key: string): Promise<string | null> {
++      return store.get(key)?.value ?? null;
++    },
++    async put(
++      key: string,
++      value: string,
++      options?: { expiration?: number; expirationTtl?: number; metadata?: unknown }
++    ): Promise<void> {
++      store.set(key, { value, options });
++    },
++    async delete(key: string): Promise<void> {
++      store.delete(key);
++    },
++  };
++}
++
++function jsonResponse(body: unknown, status = 200): Response {
++  return new Response(JSON.stringify(body), {
++    status,
++    headers: { "Content-Type": "application/json" },
++  });
++}
++
++function createExecutionContext(): ExecutionContext {
++  return {
++    waitUntil: vi.fn(),
++    passThroughOnException: vi.fn(),
++  } as unknown as ExecutionContext;
++}
++
++describe("Workers REST API, Tokens, Worker Router & Cloudflare Adapter", () => {
++  const originalTavily = process.env.TAVILY_API_KEY;
++  const originalPerplexity = process.env.PERPLEXITY_API_KEY;
++
++  beforeEach(() => {
++    delete process.env.TAVILY_API_KEY;
++    delete process.env.PERPLEXITY_API_KEY;
++    resetCircuitBreakers();
++  });
++
++  afterEach(() => {
++    if (originalTavily === undefined) delete process.env.TAVILY_API_KEY;
++    else process.env.TAVILY_API_KEY = originalTavily;
++
++    if (originalPerplexity === undefined) delete process.env.PERPLEXITY_API_KEY;
++    else process.env.PERPLEXITY_API_KEY = originalPerplexity;
++
++    resetCircuitBreakers();
++    vi.restoreAllMocks();
++    vi.useRealTimers();
++  });
++
++  describe("lib/workers/tokens.ts", () => {
++    it("generates cryptographically random 64-hex-char tokens with default and custom prefixes", () => {
++      const defaultToken = generateSecureToken();
++      const secondToken = generateSecureToken();
++      const oauthToken = generateSecureToken("oauth");
++
++      expect(defaultToken).toMatch(/^mcp_[0-9a-f]{64}$/);
++      expect(oauthToken).toMatch(/^oauth_[0-9a-f]{64}$/);
++      expect(secondToken).not.toBe(defaultToken);
++    });
++  });
++
++  describe("lib/workers/rest.ts", () => {
++    it("handleLookupEndpoint serves valid CNPJ, serves cache hits on KV, and handles invalid/not-found/500", async () => {
++      const cacheKv = createMemoryKv();
++      const env: Env = { MCP_CACHE: cacheKv };
++
++      const fetchSpy = vi
++        .spyOn(globalThis, "fetch")
++        .mockResolvedValue(
++          jsonResponse({ cnpj: "11222333000181", razao_social: "EMPRESA TESTE LTDA" })
++        );
++
++      const okResp = await handleLookupEndpoint("cnpj", "11.222.333/0001-81", env);
++      expect(okResp.status).toBe(200);
++      const okPayload = (await okResp.json()) as { content: Array<{ text: string }> };
++      const parsed = JSON.parse(okPayload.content[0].text) as Record<string, unknown>;
++      expect(parsed.razao_social).toBe("EMPRESA TESTE LTDA");
++      expect(fetchSpy).toHaveBeenCalledTimes(1);
++
++      // Subsequent lookup should hit KVCache without calling fetch again
++      const cachedResp = await handleLookupEndpoint("cnpj", "11222333000181", env);
++      expect(cachedResp.status).toBe(200);
++      expect(fetchSpy).toHaveBeenCalledTimes(1);
++
++      // Invalid input -> 400 with tool validation error (-32603)
++      const invalidResp = await handleLookupEndpoint("cep", "invalid-cep", {});
++      expect(invalidResp.status).toBe(400);
++      const invalidBody = (await invalidResp.json()) as { error: string; code: number };
++      expect(invalidBody.code).toBe(-32603);
++
++      // Upstream 404 on valid checksum CNPJ -> tool returns "CNPJ not found" -> REST endpoint maps to 400
++      vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(jsonResponse({ message: "not found" }, 404));
++      const notFoundResp = await handleLookupEndpoint("cnpj", "33000167000101", {});
++      expect(notFoundResp.status).toBe(400);
++      const nfBody = (await notFoundResp.json()) as { data?: string };
++      expect(nfBody.data).toMatch(/not found/i);
++
++      // Trigger outer try/catch -> 500 when env triggers TypeError in handleMCPRequest
++      const errResp = await handleLookupEndpoint("cnpj", "11222333000181", null as unknown as Env);
++      expect(errResp.status).toBe(500);
++      const errBody = (await errResp.json()) as { error: string };
++      expect(errBody.error).toBe("Internal server error");
++    });
++
++    it("handleSearchEndpoint validates query, returns 200 on provider hit, 400 on provider error, and 500 on malformed JSON", async () => {
++      const missingResp = await handleSearchEndpoint(
++        new Request("https://worker.example/search", {
++          method: "POST",
++          body: JSON.stringify({ max_results: 3 }),
++        }),
++        {}
++      );
++      expect(missingResp.status).toBe(400);
++      expect(await missingResp.json()).toEqual({ error: "Missing query parameter" });
++
++      // No search API keys configured -> tool execution fails -> 400
++      const noKeyResp = await handleSearchEndpoint(
++        new Request("https://worker.example/search", {
++          method: "POST",
++          body: JSON.stringify({ query: "Empresa Teste", max_results: 2 }),
++        }),
++        {}
++      );
++      expect(noKeyResp.status).toBe(400);
++
++      // Configure Perplexity API key & mock fetch -> 200
++      process.env.PERPLEXITY_API_KEY = "pplx-test-key";
++      vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
++        jsonResponse({
++          choices: [{ message: { content: "Empresa Teste S/A summary" } }],
++          citations: ["https://dados.gov.br/empresa"],
++        })
++      );
++
++      const okResp = await handleSearchEndpoint(
++        new Request("https://worker.example/search", {
++          method: "POST",
++          body: JSON.stringify({ query: "Empresa Teste", max_results: 2 }),
++        }),
++        {}
++      );
++      expect(okResp.status).toBe(200);
++      const okData = (await okResp.json()) as { content: Array<{ text: string }> };
++      expect(okData.content[0].text).toContain("Empresa Teste S/A summary");
++
++      // Invalid JSON triggers 500
++      const malformedResp = await handleSearchEndpoint(
++        new Request("https://worker.example/search", {
++          method: "POST",
++          body: "{not-json",
++        }),
++        {}
++      );
++      expect(malformedResp.status).toBe(500);
++    });
++
++    it("handleIntelligenceEndpoint validates cnpj, handles 200 with mocked fetch, 400 on bad cnpj, and 500 on malformed JSON", async () => {
++      const missingResp = await handleIntelligenceEndpoint(
++        new Request("https://worker.example/intelligence", {
++          method: "POST",
++          body: JSON.stringify({ categories: ["government"] }),
++        }),
++        {}
++      );
++      expect(missingResp.status).toBe(400);
++      expect(await missingResp.json()).toEqual({ error: "Missing cnpj parameter" });
++
++      const invalidResp = await handleIntelligenceEndpoint(
++        new Request("https://worker.example/intelligence", {
++          method: "POST",
++          body: JSON.stringify({ cnpj: "123" }),
++        }),
++        {}
++      );
++      expect(invalidResp.status).toBe(400);
++
++      process.env.PERPLEXITY_API_KEY = "pplx-test-key";
++      vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
++        const url = String(input);
++        if (url.includes("perplexity.ai")) {
++          return jsonResponse({
++            choices: [{ message: { content: "Contrato federal para 11222333000181" } }],
++            citations: ["https://portaldatransparencia.gov.br/contratos/1"],
++          });
++        }
++        return jsonResponse({
++          cnpj: "11222333000181",
++          razao_social: "EMPRESA INTEL LTDA",
++          nome_fantasia: "INTEL",
++          municipio: "SAO PAULO",
++          uf: "SP",
++        });
++      });
++
++      const okResp = await handleIntelligenceEndpoint(
++        new Request("https://worker.example/intelligence", {
++          method: "POST",
++          body: JSON.stringify({
++            cnpj: "11222333000181",
++            categories: ["government"],
++            max_queries: 1,
++            max_results_per_query: 2,
++          }),
++        }),
++        {}
++      );
++      expect(okResp.status).toBe(200);
++      const okPayload = (await okResp.json()) as { content: Array<{ text: string }> };
++      expect(okPayload.content[0].text).toContain("EMPRESA INTEL LTDA");
++
++      const malformedResp = await handleIntelligenceEndpoint(
++        new Request("https://worker.example/intelligence", {
++          method: "POST",
++          body: "bad-json",
++        }),
++        {}
++      );
++      expect(malformedResp.status).toBe(500);
++    });
++
++    it("handleThinkingEndpoint supports valid thoughts (200), schema failure (400), and invalid JSON (500)", async () => {
++      const okResp = await handleThinkingEndpoint(
++        new Request("https://worker.example/thinking", {
++          method: "POST",
++          body: JSON.stringify({
++            thought: "Verificar quadro societário",
++            thoughtNumber: 1,
++            totalThoughts: 1,
++            nextThoughtNeeded: false,
++          }),
++        }),
++        {}
++      );
++      expect(okResp.status).toBe(200);
++      const payload = (await okResp.json()) as { content: Array<{ text: string }> };
++      expect(payload.content[0].text).toContain("thoughtNumber");
++
++      const badParamsResp = await handleThinkingEndpoint(
++        new Request("https://worker.example/thinking", {
++          method: "POST",
++          body: JSON.stringify({ thought: "invalid", thoughtNumber: 0 }),
++        }),
++        {}
++      );
++      expect(badParamsResp.status).toBe(400);
++
++      const badJsonResp = await handleThinkingEndpoint(
++        new Request("https://worker.example/thinking", {
++          method: "POST",
++          body: "{bad",
++        }),
++        {}
++      );
++      expect(badJsonResp.status).toBe(500);
++    });
++  });
++
++  describe("lib/adapters/cloudflare.ts", () => {
++    it("handles tools/list, tools/call (ok, failure, throw), unknown method, and env propagation", async () => {
++      const listResp = await handleMCPRequest({ jsonrpc: "2.0", id: 1, method: "tools/list" }, {});
++      expect(listResp.error).toBeUndefined();
++      expect((listResp.result as { tools: unknown[] }).tools).toHaveLength(TOOL_DEFINITIONS.length);
++
++      const kv = createMemoryKv();
++      const callOk = await handleMCPRequest(
++        {
++          jsonrpc: "2.0",
++          id: 2,
++          method: "tools/call",
++          params: { name: "cpf_validate", arguments: { cpf: "52998224725" } },
++        },
++        { MCP_CACHE: kv, TAVILY_API_KEY: "tvly-propagated" }
++      );
++      expect(process.env.TAVILY_API_KEY).toBe("tvly-propagated");
++      expect(callOk.error).toBeUndefined();
++      const okText = ((callOk.result as { content: Array<{ text: string }> }).content[0]).text;
++      expect(JSON.parse(okText)).toMatchObject({ valid: true, region: "ES/RJ" });
++
++      // Tool returns ok:false (-32603)
++      vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(jsonResponse({ error: "not found" }, 404));
++      const callFail = await handleMCPRequest(
++        {
++          jsonrpc: "2.0",
++          id: 3,
++          method: "tools/call",
++          params: { name: "cnpj_lookup", arguments: { cnpj: "11222333000181" } },
++        },
++        {}
++      );
++      expect(callFail.error).toMatchObject({ code: -32603, message: "Tool execution failed" });
++
++      // Inner catch (-32602) when KVCache rejects during executeTool
++      const throwingKv: KVNamespace = {
++        get: vi.fn().mockRejectedValue(new Error("kv outage")),
++        put: vi.fn().mockResolvedValue(undefined),
++        delete: vi.fn().mockResolvedValue(undefined),
++      };
++      const callThrow = await handleMCPRequest(
++        {
++          jsonrpc: "2.0",
++          id: 4,
++          method: "tools/call",
++          params: { name: "cnpj_lookup", arguments: { cnpj: "11222333000181" } },
++        },
++        { MCP_CACHE: throwingKv }
++      );
++      expect(callThrow.error).toMatchObject({
++        code: -32602,
++        message: "Invalid parameters",
++        data: "kv outage",
++      });
++
++      // Outer catch (-32603) when params is null
++      const nullParams = await handleMCPRequest(
++        { jsonrpc: "2.0", id: 5, method: "tools/call", params: null },
++        {}
++      );
++      expect(nullParams.error).toMatchObject({ code: -32603, message: "Internal error" });
++
++      // Unknown method (-32601)
++      const unknownMethod = await handleMCPRequest(
++        { jsonrpc: "2.0", id: 6, method: "resources/unknown" },
++        {}
++      );
++      expect(unknownMethod.error).toMatchObject({ code: -32601, message: "Method not found" });
++    });
++
++    it("handleMCPEndpoint handles valid requests, invalid JSON (-32700), request read errors (500), and health check", async () => {
++      const okResp = await handleMCPEndpoint(
++        new Request("https://worker.example/mcp", {
++          method: "POST",
++          body: JSON.stringify({ jsonrpc: "2.0", id: 10, method: "tools/list" }),
++        }),
++        { TAVILY_API_KEY: "tvly-endpoint" }
++      );
++      expect(okResp.status).toBe(200);
++      expect(process.env.TAVILY_API_KEY).toBe("tvly-endpoint");
++
++      const parseErrResp = await handleMCPEndpoint(
++        new Request("https://worker.example/mcp", { method: "POST", body: "{invalid" }),
++        {}
++      );
++      expect(parseErrResp.status).toBe(400);
++      const parseErrBody = (await parseErrResp.json()) as { error: { code: number } };
++      expect(parseErrBody.error.code).toBe(-32700);
++
++      const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
++      const badRequest = {
++        text: vi.fn().mockRejectedValue(new Error("stream aborted")),
++      } as unknown as Request;
++      const internalErrResp = await handleMCPEndpoint(badRequest, {});
++      expect(internalErrResp.status).toBe(500);
++      const internalBody = (await internalErrResp.json()) as { error: { code: number; data: string } };
++      expect(internalBody.error).toMatchObject({ code: -32603, data: "stream aborted" });
++      expect(errSpy).toHaveBeenCalled();
++
++      const healthResp = handleHealthCheck();
++      expect(healthResp.status).toBe(200);
++      expect(await healthResp.json()).toMatchObject({
++        status: "healthy",
++        service: "mcp-dadosbr",
++        runtime: "cloudflare-workers",
++      });
++    });
++  });
++
++  describe("lib/workers/worker.ts", () => {
++    it("routes /, /mcp 405, /sse 405, REST endpoints, unknown 404, env propagation, and 429 rate limits", async () => {
++      const ctx = createExecutionContext();
++      const baseEnv: Env = { MCP_DISABLE_RATE_LIMIT: "true" };
++
++      // Root /
++      const rootResp = await worker.fetch(new Request("https://worker.example/"), baseEnv, ctx);
++      expect(rootResp.status).toBe(200);
++      const rootJson = (await rootResp.json()) as { service: string; endpoints: Record<string, string> };
++      expect(rootJson.service).toBe("MCP DadosBR");
++      expect(rootJson.endpoints.mcp).toBe("/mcp (HTTP JSON-RPC)");
++
++      // 405 Method Not Allowed on GET /mcp & DELETE /sse
++      const mcpGet = await worker.fetch(new Request("https://worker.example/mcp"), baseEnv, ctx);
++      expect(mcpGet.status).toBe(405);
++
++      const sseDel = await worker.fetch(
++        new Request("https://worker.example/sse", { method: "DELETE" }),
++        baseEnv,
++        ctx
++      );
++      expect(sseDel.status).toBe(405);
++
++      // 404 Unknown route
++      const notFound = await worker.fetch(
++        new Request("https://worker.example/unknown/route"),
++        baseEnv,
++        ctx
++      );
++      expect(notFound.status).toBe(404);
++
++      // GET /cnpj/:cnpj and /cep/:cep with mocked fetch + env.TAVILY_API_KEY propagation
++      vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
++        jsonResponse({ cnpj: "11222333000181", cep: "01310100", ok: true })
++      );
++      const cnpjResp = await worker.fetch(
++        new Request("https://worker.example/cnpj/11222333000181"),
++        { ...baseEnv, TAVILY_API_KEY: "tvly-worker" },
++        ctx
++      );
++      expect(cnpjResp.status).toBe(200);
++      expect(process.env.TAVILY_API_KEY).toBe("tvly-worker");
++
++      const cepResp = await worker.fetch(
++        new Request("https://worker.example/cep/01310100"),
++        baseEnv,
++        ctx
++      );
++      expect(cepResp.status).toBe(200);
++
++      // POST /search, /intelligence, /thinking via worker router
++      const searchResp = await worker.fetch(
++        new Request("https://worker.example/search", { method: "POST", body: "{}" }),
++        baseEnv,
++        ctx
++      );
++      expect(searchResp.status).toBe(400);
++
++      const intelResp = await worker.fetch(
++        new Request("https://worker.example/intelligence", { method: "POST", body: "{}" }),
++        baseEnv,
++        ctx
++      );
++      expect(intelResp.status).toBe(400);
++
++      const thinkResp = await worker.fetch(
++        new Request("https://worker.example/thinking", {
++          method: "POST",
++          body: JSON.stringify({
++            thought: "step",
++            thoughtNumber: 1,
++            totalThoughts: 1,
++            nextThoughtNeeded: false,
++          }),
++        }),
++        baseEnv,
++        ctx
++      );
++      expect(thinkResp.status).toBe(200);
++
++      // Rate limit 429 enforcement via MCP_KV
++      vi.useFakeTimers();
++      vi.setSystemTime(new Date("2026-11-20T12:00:00Z"));
++      const bucket = Math.floor(Date.now() / 60000);
++      const rateKv = createMemoryKv({
++        [`rate_limit:198.51.100.10:${bucket}`]: JSON.stringify({ count: 30 }),
++      });
++
++      const limitedResp = await worker.fetch(
++        new Request("https://worker.example/cep/01310100", {
++          headers: { "CF-Connecting-IP": "198.51.100.10", Origin: "https://app.example" },
++        }),
++        { MCP_KV: rateKv },
++        ctx
++      );
++      expect(limitedResp.status).toBe(429);
++      expect(limitedResp.headers.get("Access-Control-Allow-Origin")).toBe("*");
++    });
++  });
++});
+diff --git a/vitest.config.ts b/vitest.config.ts
+index 56158a6..e932f33 100644
+--- a/vitest.config.ts
++++ b/vitest.config.ts
+@@ -30,14 +30,13 @@ export default defineConfig({
+                 'examples/',
+                 'apps/',
+             ],
+-            // Baseline measured in TCK-0028 across lib/**/*.ts (incl. workers/ & cloudflare.ts):
+-            // 76.62% stmts, 70.17% branches, 75.66% funcs, 78.26% lines.
+-            // Ratcheted from TCK-0027 (75/72/67/73); target 80/80/75/80 after TCK-0029.
++            // Baseline measured in TCK-0029 across lib/**/*.ts (incl. workers/ & cloudflare.ts):
++            // 87.91% stmts, 80.27% branches, 86.89% funcs, 88.64% lines (FND-0014 target met; TCK-0025 will cover logger.ts/tracing.ts).
+             thresholds: {
+-                lines: 76,
+-                functions: 73,
+-                branches: 68,
+-                statements: 74,
++                lines: 80,
++                functions: 80,
++                branches: 75,
++                statements: 80,
+             },
+         },
+         testTimeout: 10000,
