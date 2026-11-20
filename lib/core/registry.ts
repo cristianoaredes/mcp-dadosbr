@@ -6,14 +6,20 @@
  */
 
 import type { ZodTypeAny } from "zod";
+import type { SequentialThinkingProcessor } from "./sequential-thinking.js";
 import { Cache, LookupResult, ApiConfig } from "../types/index.js";
+
+export interface ToolExecutionContext {
+    sessionId?: string;
+    thinkingProcessor?: SequentialThinkingProcessor;
+}
 
 export interface ToolHandler {
     name: string;
     description: string;
     inputSchema: Record<string, unknown>;
     zodSchema: ZodTypeAny;
-    execute: (args: unknown, apiConfig: ApiConfig, cache?: Cache) => Promise<LookupResult>;
+    execute: (args: unknown, apiConfig: ApiConfig, cache?: Cache, context?: ToolExecutionContext) => Promise<LookupResult>;
 }
 
 const registry = new Map<string, ToolHandler>();
@@ -48,6 +54,7 @@ export async function executeRegisteredTool(
     args: unknown,
     apiConfig: ApiConfig,
     cache?: Cache,
+    context?: ToolExecutionContext,
 ): Promise<LookupResult> {
     const tool = registry.get(name);
     if (!tool) {
@@ -69,7 +76,7 @@ export async function executeRegisteredTool(
         };
     }
 
-    return tool.execute(parsed.data, apiConfig, cache);
+    return tool.execute(parsed.data, apiConfig, cache, context);
 }
 
 /**

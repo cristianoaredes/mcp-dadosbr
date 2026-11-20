@@ -137,12 +137,13 @@ registerTool({
 
 import { SequentialThinkingProcessor, SEQUENTIAL_THINKING_TOOL } from "../core/sequential-thinking.js";
 
-const thinkingProcessor = new SequentialThinkingProcessor();
-
 registerTool({
     ...SEQUENTIAL_THINKING_TOOL,
     zodSchema: SequentialThinkingSchema,
-    execute: async (args) => thinkingProcessor.processThought(args),
+    execute: async (args, _apiConfig, _cache, context) => {
+        const processor = context?.thinkingProcessor ?? new SequentialThinkingProcessor();
+        return processor.processThought(args);
+    },
 });
 
 export { lookup };

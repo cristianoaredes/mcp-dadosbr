@@ -6,6 +6,9 @@
 import { McpAgent } from "agents/mcp";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { TOOL_DEFINITIONS, executeTool } from "../core/tools.js";
+import { SequentialThinkingProcessor } from "../core/sequential-thinking.js";
+import { RateLimiter } from "../infrastructure/rate-limiter.js";
+import { RateLimitError } from "../shared/errors.js";
 import { resolveApiConfig, SERVER_VERSION } from "../config/index.js";
 import { KVCache } from "../core/cache.js";
 import { TIMEOUTS } from "../config/timeouts.js";
@@ -24,6 +27,7 @@ export interface DadosBRMCPEnv {
   MCP_CACHE_TTL?: string;
   MCP_API_KEY?: string;
   MCP_DISABLE_RATE_LIMIT?: string;
+  MCP_TOOL_RATE_LIMIT_MAX?: string;
   TAVILY_API_KEY?: string;
   PERPLEXITY_API_KEY?: string;
   TRANSPARENCIA_API_KEY?: string;
@@ -43,6 +47,8 @@ export class DadosBRMCP extends McpAgent<DadosBRMCPEnv> {
   protected declare env: DadosBRMCPEnv;
   private cache: Cache | null = null;
   private apiConfig: ApiConfig | null = null;
+  private thinkingProcessor = new SequentialThinkingProcessor();
+  private toolRateLimiter: RateLimiter | null = null;
 
   /**
    * Initialize the MCP server and register all tools
@@ -67,6 +73,21 @@ export class DadosBRMCP extends McpAgent<DadosBRMCPEnv> {
 
     // Resolve API configuration
     this.apiConfig = resolveApiConfig();
+
+    // Initialize per-session tool rate limiter unless explicitly disabled
+    if (this.env.MCP_DISABLE_RATE_LIMIT !== "true") {
+      const parsedMax = this.env.MCP_TOOL_RATE_LIMIT_MAX
+        ? parseInt(this.env.MCP_TOOL_RATE_LIMIT_MAX, 10)
+        : NaN;
+      const maxRequests = Number.isFinite(parsedMax) && parsedMax > 0 ? parsedMax : 120;
+      this.toolRateLimiter = new RateLimiter({
+        windowMs: TIMEOUTS.RATE_LIMIT_WINDOW_MS,
+        maxRequests,
+        enableCleanupTimer: false,
+      });
+    } else {
+      this.toolRateLimiter = null;
+    }
 
     // Initialize cache if KV namespace is available
     if (this.env.MCP_CACHE) {
@@ -99,7 +120,16 @@ export class DadosBRMCP extends McpAgent<DadosBRMCPEnv> {
         tool.description,
         async (args: unknown) => {
           try {
-            const result = await executeTool(tool.name, args, apiConfig, cache || undefined);
+            if (this.toolRateLimiter && !this.toolRateLimiter.checkLimit("mcp-agent")) {
+              const retryAfter = Math.max(
+                1,
+                Math.ceil(this.toolRateLimiter.getResetTime("mcp-agent") / 1000)
+              );
+              throw new RateLimitError(retryAfter);
+            }
+            const result = await executeTool(tool.name, args, apiConfig, cache || undefined, {
+              thinkingProcessor: this.thinkingProcessor,
+            });
 
             // Format result for MCP response
             if (result.ok) {

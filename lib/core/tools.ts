@@ -6,6 +6,7 @@
  */
 
 import { Cache, LookupResult, Metrics, ApiConfig } from "../types/index.js";
+import type { ToolExecutionContext } from "./registry.js";
 
 // Import barrel to trigger all tool registrations
 import {
@@ -61,10 +62,11 @@ export async function executeTool(
   args: unknown,
   apiConfig: ApiConfig,
   cache?: Cache,
+  context?: ToolExecutionContext,
 ): Promise<LookupResult> {
   const startTime = Date.now();
   try {
-    const result = await executeRegisteredTool(name, args, apiConfig, cache);
+    const result = await executeRegisteredTool(name, args, apiConfig, cache, context);
     recordMetrics(Date.now() - startTime, false, !result.ok);
     return result;
   } catch (err) {
