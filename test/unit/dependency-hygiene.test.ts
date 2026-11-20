@@ -119,3 +119,23 @@ describe("TCK-0027 / FND-0014: Coverage tooling, Worker inclusion & circuit-brea
     expect(testSrc).not.toMatch(/setTimeout\(resolve,\s*1100\)/);
   });
 });
+
+describe("TCK-0028 / FND-0014: Replicated unit suites connected directly to lib/ modules", () => {
+  it("imports real production modules without inline duplicates across sse, concurrency, deduplication, and intelligence suites", () => {
+    const sseSrc = readFileSync(resolve(ROOT, "test/unit/sse.test.ts"), "utf8");
+    expect(sseSrc).toContain("../../lib/workers/sse.js");
+    expect(sseSrc).toContain("../../lib/adapters/cli-http.js");
+
+    const concurrencySrc = readFileSync(resolve(ROOT, "test/unit/concurrency.test.ts"), "utf8");
+    expect(concurrencySrc).toContain("../../lib/core/intelligence.js");
+    expect(concurrencySrc).not.toMatch(/function executeWithConcurrencyLimit/);
+
+    const dedupSrc = readFileSync(resolve(ROOT, "test/unit/deduplication.test.ts"), "utf8");
+    expect(dedupSrc).toContain("../../lib/tools/core.js");
+    expect(dedupSrc).not.toMatch(/const deduplicate\s*=/);
+
+    const intelligenceSrc = readFileSync(resolve(ROOT, "test/unit/intelligence.test.ts"), "utf8");
+    expect(intelligenceSrc).toContain("../../lib/core/intelligence.js");
+    expect(intelligenceSrc).not.toMatch(/function containsCnpj/);
+  });
+});
