@@ -2,7 +2,7 @@
  * OpenAPI schema generation for ChatGPT integration
  */
 
-import { corsHeaders } from '../adapters/cloudflare.js';
+import { Env, getCorsHeaders } from '../adapters/cloudflare.js';
 
 /**
  * Generate OpenAPI 3.0 schema for the API
@@ -20,33 +20,24 @@ export function generateOpenAPISchema(requestUrl: string): unknown {
     servers: [{ url: origin }],
     security: [
       {
-        'OAuth2': ['mcp']
+        'ApiKeyAuth': []
       },
       {
-        'ApiKeyAuth': []
+        'BearerAuth': []
       }
     ],
     components: {
       securitySchemes: {
-        OAuth2: {
-          type: 'oauth2',
-          flows: {
-            authorizationCode: {
-              authorizationUrl: `${origin}/oauth/authorize`,
-              tokenUrl: `${origin}/oauth/token`,
-              scopes: {
-                'mcp': 'Access to MCP DadosBR tools',
-                'openid': 'OpenID Connect',
-                'profile': 'User profile information'
-              }
-            }
-          }
-        },
         ApiKeyAuth: {
           type: 'apiKey',
           in: 'header',
           name: 'X-API-Key',
-          description: 'API key for authentication. Can also be provided via \'Authorization: Bearer <key>\' header.'
+          description: 'API key for authentication via X-API-Key header.'
+        },
+        BearerAuth: {
+          type: 'http',
+          scheme: 'bearer',
+          description: "API key for authentication via 'Authorization: Bearer <key>' header."
         }
       }
     },
@@ -55,8 +46,8 @@ export function generateOpenAPISchema(requestUrl: string): unknown {
         get: {
           summary: 'Look up CNPJ company data',
           security: [
-            { 'OAuth2': ['mcp'] },
-            { 'ApiKeyAuth': [] }
+            { 'ApiKeyAuth': [] },
+            { 'BearerAuth': [] }
           ],
           parameters: [{
             name: 'cnpj',
@@ -77,8 +68,8 @@ export function generateOpenAPISchema(requestUrl: string): unknown {
         get: {
           summary: 'Look up CEP postal code data',
           security: [
-            { 'OAuth2': ['mcp'] },
-            { 'ApiKeyAuth': [] }
+            { 'ApiKeyAuth': [] },
+            { 'BearerAuth': [] }
           ],
           parameters: [{
             name: 'cep',
@@ -99,8 +90,8 @@ export function generateOpenAPISchema(requestUrl: string): unknown {
         post: {
           summary: 'Search the web for Brazilian company information',
           security: [
-            { 'OAuth2': ['mcp'] },
-            { 'ApiKeyAuth': [] }
+            { 'ApiKeyAuth': [] },
+            { 'BearerAuth': [] }
           ],
           requestBody: {
             required: true,
@@ -138,8 +129,8 @@ export function generateOpenAPISchema(requestUrl: string): unknown {
         post: {
           summary: 'Intelligent search for Brazilian company information',
           security: [
-            { 'OAuth2': ['mcp'] },
-            { 'ApiKeyAuth': [] }
+            { 'ApiKeyAuth': [] },
+            { 'BearerAuth': [] }
           ],
           requestBody: {
             required: true,
@@ -192,8 +183,8 @@ export function generateOpenAPISchema(requestUrl: string): unknown {
         post: {
           summary: 'Structured reasoning and problem-solving',
           security: [
-            { 'OAuth2': ['mcp'] },
-            { 'ApiKeyAuth': [] }
+            { 'ApiKeyAuth': [] },
+            { 'BearerAuth': [] }
           ],
           requestBody: {
             required: true,
@@ -238,7 +229,10 @@ export function generateOpenAPISchema(requestUrl: string): unknown {
         post: {
           summary: 'MCP JSON-RPC endpoint',
           description: 'Model Context Protocol JSON-RPC endpoint for AI assistants',
-          security: [], // No authentication required for MCP protocol
+          security: [
+            { 'ApiKeyAuth': [] },
+            { 'BearerAuth': [] }
+          ],
           requestBody: {
             required: true,
             content: {
@@ -258,7 +252,8 @@ export function generateOpenAPISchema(requestUrl: string): unknown {
           },
           responses: {
             '200': { description: 'MCP response' },
-            '400': { description: 'Invalid request' }
+            '400': { description: 'Invalid request' },
+            '401': { description: 'Unauthorized - API key required' }
           }
         }
       },
@@ -266,10 +261,14 @@ export function generateOpenAPISchema(requestUrl: string): unknown {
         get: {
           summary: 'MCP Server-Sent Events endpoint',
           description: 'Model Context Protocol streaming endpoint for real-time communication',
-          security: [], // No authentication required for MCP protocol
+          security: [
+            { 'ApiKeyAuth': [] },
+            { 'BearerAuth': [] }
+          ],
           responses: {
             '200': { description: 'SSE stream established' },
-            '400': { description: 'Invalid request' }
+            '400': { description: 'Invalid request' },
+            '401': { description: 'Unauthorized - API key required' }
           }
         }
       }
@@ -280,14 +279,14 @@ export function generateOpenAPISchema(requestUrl: string): unknown {
 /**
  * Handle /openapi.json endpoint
  */
-export function handleOpenAPIEndpoint(request: Request): Response {
+export function handleOpenAPIEndpoint(request: Request, env?: Env): Response {
   const schema = generateOpenAPISchema(request.url);
 
   return new Response(JSON.stringify(schema), {
     status: 200,
     headers: {
       'Content-Type': 'application/json',
-      ...corsHeaders,
+      ...getCorsHeaders(request, env, { isPublic: true }),
     },
   });
 }
