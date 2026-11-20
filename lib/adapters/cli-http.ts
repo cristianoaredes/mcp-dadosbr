@@ -1,0 +1,403 @@
+import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
+import express from "express";
+import { createMCPServer } from "../core/mcp-server.js";
+import { RateLimiter } from "../infrastructure/rate-limiter.js";
+import { ApiConfig, Cache } from "../types/index.js";
+import { TIMEOUTS } from "../config/timeouts.js";
+
+export const DEFAULT_CLI_HTTP_HOST = "127.0.0.1";
+export const DEFAULT_MAX_SSE_SESSIONS = 100;
+
+const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
+const SESSION_ID_REGEX = /^[A-Za-z0-9_-]{1,128}$/;
+
+export interface TransportSession {
+  transport: SSEServerTransport;
+  createdAt: Date;
+  lastActivity: Date;
+}
+
+export interface CliHttpOptions {
+  apiConfig: ApiConfig;
+  cache: Cache;
+  host?: string;
+  allowedOrigins?: string[];
+  allowedHosts?: string[];
+  maxSessions?: number;
+  rateLimitWindowMs?: number;
+  rateLimitMaxRequests?: number;
+  debug?: (...args: unknown[]) => void;
+}
+
+export interface CliHttpContext {
+  app: express.Express;
+  transports: Map<string, TransportSession>;
+  rateLimiter: RateLimiter;
+  closeAll: () => void;
+}
+
+export function parseCommaSeparatedList(raw?: string): string[] {
+  if (!raw) return [];
+  return raw
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+}
+
+/**
+ * Normalize an HTTP Host header into a lowercase hostname (without port or IPv6 brackets),
+ * rejecting malformed, whitespace-containing, or path/credential-smuggling values.
+ */
+export function normalizeHostHeader(hostHeader?: string): string | null {
+  if (!hostHeader || typeof hostHeader !== "string") {
+    return null;
+  }
+
+  const trimmed = hostHeader.trim().toLowerCase();
+  if (!trimmed || /[\s/@\\?#]/.test(trimmed)) {
+    return null;
+  }
+
+  if (trimmed.startsWith("[")) {
+    const match = /^\[([a-f0-9:.]+)\](?::(\d{1,5}))?$/.exec(trimmed);
+    if (!match) {
+      return null;
+    }
+    if (match[2] !== undefined) {
+      const port = Number(match[2]);
+      if (!Number.isInteger(port) || port < 1 || port > 65535) {
+        return null;
+      }
+    }
+    return match[1];
+  }
+
+  const firstColon = trimmed.indexOf(":");
+  if (firstColon === -1) {
+    return trimmed;
+  }
+
+  const lastColon = trimmed.lastIndexOf(":");
+  if (firstColon !== lastColon) {
+    // Reject unbracketed IPv6 or multi-colon strings.
+    return null;
+  }
+
+  const hostname = trimmed.slice(0, firstColon);
+  const portStr = trimmed.slice(firstColon + 1);
+  if (!hostname || !/^\d{1,5}$/.test(portStr)) {
+    return null;
+  }
+  const port = Number(portStr);
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    return null;
+  }
+  return hostname;
+}
+
+export function isAllowedCliHost(
+  hostHeader: string | undefined,
+  bindHost?: string,
+  extraAllowedHosts?: string[],
+): boolean {
+  const host = normalizeHostHeader(hostHeader);
+  if (!host) {
+    return false;
+  }
+
+  if (LOOPBACK_HOSTS.has(host)) {
+    return true;
+  }
+
+  if (bindHost) {
+    const normalizedBind = normalizeHostHeader(bindHost);
+    if (
+      normalizedBind &&
+      normalizedBind !== "0.0.0.0" &&
+      normalizedBind !== "::" &&
+      host === normalizedBind
+    ) {
+      return true;
+    }
+  }
+
+  if (extraAllowedHosts && extraAllowedHosts.length > 0) {
+    for (const rawAllowed of extraAllowedHosts) {
+      const normalized = normalizeHostHeader(rawAllowed);
+      if (normalized && normalized !== "*" && normalized !== "0.0.0.0" && normalized !== "::") {
+        if (host === normalized) {
+          return true;
+        }
+      }
+    }
+  }
+
+  return false;
+}
+
+export function isAllowedCliOrigin(
+  originHeader: string | undefined,
+  allowedOrigins?: string[],
+): { allowed: boolean; allowOriginHeader?: string } {
+  if (originHeader === undefined) {
+    return { allowed: true };
+  }
+
+  if (typeof originHeader !== "string") {
+    return { allowed: false };
+  }
+
+  const trimmed = originHeader.trim();
+  if (!trimmed || trimmed.toLowerCase() === "null" || trimmed === "*") {
+    return { allowed: false };
+  }
+
+  let parsed: URL;
+  try {
+    parsed = new URL(trimmed);
+  } catch {
+    return { allowed: false };
+  }
+
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    return { allowed: false };
+  }
+
+  if (
+    parsed.username ||
+    parsed.password ||
+    parsed.pathname !== "/" ||
+    parsed.search !== "" ||
+    parsed.hash !== "" ||
+    trimmed.endsWith("/")
+  ) {
+    return { allowed: false };
+  }
+
+  const canonicalOrigin = parsed.origin;
+  const nonEmptyAllowed = (allowedOrigins ?? [])
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+
+  if (nonEmptyAllowed.length > 0) {
+    const exactMatches = nonEmptyAllowed.filter((entry) => entry !== "*");
+    const matched = exactMatches.some(
+      (entry) => entry.toLowerCase() === canonicalOrigin.toLowerCase(),
+    );
+    return matched ? { allowed: true, allowOriginHeader: canonicalOrigin } : { allowed: false };
+  }
+
+  const hostname = parsed.hostname.toLowerCase();
+  if (hostname === "localhost" || hostname === "127.0.0.1" || hostname === "[::1]") {
+    return { allowed: true, allowOriginHeader: canonicalOrigin };
+  }
+
+  return { allowed: false };
+}
+
+export function isValidSessionId(value: unknown): value is string {
+  return typeof value === "string" && SESSION_ID_REGEX.test(value);
+}
+
+export function createCliHttpApp(options: CliHttpOptions): CliHttpContext {
+  const debug = options.debug ?? (() => {});
+  const maxSessions =
+    options.maxSessions !== undefined && Number.isFinite(options.maxSessions) && options.maxSessions > 0
+      ? Math.floor(options.maxSessions)
+      : DEFAULT_MAX_SSE_SESSIONS;
+
+  const app = express();
+  app.disable("x-powered-by");
+  app.use(express.json({ limit: "1mb" }));
+
+  // Defensive security headers across all responses (including 4xx/5xx)
+  app.use((_req, res, next) => {
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.setHeader("X-Frame-Options", "DENY");
+    res.setHeader("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'");
+    res.setHeader("Referrer-Policy", "no-referrer");
+    next();
+  });
+
+  // Anti-DNS-rebinding Host validation and strict Origin/CORS enforcement
+  app.use((req, res, next) => {
+    if (!isAllowedCliHost(req.headers.host, options.host, options.allowedHosts)) {
+      res.status(403).json({
+        error: "Forbidden",
+        message: "Invalid or disallowed Host header",
+      });
+      return;
+    }
+
+    const rawOrigin = req.headers.origin;
+    if (Array.isArray(rawOrigin)) {
+      res.status(403).json({
+        error: "Forbidden",
+        message: "Invalid Origin header",
+      });
+      return;
+    }
+
+    const originCheck = isAllowedCliOrigin(rawOrigin, options.allowedOrigins);
+    if (!originCheck.allowed) {
+      res.status(403).json({
+        error: "Forbidden",
+        message: "Origin not allowed",
+      });
+      return;
+    }
+
+    if (originCheck.allowOriginHeader) {
+      res.setHeader("Access-Control-Allow-Origin", originCheck.allowOriginHeader);
+      res.setHeader("Vary", "Origin");
+      res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+      res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+    }
+
+    if (req.method === "OPTIONS") {
+      res.sendStatus(204);
+      return;
+    }
+
+    next();
+  });
+
+  const rateLimiter = new RateLimiter({
+    windowMs: options.rateLimitWindowMs ?? 60 * 1000,
+    maxRequests: options.rateLimitMaxRequests ?? 30,
+  });
+
+  const rateLimitMiddleware = (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    const clientId = req.ip || req.socket.remoteAddress || "unknown";
+
+    if (!rateLimiter.checkLimit(clientId)) {
+      const resetTime = rateLimiter.getResetTime(clientId);
+      const resetSeconds = Math.ceil(resetTime / 1000);
+      const logClientId = process.env.NODE_ENV !== "production" ? clientId : "[masked]";
+      console.error(`[RateLimit] Client ${logClientId} exceeded rate limit`);
+
+      res.status(429).json({
+        error: "Rate limit exceeded",
+        message: `Too many requests. Please try again in ${resetSeconds} seconds.`,
+        retryAfter: resetSeconds,
+      });
+      return;
+    }
+
+    const remaining = rateLimiter.getRemaining(clientId);
+    res.setHeader("X-RateLimit-Limit", String(options.rateLimitMaxRequests ?? 30));
+    res.setHeader("X-RateLimit-Remaining", remaining.toString());
+
+    next();
+  };
+
+  // Use Map instead of plain object to prevent Object.prototype key collisions
+  const transports = new Map<string, TransportSession>();
+
+  const connectionMonitor = setInterval(() => {
+    const now = Date.now();
+    const timeout = TIMEOUTS.SSE_CONNECTION_MS;
+
+    for (const [sessionId, session] of transports.entries()) {
+      const age = now - session.lastActivity.getTime();
+      if (age > timeout) {
+        debug(`Cleaning up stale SSE session ${sessionId} (age: ${age}ms)`);
+        session.transport.close?.();
+        transports.delete(sessionId);
+      }
+    }
+
+    if (transports.size > 0) {
+      debug(`Active SSE connections: ${transports.size}`);
+    }
+  }, TIMEOUTS.PING_INTERVAL_MS);
+  connectionMonitor.unref?.();
+
+  const closeAll = () => {
+    clearInterval(connectionMonitor);
+    rateLimiter.destroy();
+    for (const session of transports.values()) {
+      session.transport.close?.();
+    }
+    transports.clear();
+  };
+
+  // SSE endpoint - establishes the stream (GET)
+  app.get("/mcp", rateLimitMiddleware, async (_req, res) => {
+    debug("GET /mcp - Establishing SSE stream");
+    if (transports.size >= maxSessions) {
+      res.status(503).json({
+        error: "Service Unavailable",
+        message: "Maximum active SSE sessions reached",
+      });
+      return;
+    }
+
+    try {
+      const transport = new SSEServerTransport("/messages", res);
+      const sessionId = transport.sessionId;
+      const now = new Date();
+      transports.set(sessionId, {
+        transport,
+        createdAt: now,
+        lastActivity: now,
+      });
+      debug(`Created SSE transport with session ID: ${sessionId} (total sessions: ${transports.size})`);
+
+      transport.onclose = () => {
+        debug(`SSE transport closed for session ${sessionId}`);
+        transports.delete(sessionId);
+      };
+
+      const server = createMCPServer({ apiConfig: options.apiConfig, cache: options.cache });
+      await server.connect(transport);
+      debug(`MCP server connected to SSE transport ${sessionId}`);
+    } catch (error) {
+      debug("Error establishing SSE stream:", error);
+      if (!res.headersSent) {
+        res.status(500).send("Error establishing SSE stream");
+      }
+    }
+  });
+
+  // Messages endpoint - receives client JSON-RPC requests (POST)
+  app.post("/messages", rateLimitMiddleware, async (req, res) => {
+    debug("POST /messages");
+    try {
+      const sessionId = req.query.sessionId;
+      if (!isValidSessionId(sessionId)) {
+        debug("Invalid or missing sessionId parameter in request");
+        res.status(400).json({
+          error: "Bad Request",
+          message: "Invalid or missing sessionId parameter",
+        });
+        return;
+      }
+
+      const session = transports.get(sessionId);
+      if (!session) {
+        debug(`No transport found for session: ${sessionId}`);
+        res.status(404).json({
+          error: "Not Found",
+          message: "Session not found",
+        });
+        return;
+      }
+
+      session.lastActivity = new Date();
+      await session.transport.handlePostMessage(req, res, req.body);
+    } catch (error) {
+      debug("Error handling message:", error);
+      if (!res.headersSent) {
+        res.status(500).send("Error handling request");
+      }
+    }
+  });
+
+  return {
+    app,
+    transports,
+    rateLimiter,
+    closeAll,
+  };
+}

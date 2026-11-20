@@ -116,6 +116,15 @@
     "updated_at": "2026-11-20T16:33:36Z",
     "updated_by": "criteria-check"
   },
+  "TCK-0015": {
+    "content_digest": "sha256:58c009bdeec8b6714a8cc4186714c9325a577f4f84732a0d1a8a7fd778cb9de8",
+    "criteria_digest": "sha256:cb35010e07fe2c64f06f4c094e09ec04b8d12c373bccadd6c77194ce0acb9521",
+    "head": "c4bbd4f2b862ab65c38c683ab3ad704a8be7c967",
+    "passes": true,
+    "tree": "4d0e50bdbf293fbddb6acc3c877e50cb91473399",
+    "updated_at": "2026-11-20T18:35:02Z",
+    "updated_by": "criteria-check"
+  },
   "TCK-0016": {
     "content_digest": null,
     "criteria_digest": null,

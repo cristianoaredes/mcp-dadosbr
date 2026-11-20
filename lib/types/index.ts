@@ -8,6 +8,7 @@ export interface ApiConfig {
 export interface ServerConfig {
   transport: string;
   httpPort: number;
+  httpHost?: string;
   cacheSize: number;
   cacheTTL: number;
   apiTimeout: number;

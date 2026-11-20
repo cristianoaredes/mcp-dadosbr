@@ -1,0 +1,30 @@
+{
+  "id": "RUN-20261120-183209-tck-0015",
+  "design": "DES-0020",
+  "ticket": "TCK-0015",
+  "started_at": "2026-11-20T18:32:09Z",
+  "started_by": "ops",
+  "environment": "dev",
+  "mode": "live",
+  "status": "completed",
+  "current_step": 4,
+  "total_steps": 4,
+  "ended_at": "2026-11-20T18:35:02Z",
+  "result": "7/7 cli-http-security.test.ts, 382/382 Vitest (25 arquivos), tsc + tsc.worker TYPECHECK_OK, build + build:worker BUILD_OK, npm run test:transport PASS (101 stdio + HTTP/SSE), criteria-check 3/3 pass",
+  "loop_iterations": 1,
+  "attempt_count": 0,
+  "lessons_consulted": [],
+  "loop_cost_usd": null,
+  "cost_source": "unknown",
+  "loop_strategy": "default",
+  "context_peak": 0,
+  "final_judge_delta": 29,
+  "warmup": false,
+  "final_judge_delta_source": "judge",
+  "lesson_utility": {
+    "utility": 0.0,
+    "n_lessons": 0,
+    "lessons_consulted": [],
+    "signal": "no-lessons"
+  }
+}

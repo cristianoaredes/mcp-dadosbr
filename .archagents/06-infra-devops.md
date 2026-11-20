@@ -8,13 +8,14 @@ O snapshot inicial continha workflows de CI, release por tag e Cloudflare com ru
 
 - `.github/workflows/ci.yml:L1-L142`
 - `.github/workflows/release.yml:L1-L80`
-- `.github/workflows/cloudflare-deploy.yml:L1-L32`
+- `.github/workflows/cloudflare-deploy.yml:L1-L42`
 - `package.json:L82-L88`
 
-## Gate de auditoria de dependências em produção (`TCK-0021`)
+## Gate de auditoria de dependências em produção (`TCK-0021`) & Workflow Cloudflare (`TCK-0015`)
 
 - O job `lint` (`Code Quality`) de `.github/workflows/ci.yml:L116-L117` executa `npm audit --omit=dev --audit-level=high` após `npm ci`.
-- Dependências de runtime mortas (`agents`, `@smithery/sdk`, `workers-mcp`, `async-mutex`) e o módulo obsoleto `lib/workers/mcp-agent.ts` foram removidos em `TCK-0021`; `zod` (`^4.6.7`) e `express` (`^5.3.0`) + transitivas foram saneados com `package-lock.json` validado via `npm ci`. A execução efetiva do pipeline no GitHub Actions após essa alteração permanece **a confirmar**.
+- `.github/workflows/cloudflare-deploy.yml:L27-L41` declara `permissions: { contents: read }` no nível do workflow (menor privilégio para `GITHUB_TOKEN`) e `persist-credentials: false` em `actions/checkout@v4`.
+- Dependências de runtime mortas (`agents`, `@smithery/sdk`, `workers-mcp`, `async-mutex`) e o módulo obsoleto `lib/workers/mcp-agent.ts` foram removidos em `TCK-0021`; `zod` (`^4.6.7`) e `express` (`^5.3.0`) + transitivas foram saneados com `package-lock.json` validado via `npm ci`. A execução efetiva dos pipelines no GitHub Actions após essas alterações permanece **a confirmar**.
 
 ## Alteração preparada para o runner próprio
 

@@ -24,6 +24,9 @@ on:
           - staging
           - production
 
+permissions:
+  contents: read
+
 jobs:
   deploy:
     if: github.ref == 'refs/heads/main'
@@ -33,6 +36,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
