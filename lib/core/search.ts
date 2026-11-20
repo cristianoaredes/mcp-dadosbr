@@ -1,5 +1,6 @@
 import { Cache, LookupResult } from '../types/index.js';
 import { getAvailableProvider, SearchResult } from './search-providers.js';
+import { maskSensitiveText, summarizeQueryForLog } from '../shared/log-redaction.js';
 
 export interface SearchResponseData {
   results: SearchResult[];
@@ -23,13 +24,15 @@ export async function executeSearch(
   const cacheKey = `search:${query}:${maxResults}`;
   const transportMode = process.env.MCP_TRANSPORT || "stdio";
 
+  const querySummary = summarizeQueryForLog(query);
+
   // Check cache first
   if (cache) {
     const cached = await cache.get<SearchResponseData>(cacheKey);
     if (cached) {
       const elapsed = Date.now() - startTime;
       console.error(
-        `[${new Date().toISOString()}] [search] [${query}] [cache_hit] [${elapsed}ms] [${transportMode}]`
+        `[${new Date().toISOString()}] [search] [${querySummary}] [cache_hit] [${elapsed}ms] [${transportMode}]`
       );
       return { ok: true, data: cached };
     }
@@ -44,7 +47,7 @@ export async function executeSearch(
       // All providers failed, return error
       const elapsed = Date.now() - startTime;
       console.error(
-        `[${new Date().toISOString()}] [search] [${query}] [error: ${searchResult.error.message}] [${elapsed}ms] [${transportMode}]`
+        `[${new Date().toISOString()}] [search] [${querySummary}] [error: ${maskSensitiveText(searchResult.error.message)}] [${elapsed}ms] [${transportMode}]`
       );
 
       return {
@@ -71,7 +74,7 @@ export async function executeSearch(
 
     const elapsed = Date.now() - startTime;
     console.error(
-      `[${new Date().toISOString()}] [search] [${query}] [success] [${elapsed}ms] [${transportMode}] [provider: ${providerName}] [results: ${searchResult.value.length}]`
+      `[${new Date().toISOString()}] [search] [${querySummary}] [success] [${elapsed}ms] [${transportMode}] [provider: ${providerName}] [results: ${searchResult.value.length}]`
     );
 
     return {
@@ -84,7 +87,7 @@ export async function executeSearch(
     const errorMessage = err.message || 'Search failed';
 
     console.error(
-      `[${new Date().toISOString()}] [search] [${query}] [error: ${errorMessage}] [${elapsed}ms] [${transportMode}]`
+      `[${new Date().toISOString()}] [search] [${querySummary}] [error: ${maskSensitiveText(errorMessage)}] [${elapsed}ms] [${transportMode}]`
     );
 
     return {

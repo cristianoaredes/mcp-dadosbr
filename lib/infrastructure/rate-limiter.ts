@@ -8,6 +8,7 @@ import { TIMEOUTS } from "../config/timeouts.js";
 export interface RateLimiterConfig {
   windowMs: number;      // Time window in milliseconds
   maxRequests: number;   // Max requests per window per client
+  enableCleanupTimer?: boolean; // Optional periodic cleanup timer (default: true)
 }
 
 interface ClientRecord {
@@ -18,12 +19,16 @@ interface ClientRecord {
 export class RateLimiter {
   private clients = new Map<string, ClientRecord>();
   private config: RateLimiterConfig;
+  private cleanupTimer?: ReturnType<typeof setInterval>;
 
   constructor(config: RateLimiterConfig) {
     this.config = config;
 
-    // Cleanup old entries periodically
-    setInterval(() => this.cleanup(), TIMEOUTS.RATE_LIMIT_CLEANUP_MS);
+    // Cleanup old entries periodically unless disabled (e.g. per-session limiters or Workers)
+    if (config.enableCleanupTimer !== false) {
+      this.cleanupTimer = setInterval(() => this.cleanup(), TIMEOUTS.RATE_LIMIT_CLEANUP_MS);
+      this.cleanupTimer.unref?.();
+    }
   }
 
   /**
@@ -115,5 +120,16 @@ export class RateLimiter {
       windowMs: this.config.windowMs,
       maxRequests: this.config.maxRequests
     };
+  }
+
+  /**
+   * Release interval handle and tracked client records
+   */
+  destroy(): void {
+    if (this.cleanupTimer !== undefined) {
+      clearInterval(this.cleanupTimer);
+      this.cleanupTimer = undefined;
+    }
+    this.clients.clear();
   }
 }

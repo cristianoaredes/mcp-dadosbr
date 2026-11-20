@@ -9,10 +9,22 @@ import {
   ReadResourceRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import { SERVER_NAME, SERVER_VERSION } from "../config/index.js";
+import { TIMEOUTS } from "../config/timeouts.js";
 import { TOOL_DEFINITIONS, executeTool, resetMetrics } from "./tools.js";
+import { SequentialThinkingProcessor } from "./sequential-thinking.js";
+import { RateLimiter } from "../infrastructure/rate-limiter.js";
 import { Cache, ApiConfig } from "../types/index.js";
-import { formatErrorResponse } from "../shared/errors.js";
+import { formatErrorResponse, RateLimitError } from "../shared/errors.js";
 import { readCnpjProfile } from "../shared/cnpj-profile.js";
+
+const DEFAULT_MCP_TOOL_RATE_LIMIT_MAX = 120;
+
+function parsePositiveIntEnv(name: string): number | undefined {
+  const raw = typeof process !== "undefined" ? process.env?.[name] : undefined;
+  if (!raw) return undefined;
+  const parsed = parseInt(raw, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
+}
 
 const appMimeType = "text/html;profile=mcp-app";
 const apps = [
@@ -66,13 +78,33 @@ const apps = [
 export interface MCPServerOptions {
   apiConfig: ApiConfig;
   cache?: Cache;
+  rateLimit?: { windowMs: number; maxRequests: number } | false;
 }
 
 export function createMCPServer(options: MCPServerOptions): Server {
-  const { apiConfig, cache } = options;
-  
+  const { apiConfig, cache, rateLimit } = options;
+
   // Reset metrics on server creation
   resetMetrics();
+
+  // Session-local sequential thinking state (isolated per server/connection)
+  const thinkingProcessor = new SequentialThinkingProcessor();
+
+  // Session-local tool execution rate limiter covering stdio/SSE/Smithery
+  const disableRateLimit =
+    rateLimit === false ||
+    (typeof process !== "undefined" && process.env?.MCP_DISABLE_RATE_LIMIT === "true");
+  const toolRateLimiter = disableRateLimit
+    ? null
+    : new RateLimiter({
+        windowMs:
+          typeof rateLimit === "object" ? rateLimit.windowMs : TIMEOUTS.RATE_LIMIT_WINDOW_MS,
+        maxRequests:
+          typeof rateLimit === "object"
+            ? rateLimit.maxRequests
+            : (parsePositiveIntEnv("MCP_TOOL_RATE_LIMIT_MAX") ?? DEFAULT_MCP_TOOL_RATE_LIMIT_MAX),
+        enableCleanupTimer: false,
+      });
 
   const server = new Server(
     { name: SERVER_NAME, version: SERVER_VERSION },
@@ -109,8 +141,35 @@ export function createMCPServer(options: MCPServerOptions): Server {
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const { name, arguments: args } = request.params;
 
+    if (toolRateLimiter && !toolRateLimiter.checkLimit("mcp-session")) {
+      const retryAfter = Math.max(
+        1,
+        Math.ceil(toolRateLimiter.getResetTime("mcp-session") / 1000)
+      );
+      const errorDetails = formatErrorResponse(new RateLimitError(retryAfter));
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              {
+                error: errorDetails.message,
+                code: errorDetails.code,
+                ...(errorDetails.data ? { details: errorDetails.data } : {}),
+              },
+              null,
+              2
+            ),
+          },
+        ],
+        isError: true,
+      };
+    }
+
     try {
-      const result = await executeTool(name, args, apiConfig, cache);
+      const result = await executeTool(name, args, apiConfig, cache, {
+        thinkingProcessor,
+      });
 
       if (result.ok) {
         const appCapability = server.getClientCapabilities()?.extensions?.["io.modelcontextprotocol/ui"];

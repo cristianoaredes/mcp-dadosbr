@@ -9,6 +9,7 @@ import { buildDorks, DorkCategory, CNPJData } from './dork-templates.js';
 import { TimeoutError } from '../shared/types/result.js';
 import { SEARCH } from '../shared/utils/constants.js';
 import { TIMEOUTS } from '../config/timeouts.js';
+import { maskCnpj, maskSensitiveText, summarizeQueryForLog } from '../shared/log-redaction.js';
 
 /**
  * Execute tasks with concurrency limit
@@ -174,18 +175,18 @@ async function executeIntelligenceInternal(
   cache?: Cache
 ): Promise<LookupResult> {
   const startTime = Date.now();
-  const transportMode = process.env.MCP_TRANSPORT || "stdio";
+  const maskedCnpj = maskCnpj(options.cnpj);
 
   try {
     // Step 1: Get company data (reuse cached if provided)
-    console.error(`[intelligence] [${options.cnpj}] Starting CNPJ intelligence search...`);
+    console.error(`[intelligence] [${maskedCnpj}] Starting CNPJ intelligence search...`);
 
     let companyData: CNPJData;
 
     if (options.cachedCompanyData) {
       // Reuse provided company data
       companyData = options.cachedCompanyData;
-      console.error(`[intelligence] [${options.cnpj}] Using cached company data`);
+      console.error(`[intelligence] [${maskedCnpj}] Using cached company data`);
     } else {
       // Try to get from cache first
       const cacheKey = `cnpj:${apiConfig.cnpjBaseUrl}:${options.cnpj}`;
@@ -193,7 +194,7 @@ async function executeIntelligenceInternal(
 
       if (cachedData) {
         companyData = cachedData;
-        console.error(`[intelligence] [${options.cnpj}] Using cache hit for company data`);
+        console.error(`[intelligence] [${maskedCnpj}] Using cache hit for company data`);
       } else {
         // Fetch from API only if not in cache
         const cnpjResult = await lookup('cnpj', options.cnpj, apiConfig, cache);
@@ -209,20 +210,20 @@ async function executeIntelligenceInternal(
       }
     }
     const company = companyData as { razao_social?: string };
-    console.error(`[intelligence] [${options.cnpj}] Company: ${company.razao_social || 'Unknown'}`);
+    console.error(`[intelligence] [${maskedCnpj}] Company resolved (has_name=${Boolean(company.razao_social)})`);
 
     // Step 2: Build dorks based on company data
     const dorks = buildDorks(companyData, options.categories);
     const maxQueries = options.maxQueries || SEARCH.DEFAULT_MAX_QUERIES;
     const selectedDorks = dorks.slice(0, maxQueries);
 
-    console.error(`[intelligence] [${options.cnpj}] Generated ${dorks.length} dorks, using ${selectedDorks.length}`);
+    console.error(`[intelligence] [${maskedCnpj}] Generated ${dorks.length} dorks, using ${selectedDorks.length}`);
 
     // Step 3: Resolve provider (requires Tavily API key from server config)
     const provider: SearchProvider = await getAvailableProvider(options.provider);
 
     console.error(
-      `[intelligence] [${options.cnpj}] Using provider: ${provider.name}`
+      `[intelligence] [${maskedCnpj}] Using provider: ${provider.name}`
     );
 
     // Step 4: Execute searches with concurrency limit
@@ -246,7 +247,7 @@ async function executeIntelligenceInternal(
     const concurrencyLimit = parseInt(process.env.MCP_INTELLIGENCE_CONCURRENCY || '3', 10);
 
     console.error(
-      `[intelligence] [${options.cnpj}] Executing ${selectedDorks.length} queries ` +
+      `[intelligence] [${maskedCnpj}] Executing ${selectedDorks.length} queries ` +
       `with concurrency limit: ${concurrencyLimit}`
     );
 
@@ -254,7 +255,7 @@ async function executeIntelligenceInternal(
     const searchTasks = selectedDorks.map(dork => {
       return async () => {
         try {
-          console.error(`[intelligence] [${dork.category}] Searching: ${dork.query}`);
+          console.error(`[intelligence] [${dork.category}] Searching (${summarizeQueryForLog(dork.query)})`);
           const searchResult = await provider.search(
             dork.query,
             maxResultsPerQuery
@@ -282,7 +283,7 @@ async function executeIntelligenceInternal(
             };
           } else {
             // Log error but continue with other searches
-            console.error(`[intelligence] [${dork.category}] Search failed: ${searchResult.error.message}`);
+            console.error(`[intelligence] [${dork.category}] Search failed: ${maskSensitiveText(searchResult.error.message)}`);
             return {
               category: dork.category,
               results: [],
@@ -291,7 +292,7 @@ async function executeIntelligenceInternal(
           }
         } catch (error: unknown) {
           const err = error as Error;
-          console.error(`[intelligence] [${dork.category}] Unexpected error: ${err.message}`);
+          console.error(`[intelligence] [${dork.category}] Unexpected error: ${maskSensitiveText(err.message)}`);
           return {
             category: dork.category,
             results: [],
@@ -335,7 +336,7 @@ async function executeIntelligenceInternal(
     const duplicatesRemoved = Object.values(searchResults).reduce((sum, results) => sum + results.length, 0) - totalResults;
 
     if (duplicatesRemoved > 0) {
-      console.error(`[intelligence] [${options.cnpj}] Removed ${duplicatesRemoved} duplicate results`);
+      console.error(`[intelligence] [${maskedCnpj}] Removed ${duplicatesRemoved} duplicate results`);
     }
 
     // Step 6: Build response
@@ -350,7 +351,7 @@ async function executeIntelligenceInternal(
     };
 
     console.error(
-      `[intelligence] [${options.cnpj}] Complete [${elapsed}ms] [${queriesExecuted} queries] [${providerUsed}]`
+      `[intelligence] [${maskedCnpj}] Complete [${elapsed}ms] [${queriesExecuted} queries] [${providerUsed}]`
     );
 
     return {
@@ -364,7 +365,7 @@ async function executeIntelligenceInternal(
     // Handle timeout errors specifically
     if (error instanceof TimeoutError) {
       console.error(
-        `[intelligence] [${options.cnpj}] Timeout after ${elapsed}ms (limit: ${error.timeoutMs}ms)`
+        `[intelligence] [${maskedCnpj}] Timeout after ${elapsed}ms (limit: ${error.timeoutMs}ms)`
       );
       return {
         ok: false,
@@ -374,7 +375,7 @@ async function executeIntelligenceInternal(
 
     const err = error as Error;
     console.error(
-      `[intelligence] [${options.cnpj}] Error: ${err.message} [${elapsed}ms]`
+      `[intelligence] [${maskedCnpj}] Error: ${maskSensitiveText(err.message)} [${elapsed}ms]`
     );
 
     return {
