@@ -19,7 +19,7 @@ import { TIMEOUTS } from "../config/timeouts.js";
 // ─── Shared lookup with caching and deduplication ───────────────────────────
 
 interface PendingRequest {
-    promise: Promise<LookupResult>;
+    promise: Promise<unknown>;
     timestamp: number;
     timeoutId: ReturnType<typeof setTimeout>;
 }
@@ -32,8 +32,11 @@ export function getPendingRequestCount(): number {
 export async function deduplicate<T>(key: string, fn: () => Promise<T>): Promise<T> {
     const timeoutMs = TIMEOUTS.DEDUP_TIMEOUT_MS;
     const existing = pendingRequests.get(key);
-    if (existing && Date.now() - existing.timestamp < timeoutMs) {
-        return existing.promise as Promise<T>;
+    if (existing) {
+        if (Date.now() - existing.timestamp < timeoutMs) {
+            return existing.promise as Promise<T>;
+        }
+        clearTimeout(existing.timeoutId);
     }
     const promise = fn();
     const timeoutId = setTimeout(() => {
@@ -43,7 +46,7 @@ export async function deduplicate<T>(key: string, fn: () => Promise<T>): Promise
     }, timeoutMs);
     (timeoutId as { unref?: () => void }).unref?.();
     pendingRequests.set(key, {
-        promise: promise as Promise<LookupResult>,
+        promise,
         timestamp: Date.now(),
         timeoutId,
     });
