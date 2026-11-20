@@ -3,14 +3,16 @@
  */
 
 import { registerTool } from "../core/registry.js";
-import { httpJson } from "../core/http-client.js";
+import { formatTimeoutMessage, httpJson } from "../core/http-client.js";
+import { TIMEOUTS } from "../config/timeouts.js";
 import {
-    BnmpSchema,
     DatajudSchema,
+    BnmpSchema,
     ListaSujaSchema,
     OabSchema,
     ProcuradosSchema,
 } from "../core/tool-schemas.js";
+import { createTimeoutController, isAbortOrTimeoutError } from "../shared/utils/timeout.js";
 import { LookupResult } from "../types/index.js";
 
 // ─── Datajud / CNJ ──────────────────────────────────────────────────────────
@@ -35,16 +37,25 @@ async function executeDatajud(args: DatajudArgs): Promise<LookupResult> {
     const { query, tribunal = "tjsp", tamanho = 10 } = args;
     const apiName = TRIBUNAL_MAP[tribunal.toLowerCase()] || TRIBUNAL_MAP.tjsp;
     const url = `${DATAJUD_BASE}/${apiName}/_search`;
+    const timeoutMs = TIMEOUTS.HTTP_REQUEST_MS;
+    const ctrl = createTimeoutController(timeoutMs);
     try {
         const resp = await fetch(url, {
-            method: "POST", headers: { "Content-Type": "application/json", "Authorization": `APIKey ${apiKey}` },
+            method: "POST",
+            headers: { "Content-Type": "application/json", "Authorization": `APIKey ${apiKey}` },
             body: JSON.stringify({ query: { match: { "_all": query } }, size: tamanho }),
+            signal: ctrl.signal,
         });
         if (!resp.ok) return { ok: false, error: `Datajud API error: HTTP ${resp.status}` };
         const data = await resp.json();
         return { ok: true, data: { query, tribunal, results: data, source: `Datajud — CNJ (${tribunal.toUpperCase()})` } };
     } catch (err) {
+        if (ctrl.didTimeout() || isAbortOrTimeoutError(err)) {
+            return { ok: false, error: `Datajud error: ${formatTimeoutMessage(timeoutMs)}` };
+        }
         return { ok: false, error: `Datajud error: ${err instanceof Error ? err.message : String(err)}` };
+    } finally {
+        ctrl.cleanup();
     }
 }
 
@@ -107,18 +118,40 @@ interface BnmpArgs { nome: string; orgaoJulgador?: string; }
 
 async function executeBnmp(args: BnmpArgs): Promise<LookupResult> {
     const { nome, orgaoJulgador } = args;
+    const timeoutMs = TIMEOUTS.HTTP_REQUEST_MS;
+    const ctrl = createTimeoutController(timeoutMs);
+    let timedOut = false;
     try {
         const body: Record<string, unknown> = { bpiPesquisa: { nomePessoa: nome }, pagination: { page: 0, size: 10 } };
         if (orgaoJulgador) body.bpiPesquisa = { ...body.bpiPesquisa as Record<string, unknown>, orgaoJulgador };
         const resp = await fetch(`https://portalbnmp.cnj.jus.br/bnmpportal/api/pesquisa-pecas/filter`, {
-            method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json" }, body: JSON.stringify(body),
+            method: "POST",
+            headers: { "Content-Type": "application/json", Accept: "application/json" },
+            body: JSON.stringify(body),
+            signal: ctrl.signal,
         });
         if (resp.ok) {
             const data = await resp.json();
             return { ok: true, data: { query: nome, results: data, source: "BNMP — Banco Nacional de Mandados de Prisão (CNJ)" } };
         }
-    } catch { /* fall through */ }
-    return { ok: true, data: { query: nome, source: "BNMP", search_url: "https://portalbnmp.cnj.jus.br/#/pesquisa-peca", note: "BNMP requires CAPTCHA. Use the search portal.", manual_steps: ["1. Go to https://portalbnmp.cnj.jus.br/#/pesquisa-peca", `2. Enter name: "${nome}"`, "3. Complete CAPTCHA"] } };
+    } catch (err) {
+        timedOut = ctrl.didTimeout() || isAbortOrTimeoutError(err);
+    } finally {
+        ctrl.cleanup();
+    }
+    return {
+        ok: true,
+        data: {
+            query: nome,
+            source: "BNMP",
+            search_url: "https://portalbnmp.cnj.jus.br/#/pesquisa-peca",
+            ...(timedOut ? { timed_out: true } : {}),
+            note: timedOut
+                ? "BNMP request timed out or requires CAPTCHA. Use the search portal."
+                : "BNMP requires CAPTCHA. Use the search portal.",
+            manual_steps: ["1. Go to https://portalbnmp.cnj.jus.br/#/pesquisa-peca", `2. Enter name: "${nome}"`, "3. Complete CAPTCHA"],
+        },
+    };
 }
 
 registerTool({
@@ -149,13 +182,34 @@ async function executeProcurados(args: ProcuradosArgs): Promise<LookupResult> {
     const normalizedSearch = nome.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
     const matches: Array<{ name: string; state: string; date: string; url: string }> = [];
     const pageOffsets = [0, 15, 30, 45, 60, 75, 90, 105, 120, 135, 150, 165, 180];
+    const totalPages = pageOffsets.length;
+    let pagesChecked = 0;
+    const pagesFailed: Array<{ offset: number; reason: string }> = [];
 
-    for (const offset of pageOffsets) {
+    const perPageTimeoutMs = TIMEOUTS.HTTP_REQUEST_MS;
+    const totalDeadline = Date.now() + Math.max(perPageTimeoutMs, TIMEOUTS.INTELLIGENCE_TOTAL_MS);
+
+    for (let i = 0; i < pageOffsets.length; i++) {
+        const offset = pageOffsets[i];
+        const remainingMs = totalDeadline - Date.now();
+        if (remainingMs <= 0) {
+            for (const remainingOffset of pageOffsets.slice(i)) {
+                pagesFailed.push({ offset: remainingOffset, reason: "total timeout exceeded" });
+            }
+            break;
+        }
+
+        const pageTimeoutMs = Math.min(perPageTimeoutMs, remainingMs);
+        const ctrl = createTimeoutController(pageTimeoutMs);
         try {
             const url = offset === 0 ? PROCURADOS_BASE_URL : `${PROCURADOS_BASE_URL}?b_start:int=${offset}`;
-            const resp = await fetch(url);
-            if (!resp.ok) continue;
+            const resp = await fetch(url, { signal: ctrl.signal });
+            if (!resp.ok) {
+                pagesFailed.push({ offset, reason: `HTTP ${resp.status}` });
+                continue;
+            }
             const html = await resp.text();
+            pagesChecked++;
             const entryRegex = /lista-de-procurados\/([^/]+)\/view[^>]*>\s*\n?\s*([^<]+)\n\s*(\d{2}\/\d{2}\/\d{4})/g;
             let match;
             while ((match = entryRegex.exec(html)) !== null) {
@@ -167,14 +221,85 @@ async function executeProcurados(args: ProcuradosArgs): Promise<LookupResult> {
                     matches.push({ name: parts[0]?.trim() || entryName, state: parts[1]?.trim() || "N/A", date: match[3].trim(), url: `${PROCURADOS_BASE_URL}/${match[1]}/view` });
                 }
             }
-        } catch { /* continue */ }
+        } catch (err) {
+            const timedOut = ctrl.didTimeout() || isAbortOrTimeoutError(err);
+            pagesFailed.push({
+                offset,
+                reason: timedOut
+                    ? formatTimeoutMessage(pageTimeoutMs)
+                    : err instanceof Error
+                        ? err.message
+                        : String(err),
+            });
+        } finally {
+            ctrl.cleanup();
+        }
     }
+
+    if (pagesChecked === 0) {
+        return {
+            ok: false,
+            error: `Failed to query MJSP Projeto Captura (${pagesFailed.length}/${totalPages} pages failed; first error: ${pagesFailed[0]?.reason ?? "unknown"}). Cannot determine wanted status.`,
+        };
+    }
+
+    const partial = pagesFailed.length > 0;
+    if (matches.length > 0) {
+        return {
+            ok: true,
+            data: {
+                query: nome,
+                source: "Ministério da Justiça e Segurança Pública — Projeto Captura",
+                total_matches: matches.length,
+                matches,
+                status: "FOUND",
+                partial,
+                pages_checked: pagesChecked,
+                pages_total: totalPages,
+                pages_failed: pagesFailed.length,
+                ...(partial ? { failed_pages: pagesFailed } : {}),
+                list_url: PROCURADOS_BASE_URL,
+                note: partial
+                    ? `⚠️ "${nome}" matched ${matches.length} entry(ies) across ${pagesChecked}/${totalPages} checked page(s); ${pagesFailed.length} page(s) failed.`
+                    : `⚠️ "${nome}" matched ${matches.length} entry(ies).`,
+            },
+        };
+    }
+
+    if (partial) {
+        return {
+            ok: true,
+            data: {
+                query: nome,
+                source: "Ministério da Justiça e Segurança Pública — Projeto Captura",
+                total_matches: 0,
+                matches: [],
+                status: "INCONCLUSIVE",
+                partial: true,
+                pages_checked: pagesChecked,
+                pages_total: totalPages,
+                pages_failed: pagesFailed.length,
+                failed_pages: pagesFailed,
+                list_url: PROCURADOS_BASE_URL,
+                note: `INCONCLUSIVE: "${nome}" was not found in the ${pagesChecked}/${totalPages} checked page(s), but ${pagesFailed.length} page(s) failed to load. Manual verification is required.`,
+            },
+        };
+    }
+
     return {
-        ok: true, data: {
-            query: nome, source: "Ministério da Justiça e Segurança Pública — Projeto Captura",
-            total_matches: matches.length, matches, status: matches.length === 0 ? "NOT_FOUND" : "FOUND",
+        ok: true,
+        data: {
+            query: nome,
+            source: "Ministério da Justiça e Segurança Pública — Projeto Captura",
+            total_matches: 0,
+            matches: [],
+            status: "NOT_FOUND",
+            partial: false,
+            pages_checked: pagesChecked,
+            pages_total: totalPages,
+            pages_failed: 0,
             list_url: PROCURADOS_BASE_URL,
-            note: matches.length === 0 ? `"${nome}" was NOT found in the federal wanted persons list.` : `⚠️ "${nome}" matched ${matches.length} entry(ies).`,
+            note: `"${nome}" was NOT found in the federal wanted persons list.`,
         },
     };
 }
@@ -230,6 +355,6 @@ OSINT value: Critical ESG/compliance indicator.`,
     execute: async (args) => executeListaSuja(args as ListaSujaArgs),
 });
 
-// Export functions needed by deep_profile orchestrator
-export { executeDatajud, executeListaSuja };
-export type { DatajudArgs, ListaSujaArgs };
+// Export functions needed by deep_profile orchestrator and unit tests
+export { executeDatajud, executeBnmp, executeProcurados, executeListaSuja };
+export type { DatajudArgs, BnmpArgs, ProcuradosArgs, ListaSujaArgs };

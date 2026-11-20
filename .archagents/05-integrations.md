@@ -15,6 +15,11 @@ Base revisada: `79aa712` (`v0.5.0`; base inicial: `037dae4c`).
 - **Circuit breaker particionado por origem (`getUpstreamKey`):** cada origem upstream (`new URL(url).origin.toLowerCase()`, com teto LRU/FIFO de `100` origens e remoção prioritária de instâncias `CLOSED`) possui `CircuitBreaker` isolado (`failureThreshold: 5`, `resetTimeoutMs: TIMEOUTS.CIRCUIT_BREAKER_RESET_MS`, `halfOpenMaxAttempts: 3`). Respostas 4xx não-429 (`400`/`401`/`403`/`404`) não disparam retry nem abrem o disjuntor; falhas transientes (`RETRY_STATUS_CODES`, `>= 500`, timeouts e erros de rede) são sinalizadas internamente para contabilização do circuit breaker antes de mapear `HttpResponse`.
 - **Timeout limpo e dinâmico:** `AbortController` com `clearTimeout` garantido em bloco `finally` e mensagem com duração dinâmica (`formatTimeoutMessage(timeoutMs)`).
 - **Retry com Equal Jitter:** aplicável a `RETRY_STATUS_CODES` (`429, 500, 502, 503, 504`) e erros de rede, com atraso `[base/2, base]` (`calculateBackoffDelayMs`), interrompendo retries imediatamente se o circuit breaker abrir.
+- **Timeouts e cancelamento em clientes externos (`lib/shared/utils/timeout.ts`, `search-providers.ts`, `legal.ts`, `intelligence.ts`):**
+  - `PerplexityProvider` (`createTimeoutController`) e `TavilyProvider` (`raceWithTimeoutAndSignal`) aplicam `TIMEOUTS.SEARCH_REQUEST_MS` (default `10s`) e propagam `AbortSignal` com cleanup em `finally`.
+  - `datajud_processos` e `bnmp_mandados` (`lib/tools/legal.ts`) limitam `fetch` com `TIMEOUTS.HTTP_REQUEST_MS`; em timeout no BNMP, o fallback marca `timed_out: true`.
+  - `procurados_lookup` (`executeProcurados`) aplica timeout por página (`TIMEOUTS.HTTP_REQUEST_MS`) e deadline agregado (`Math.max(HTTP_REQUEST_MS, INTELLIGENCE_TOTAL_MS)`), contabilizando `pages_checked`/`pages_failed` para evitar falsos negativos silenciosos (`NOT_FOUND` só com `pages_failed === 0`, `INCONCLUSIVE` com `partial: true` se houver falhas parciais sem match, e `{ ok: false }` se todas as 13 páginas falharem).
+  - `executeIntelligence` limpa seu timer de 25 s em `finally` e propaga `AbortController.signal` ao scheduler concorrente e aos search providers.
 
 Disponibilidade, limites de taxa e cobertura efetiva de cada provedor ficam **a confirmar** no ambiente de uso.
 
@@ -25,3 +30,7 @@ Disponibilidade, limites de taxa e cobertura efetiva de cada provedor ficam **a 
 - `lib/tools/government.ts:L213-L319`
 - `lib/tools/financial.ts:L13-L89`
 - `lib/core/http-client.ts:L1-L278`
+- `lib/shared/utils/timeout.ts:L1-L138`
+- `lib/core/search-providers.ts:L1-L296`
+- `lib/core/intelligence.ts:L1-L523`
+- `lib/tools/legal.ts:L1-L360`

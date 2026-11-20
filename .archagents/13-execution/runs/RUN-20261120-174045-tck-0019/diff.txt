@@ -1,0 +1,1194 @@
+diff --git a/.archagents/05-integrations.md b/.archagents/05-integrations.md
+index 6d51def..49d7b83 100644
+--- a/.archagents/05-integrations.md
++++ b/.archagents/05-integrations.md
+@@ -15,6 +15,11 @@ Base revisada: `79aa712` (`v0.5.0`; base inicial: `037dae4c`).
+ - **Circuit breaker particionado por origem (`getUpstreamKey`):** cada origem upstream (`new URL(url).origin.toLowerCase()`, com teto LRU/FIFO de `100` origens e remoção prioritária de instâncias `CLOSED`) possui `CircuitBreaker` isolado (`failureThreshold: 5`, `resetTimeoutMs: TIMEOUTS.CIRCUIT_BREAKER_RESET_MS`, `halfOpenMaxAttempts: 3`). Respostas 4xx não-429 (`400`/`401`/`403`/`404`) não disparam retry nem abrem o disjuntor; falhas transientes (`RETRY_STATUS_CODES`, `>= 500`, timeouts e erros de rede) são sinalizadas internamente para contabilização do circuit breaker antes de mapear `HttpResponse`.
+ - **Timeout limpo e dinâmico:** `AbortController` com `clearTimeout` garantido em bloco `finally` e mensagem com duração dinâmica (`formatTimeoutMessage(timeoutMs)`).
+ - **Retry com Equal Jitter:** aplicável a `RETRY_STATUS_CODES` (`429, 500, 502, 503, 504`) e erros de rede, com atraso `[base/2, base]` (`calculateBackoffDelayMs`), interrompendo retries imediatamente se o circuit breaker abrir.
++- **Timeouts e cancelamento em clientes externos (`lib/shared/utils/timeout.ts`, `search-providers.ts`, `legal.ts`, `intelligence.ts`):**
++  - `PerplexityProvider` (`createTimeoutController`) e `TavilyProvider` (`raceWithTimeoutAndSignal`) aplicam `TIMEOUTS.SEARCH_REQUEST_MS` (default `10s`) e propagam `AbortSignal` com cleanup em `finally`.
++  - `datajud_processos` e `bnmp_mandados` (`lib/tools/legal.ts`) limitam `fetch` com `TIMEOUTS.HTTP_REQUEST_MS`; em timeout no BNMP, o fallback marca `timed_out: true`.
++  - `procurados_lookup` (`executeProcurados`) aplica timeout por página (`TIMEOUTS.HTTP_REQUEST_MS`) e deadline agregado (`Math.max(HTTP_REQUEST_MS, INTELLIGENCE_TOTAL_MS)`), contabilizando `pages_checked`/`pages_failed` para evitar falsos negativos silenciosos (`NOT_FOUND` só com `pages_failed === 0`, `INCONCLUSIVE` com `partial: true` se houver falhas parciais sem match, e `{ ok: false }` se todas as 13 páginas falharem).
++  - `executeIntelligence` limpa seu timer de 25 s em `finally` e propaga `AbortController.signal` ao scheduler concorrente e aos search providers.
+ 
+ Disponibilidade, limites de taxa e cobertura efetiva de cada provedor ficam **a confirmar** no ambiente de uso.
+ 
+@@ -25,3 +30,7 @@ Disponibilidade, limites de taxa e cobertura efetiva de cada provedor ficam **a
+ - `lib/tools/government.ts:L213-L319`
+ - `lib/tools/financial.ts:L13-L89`
+ - `lib/core/http-client.ts:L1-L278`
++- `lib/shared/utils/timeout.ts:L1-L138`
++- `lib/core/search-providers.ts:L1-L296`
++- `lib/core/intelligence.ts:L1-L523`
++- `lib/tools/legal.ts:L1-L360`
+diff --git a/lib/core/intelligence.ts b/lib/core/intelligence.ts
+index 994fb33..f9c1c5c 100644
+--- a/lib/core/intelligence.ts
++++ b/lib/core/intelligence.ts
+@@ -20,12 +20,17 @@ import { maskCnpj, maskSensitiveText, summarizeQueryForLog } from '../shared/log
+  */
+ async function executeWithConcurrencyLimit<T>(
+   tasks: (() => Promise<T>)[],
+-  limit: number = 3
++  limit: number = 3,
++  signal?: AbortSignal
+ ): Promise<PromiseSettledResult<T>[]> {
+   const results: PromiseSettledResult<T>[] = new Array(tasks.length);
+   const executing: Set<Promise<void>> = new Set();
+ 
+   for (let i = 0; i < tasks.length; i++) {
++    if (signal?.aborted) {
++      break;
++    }
++
+     const task = tasks[i];
+ 
+     // Create a promise that stores result and removes itself when done
+@@ -48,10 +53,16 @@ async function executeWithConcurrencyLimit<T>(
+     if (executing.size >= limit) {
+       await Promise.race(executing);
+     }
++
++    if (signal?.aborted) {
++      break;
++    }
+   }
+ 
+-  // Wait for all remaining promises
+-  await Promise.all(executing);
++  // Wait for remaining tasks unless aborted by parent deadline
++  if (!signal?.aborted && executing.size > 0) {
++    await Promise.all(executing);
++  }
+ 
+   return results;
+ }
+@@ -151,10 +162,14 @@ export async function executeIntelligence(
+   cache?: Cache
+ ): Promise<LookupResult> {
+   const TOTAL_TIMEOUT_MS = TIMEOUTS.INTELLIGENCE_TOTAL_MS;
++  const controller = new AbortController();
++  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+ 
+-  // Create timeout promise
++  // Create timeout promise that aborts in-flight searches on expiration
+   const timeoutPromise = new Promise<never>((_, reject) => {
+-    setTimeout(() => {
++    timeoutId = setTimeout(() => {
++      timeoutId = undefined;
++      controller.abort();
+       reject(new TimeoutError(
+         'Intelligence search timed out',
+         TOTAL_TIMEOUT_MS
+@@ -162,17 +177,43 @@ export async function executeIntelligence(
+     }, TOTAL_TIMEOUT_MS);
+   });
+ 
+-  // Create main execution promise
+-  const executionPromise = executeIntelligenceInternal(options, apiConfig, cache);
++  // Create main execution promise linked to controller.signal
++  const executionPromise = executeIntelligenceInternal(
++    options,
++    apiConfig,
++    cache,
++    controller.signal
++  );
++  // Prevent unhandled rejection if execution rejects after timeout wins Promise.race
++  executionPromise.catch(() => {});
+ 
+-  // Race between timeout and execution
+-  return Promise.race([executionPromise, timeoutPromise]);
++  try {
++    return await Promise.race([executionPromise, timeoutPromise]);
++  } catch (error: unknown) {
++    if (error instanceof TimeoutError) {
++      const maskedCnpj = maskCnpj(options.cnpj);
++      console.error(
++        `[intelligence] [${maskedCnpj}] Timeout reached (limit: ${error.timeoutMs}ms)`
++      );
++      return {
++        ok: false,
++        error: `Intelligence search timed out after ${error.timeoutMs}ms. Try reducing max_queries or using a faster provider.`
++      };
++    }
++    throw error;
++  } finally {
++    if (timeoutId !== undefined) {
++      clearTimeout(timeoutId);
++      timeoutId = undefined;
++    }
++  }
+ }
+ 
+ async function executeIntelligenceInternal(
+   options: IntelligenceOptions,
+   apiConfig: ApiConfig,
+-  cache?: Cache
++  cache: Cache | undefined,
++  signal: AbortSignal
+ ): Promise<LookupResult> {
+   const startTime = Date.now();
+   const maskedCnpj = maskCnpj(options.cnpj);
+@@ -209,6 +250,11 @@ async function executeIntelligenceInternal(
+         companyData = cnpjResult.data as CNPJData;
+       }
+     }
++
++    if (signal.aborted) {
++      throw new TimeoutError('Intelligence search timed out', TIMEOUTS.INTELLIGENCE_TOTAL_MS);
++    }
++
+     const company = companyData as { razao_social?: string };
+     console.error(`[intelligence] [${maskedCnpj}] Company resolved (has_name=${Boolean(company.razao_social)})`);
+ 
+@@ -222,6 +268,10 @@ async function executeIntelligenceInternal(
+     // Step 3: Resolve provider (requires Tavily API key from server config)
+     const provider: SearchProvider = await getAvailableProvider(options.provider);
+ 
++    if (signal.aborted) {
++      throw new TimeoutError('Intelligence search timed out', TIMEOUTS.INTELLIGENCE_TOTAL_MS);
++    }
++
+     console.error(
+       `[intelligence] [${maskedCnpj}] Using provider: ${provider.name}`
+     );
+@@ -244,7 +294,8 @@ async function executeIntelligenceInternal(
+     const maxResultsPerQuery = options.maxResultsPerQuery || SEARCH.DEFAULT_MAX_RESULTS;
+ 
+     // Get concurrency limit from environment or use default
+-    const concurrencyLimit = parseInt(process.env.MCP_INTELLIGENCE_CONCURRENCY || '3', 10);
++    const rawConcurrency = Number.parseInt(process.env.MCP_INTELLIGENCE_CONCURRENCY || '3', 10);
++    const concurrencyLimit = Number.isFinite(rawConcurrency) && rawConcurrency > 0 ? rawConcurrency : 3;
+ 
+     console.error(
+       `[intelligence] [${maskedCnpj}] Executing ${selectedDorks.length} queries ` +
+@@ -254,11 +305,20 @@ async function executeIntelligenceInternal(
+     // Create tasks for concurrent execution
+     const searchTasks = selectedDorks.map(dork => {
+       return async () => {
++        if (signal.aborted) {
++          return {
++            category: dork.category,
++            results: [],
++            success: false
++          };
++        }
++
+         try {
+           console.error(`[intelligence] [${dork.category}] Searching (${summarizeQueryForLog(dork.query)})`);
+           const searchResult = await provider.search(
+             dork.query,
+-            maxResultsPerQuery
++            maxResultsPerQuery,
++            { signal }
+           );
+ 
+           if (searchResult.ok) {
+@@ -302,13 +362,21 @@ async function executeIntelligenceInternal(
+       };
+     });
+ 
+-    // Execute all searches with concurrency limit
+-    const searchTaskResults = await executeWithConcurrencyLimit(searchTasks, concurrencyLimit);
++    // Execute all searches with concurrency limit and abort propagation
++    const searchTaskResults = await executeWithConcurrencyLimit(
++      searchTasks,
++      concurrencyLimit,
++      signal
++    );
++
++    if (signal.aborted) {
++      throw new TimeoutError('Intelligence search timed out', TIMEOUTS.INTELLIGENCE_TOTAL_MS);
++    }
+ 
+     // Aggregate results
+     let queriesExecuted = 0;
+     for (const result of searchTaskResults) {
+-      if (result.status === 'fulfilled') {
++      if (result && result.status === 'fulfilled') {
+         const { category, results, success } = result.value;
+         searchResults[category].push(...results);
+         if (success) {
+diff --git a/lib/core/search-providers.ts b/lib/core/search-providers.ts
+index db7edca..802337e 100644
+--- a/lib/core/search-providers.ts
++++ b/lib/core/search-providers.ts
+@@ -3,9 +3,14 @@
+  * Supports multiple search engines: DuckDuckGo, Tavily, SerpAPI
+  */
+ 
+-import { Result, RateLimitError } from "../shared/types/result.js";
++import { Result, RateLimitError, TimeoutError } from "../shared/types/result.js";
+ import { SEARCH } from "../shared/utils/constants.js";
+ import { TIMEOUTS } from "../config/timeouts.js";
++import {
++  createTimeoutController,
++  isAbortOrTimeoutError,
++  raceWithTimeoutAndSignal,
++} from "../shared/utils/timeout.js";
+ 
+ export interface SearchResult {
+   title: string;
+@@ -13,11 +18,17 @@ export interface SearchResult {
+   snippet: string;
+ }
+ 
++export interface SearchOptions {
++  signal?: AbortSignal;
++  timeoutMs?: number;
++}
++
+ export interface SearchProvider {
+   name: string;
+   search(
+     query: string,
+-    maxResults: number
++    maxResults: number,
++    options?: SearchOptions
+   ): Promise<Result<SearchResult[], Error>>;
+   isAvailable(): Promise<boolean>;
+ }
+@@ -44,7 +55,8 @@ export class TavilyProvider implements SearchProvider {
+ 
+   async search(
+     query: string,
+-    maxResults: number = 5
++    maxResults: number = 5,
++    options?: SearchOptions
+   ): Promise<Result<SearchResult[], Error>> {
+     if (!this.apiKey || !this.client) {
+       return Result.err(
+@@ -54,15 +66,28 @@ export class TavilyProvider implements SearchProvider {
+       );
+     }
+ 
++    const rawTimeout = options?.timeoutMs ?? TIMEOUTS.SEARCH_REQUEST_MS;
++    const timeoutMs =
++      Number.isFinite(rawTimeout) && rawTimeout > 0 ? rawTimeout : TIMEOUTS.SEARCH_REQUEST_MS;
++
++    if (options?.signal?.aborted) {
++      return Result.err(new TimeoutError("Tavily search aborted", timeoutMs));
++    }
++
+     try {
+-      const response = await this.client.search({
+-        query: query,
+-        max_results: maxResults,
+-        search_depth: "basic",
+-        include_answer: false,
+-        include_raw_content: false,
+-        include_images: false,
+-      });
++      const response = await raceWithTimeoutAndSignal(
++        this.client.search({
++          query: query,
++          max_results: maxResults,
++          search_depth: "basic",
++          include_answer: false,
++          include_raw_content: false,
++          include_images: false,
++        }),
++        timeoutMs,
++        options?.signal,
++        "Tavily search"
++      );
+ 
+       if (!response || !response.results) {
+         return Result.ok([]);
+@@ -79,6 +104,10 @@ export class TavilyProvider implements SearchProvider {
+ 
+       return Result.ok(mapped);
+     } catch (error: unknown) {
++      if (error instanceof TimeoutError) {
++        return Result.err(error);
++      }
++
+       const err = error as Error & { statusCode?: number };
+       // Check for rate limiting
+       if (err.statusCode === 429 || err.message?.includes("rate limit")) {
+@@ -114,7 +143,8 @@ export class PerplexityProvider implements SearchProvider {
+ 
+   async search(
+     query: string,
+-    maxResults: number = SEARCH.DEFAULT_MAX_RESULTS
++    maxResults: number = SEARCH.DEFAULT_MAX_RESULTS,
++    options?: SearchOptions
+   ): Promise<Result<SearchResult[], Error>> {
+     if (!this.apiKey) {
+       return Result.err(
+@@ -124,6 +154,16 @@ export class PerplexityProvider implements SearchProvider {
+       );
+     }
+ 
++    const rawTimeout = options?.timeoutMs ?? TIMEOUTS.SEARCH_REQUEST_MS;
++    const timeoutMs =
++      Number.isFinite(rawTimeout) && rawTimeout > 0 ? rawTimeout : TIMEOUTS.SEARCH_REQUEST_MS;
++
++    if (options?.signal?.aborted) {
++      return Result.err(new TimeoutError("Perplexity search aborted", timeoutMs));
++    }
++
++    const ctrl = createTimeoutController(timeoutMs, options?.signal);
++
+     try {
+       const response = await fetch("https://api.perplexity.ai/chat/completions", {
+         method: "POST",
+@@ -131,6 +171,7 @@ export class PerplexityProvider implements SearchProvider {
+           "Authorization": `Bearer ${this.apiKey}`,
+           "Content-Type": "application/json"
+         },
++        signal: ctrl.signal,
+         body: JSON.stringify({
+           model: "sonar",
+           messages: [
+@@ -181,8 +222,19 @@ export class PerplexityProvider implements SearchProvider {
+         }
+       ]);
+     } catch (error: unknown) {
++      if (ctrl.didTimeout()) {
++        return Result.err(new TimeoutError(`Perplexity search timed out after ${timeoutMs}ms`, timeoutMs));
++      }
++      if (ctrl.wasAbortedByParent()) {
++        return Result.err(new TimeoutError("Perplexity search aborted", timeoutMs));
++      }
++      if (isAbortOrTimeoutError(error)) {
++        return Result.err(new TimeoutError(`Perplexity search timed out after ${timeoutMs}ms`, timeoutMs));
++      }
+       const err = error as Error;
+       return Result.err(new Error(`Perplexity search failed: ${err.message}`));
++    } finally {
++      ctrl.cleanup();
+     }
+   }
+ }
+@@ -232,11 +284,12 @@ export async function getAvailableProvider(
+ export async function searchWithFallback(
+   query: string,
+   maxResults: number = SEARCH.DEFAULT_MAX_RESULTS,
+-  preferredProvider?: ProviderType
++  preferredProvider?: ProviderType,
++  options?: SearchOptions
+ ): Promise<Result<SearchResult[], Error>> {
+   try {
+     const provider = await getAvailableProvider(preferredProvider);
+-    return provider.search(query, maxResults);
++    return provider.search(query, maxResults, options);
+   } catch (error) {
+     return Result.err(error as Error);
+   }
+diff --git a/lib/shared/utils/timeout.ts b/lib/shared/utils/timeout.ts
+new file mode 100644
+index 0000000..fb3a212
+--- /dev/null
++++ b/lib/shared/utils/timeout.ts
+@@ -0,0 +1,138 @@
++import { TIMEOUTS } from "../../config/timeouts.js";
++import { TimeoutError } from "../types/result.js";
++
++/**
++ * Check whether an unknown error represents an AbortController or Timeout failure.
++ */
++export function isAbortOrTimeoutError(error: unknown): boolean {
++  if (typeof error !== "object" || error === null) {
++    return false;
++  }
++  const name = (error as { name?: unknown }).name;
++  return name === "AbortError" || name === "TimeoutError";
++}
++
++export interface LinkedAbortController {
++  signal: AbortSignal;
++  cleanup: () => void;
++  didTimeout: () => boolean;
++  wasAbortedByParent: () => boolean;
++}
++
++/**
++ * Create an AbortController bounded by timeoutMs and optionally linked to a parent AbortSignal.
++ * Uses controller.abort() without a non-standard reason argument for Node and Workers compatibility.
++ */
++export function createTimeoutController(
++  timeoutMs: number,
++  parentSignal?: AbortSignal,
++): LinkedAbortController {
++  const effectiveTimeoutMs =
++    Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : TIMEOUTS.HTTP_REQUEST_MS;
++  const controller = new AbortController();
++  let timedOut = false;
++  let abortedByParent = false;
++  let timeoutId: ReturnType<typeof setTimeout> | undefined;
++
++  if (parentSignal?.aborted) {
++    abortedByParent = true;
++    controller.abort();
++    return {
++      signal: controller.signal,
++      cleanup: () => {},
++      didTimeout: () => false,
++      wasAbortedByParent: () => true,
++    };
++  }
++
++  const cleanupTimer = () => {
++    if (timeoutId !== undefined) {
++      clearTimeout(timeoutId);
++      timeoutId = undefined;
++    }
++  };
++
++  const onParentAbort = () => {
++    abortedByParent = true;
++    cleanupTimer();
++    controller.abort();
++  };
++
++  if (parentSignal) {
++    parentSignal.addEventListener("abort", onParentAbort, { once: true });
++  }
++
++  timeoutId = setTimeout(() => {
++    timeoutId = undefined;
++    timedOut = true;
++    controller.abort();
++  }, effectiveTimeoutMs);
++
++  const cleanup = () => {
++    cleanupTimer();
++    if (parentSignal) {
++      parentSignal.removeEventListener("abort", onParentAbort);
++    }
++  };
++
++  return {
++    signal: controller.signal,
++    cleanup,
++    didTimeout: () => timedOut,
++    wasAbortedByParent: () => abortedByParent,
++  };
++}
++
++/**
++ * Race a promise (such as an SDK call without AbortSignal support) against a timeout and optional parent signal.
++ * Attaches a no-op catch handler to the underlying promise to prevent unhandled rejections if timeout wins.
++ */
++export async function raceWithTimeoutAndSignal<T>(
++  promise: Promise<T>,
++  timeoutMs: number,
++  parentSignal?: AbortSignal,
++  label: string = "Operation",
++): Promise<T> {
++  const effectiveTimeoutMs =
++    Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : TIMEOUTS.HTTP_REQUEST_MS;
++
++  // Prevent UnhandledPromiseRejection if the underlying promise rejects after timeout/abort wins.
++  promise.catch(() => {});
++
++  if (parentSignal?.aborted) {
++    throw new TimeoutError(`${label} aborted`, effectiveTimeoutMs);
++  }
++
++  let timeoutId: ReturnType<typeof setTimeout> | undefined;
++  let onParentAbort: (() => void) | undefined;
++
++  const guardPromise = new Promise<never>((_resolve, reject) => {
++    timeoutId = setTimeout(() => {
++      timeoutId = undefined;
++      reject(new TimeoutError(`${label} timed out after ${effectiveTimeoutMs}ms`, effectiveTimeoutMs));
++    }, effectiveTimeoutMs);
++
++    if (parentSignal) {
++      onParentAbort = () => {
++        if (timeoutId !== undefined) {
++          clearTimeout(timeoutId);
++          timeoutId = undefined;
++        }
++        reject(new TimeoutError(`${label} aborted`, effectiveTimeoutMs));
++      };
++      parentSignal.addEventListener("abort", onParentAbort, { once: true });
++    }
++  });
++
++  try {
++    return await Promise.race([promise, guardPromise]);
++  } finally {
++    if (timeoutId !== undefined) {
++      clearTimeout(timeoutId);
++      timeoutId = undefined;
++    }
++    if (parentSignal && onParentAbort) {
++      parentSignal.removeEventListener("abort", onParentAbort);
++    }
++  }
++}
+diff --git a/lib/tools/legal.ts b/lib/tools/legal.ts
+index a40cea3..335e544 100644
+--- a/lib/tools/legal.ts
++++ b/lib/tools/legal.ts
+@@ -3,14 +3,16 @@
+  */
+ 
+ import { registerTool } from "../core/registry.js";
+-import { httpJson } from "../core/http-client.js";
++import { formatTimeoutMessage, httpJson } from "../core/http-client.js";
++import { TIMEOUTS } from "../config/timeouts.js";
+ import {
+-    BnmpSchema,
+     DatajudSchema,
++    BnmpSchema,
+     ListaSujaSchema,
+     OabSchema,
+     ProcuradosSchema,
+ } from "../core/tool-schemas.js";
++import { createTimeoutController, isAbortOrTimeoutError } from "../shared/utils/timeout.js";
+ import { LookupResult } from "../types/index.js";
+ 
+ // ─── Datajud / CNJ ──────────────────────────────────────────────────────────
+@@ -35,16 +37,25 @@ async function executeDatajud(args: DatajudArgs): Promise<LookupResult> {
+     const { query, tribunal = "tjsp", tamanho = 10 } = args;
+     const apiName = TRIBUNAL_MAP[tribunal.toLowerCase()] || TRIBUNAL_MAP.tjsp;
+     const url = `${DATAJUD_BASE}/${apiName}/_search`;
++    const timeoutMs = TIMEOUTS.HTTP_REQUEST_MS;
++    const ctrl = createTimeoutController(timeoutMs);
+     try {
+         const resp = await fetch(url, {
+-            method: "POST", headers: { "Content-Type": "application/json", "Authorization": `APIKey ${apiKey}` },
++            method: "POST",
++            headers: { "Content-Type": "application/json", "Authorization": `APIKey ${apiKey}` },
+             body: JSON.stringify({ query: { match: { "_all": query } }, size: tamanho }),
++            signal: ctrl.signal,
+         });
+         if (!resp.ok) return { ok: false, error: `Datajud API error: HTTP ${resp.status}` };
+         const data = await resp.json();
+         return { ok: true, data: { query, tribunal, results: data, source: `Datajud — CNJ (${tribunal.toUpperCase()})` } };
+     } catch (err) {
++        if (ctrl.didTimeout() || isAbortOrTimeoutError(err)) {
++            return { ok: false, error: `Datajud error: ${formatTimeoutMessage(timeoutMs)}` };
++        }
+         return { ok: false, error: `Datajud error: ${err instanceof Error ? err.message : String(err)}` };
++    } finally {
++        ctrl.cleanup();
+     }
+ }
+ 
+@@ -107,18 +118,40 @@ interface BnmpArgs { nome: string; orgaoJulgador?: string; }
+ 
+ async function executeBnmp(args: BnmpArgs): Promise<LookupResult> {
+     const { nome, orgaoJulgador } = args;
++    const timeoutMs = TIMEOUTS.HTTP_REQUEST_MS;
++    const ctrl = createTimeoutController(timeoutMs);
++    let timedOut = false;
+     try {
+         const body: Record<string, unknown> = { bpiPesquisa: { nomePessoa: nome }, pagination: { page: 0, size: 10 } };
+         if (orgaoJulgador) body.bpiPesquisa = { ...body.bpiPesquisa as Record<string, unknown>, orgaoJulgador };
+         const resp = await fetch(`https://portalbnmp.cnj.jus.br/bnmpportal/api/pesquisa-pecas/filter`, {
+-            method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json" }, body: JSON.stringify(body),
++            method: "POST",
++            headers: { "Content-Type": "application/json", Accept: "application/json" },
++            body: JSON.stringify(body),
++            signal: ctrl.signal,
+         });
+         if (resp.ok) {
+             const data = await resp.json();
+             return { ok: true, data: { query: nome, results: data, source: "BNMP — Banco Nacional de Mandados de Prisão (CNJ)" } };
+         }
+-    } catch { /* fall through */ }
+-    return { ok: true, data: { query: nome, source: "BNMP", search_url: "https://portalbnmp.cnj.jus.br/#/pesquisa-peca", note: "BNMP requires CAPTCHA. Use the search portal.", manual_steps: ["1. Go to https://portalbnmp.cnj.jus.br/#/pesquisa-peca", `2. Enter name: "${nome}"`, "3. Complete CAPTCHA"] } };
++    } catch (err) {
++        timedOut = ctrl.didTimeout() || isAbortOrTimeoutError(err);
++    } finally {
++        ctrl.cleanup();
++    }
++    return {
++        ok: true,
++        data: {
++            query: nome,
++            source: "BNMP",
++            search_url: "https://portalbnmp.cnj.jus.br/#/pesquisa-peca",
++            ...(timedOut ? { timed_out: true } : {}),
++            note: timedOut
++                ? "BNMP request timed out or requires CAPTCHA. Use the search portal."
++                : "BNMP requires CAPTCHA. Use the search portal.",
++            manual_steps: ["1. Go to https://portalbnmp.cnj.jus.br/#/pesquisa-peca", `2. Enter name: "${nome}"`, "3. Complete CAPTCHA"],
++        },
++    };
+ }
+ 
+ registerTool({
+@@ -149,13 +182,34 @@ async function executeProcurados(args: ProcuradosArgs): Promise<LookupResult> {
+     const normalizedSearch = nome.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+     const matches: Array<{ name: string; state: string; date: string; url: string }> = [];
+     const pageOffsets = [0, 15, 30, 45, 60, 75, 90, 105, 120, 135, 150, 165, 180];
++    const totalPages = pageOffsets.length;
++    let pagesChecked = 0;
++    const pagesFailed: Array<{ offset: number; reason: string }> = [];
+ 
+-    for (const offset of pageOffsets) {
++    const perPageTimeoutMs = TIMEOUTS.HTTP_REQUEST_MS;
++    const totalDeadline = Date.now() + Math.max(perPageTimeoutMs, TIMEOUTS.INTELLIGENCE_TOTAL_MS);
++
++    for (let i = 0; i < pageOffsets.length; i++) {
++        const offset = pageOffsets[i];
++        const remainingMs = totalDeadline - Date.now();
++        if (remainingMs <= 0) {
++            for (const remainingOffset of pageOffsets.slice(i)) {
++                pagesFailed.push({ offset: remainingOffset, reason: "total timeout exceeded" });
++            }
++            break;
++        }
++
++        const pageTimeoutMs = Math.min(perPageTimeoutMs, remainingMs);
++        const ctrl = createTimeoutController(pageTimeoutMs);
+         try {
+             const url = offset === 0 ? PROCURADOS_BASE_URL : `${PROCURADOS_BASE_URL}?b_start:int=${offset}`;
+-            const resp = await fetch(url);
+-            if (!resp.ok) continue;
++            const resp = await fetch(url, { signal: ctrl.signal });
++            if (!resp.ok) {
++                pagesFailed.push({ offset, reason: `HTTP ${resp.status}` });
++                continue;
++            }
+             const html = await resp.text();
++            pagesChecked++;
+             const entryRegex = /lista-de-procurados\/([^/]+)\/view[^>]*>\s*\n?\s*([^<]+)\n\s*(\d{2}\/\d{2}\/\d{4})/g;
+             let match;
+             while ((match = entryRegex.exec(html)) !== null) {
+@@ -167,14 +221,85 @@ async function executeProcurados(args: ProcuradosArgs): Promise<LookupResult> {
+                     matches.push({ name: parts[0]?.trim() || entryName, state: parts[1]?.trim() || "N/A", date: match[3].trim(), url: `${PROCURADOS_BASE_URL}/${match[1]}/view` });
+                 }
+             }
+-        } catch { /* continue */ }
++        } catch (err) {
++            const timedOut = ctrl.didTimeout() || isAbortOrTimeoutError(err);
++            pagesFailed.push({
++                offset,
++                reason: timedOut
++                    ? formatTimeoutMessage(pageTimeoutMs)
++                    : err instanceof Error
++                        ? err.message
++                        : String(err),
++            });
++        } finally {
++            ctrl.cleanup();
++        }
+     }
++
++    if (pagesChecked === 0) {
++        return {
++            ok: false,
++            error: `Failed to query MJSP Projeto Captura (${pagesFailed.length}/${totalPages} pages failed; first error: ${pagesFailed[0]?.reason ?? "unknown"}). Cannot determine wanted status.`,
++        };
++    }
++
++    const partial = pagesFailed.length > 0;
++    if (matches.length > 0) {
++        return {
++            ok: true,
++            data: {
++                query: nome,
++                source: "Ministério da Justiça e Segurança Pública — Projeto Captura",
++                total_matches: matches.length,
++                matches,
++                status: "FOUND",
++                partial,
++                pages_checked: pagesChecked,
++                pages_total: totalPages,
++                pages_failed: pagesFailed.length,
++                ...(partial ? { failed_pages: pagesFailed } : {}),
++                list_url: PROCURADOS_BASE_URL,
++                note: partial
++                    ? `⚠️ "${nome}" matched ${matches.length} entry(ies) across ${pagesChecked}/${totalPages} checked page(s); ${pagesFailed.length} page(s) failed.`
++                    : `⚠️ "${nome}" matched ${matches.length} entry(ies).`,
++            },
++        };
++    }
++
++    if (partial) {
++        return {
++            ok: true,
++            data: {
++                query: nome,
++                source: "Ministério da Justiça e Segurança Pública — Projeto Captura",
++                total_matches: 0,
++                matches: [],
++                status: "INCONCLUSIVE",
++                partial: true,
++                pages_checked: pagesChecked,
++                pages_total: totalPages,
++                pages_failed: pagesFailed.length,
++                failed_pages: pagesFailed,
++                list_url: PROCURADOS_BASE_URL,
++                note: `INCONCLUSIVE: "${nome}" was not found in the ${pagesChecked}/${totalPages} checked page(s), but ${pagesFailed.length} page(s) failed to load. Manual verification is required.`,
++            },
++        };
++    }
++
+     return {
+-        ok: true, data: {
+-            query: nome, source: "Ministério da Justiça e Segurança Pública — Projeto Captura",
+-            total_matches: matches.length, matches, status: matches.length === 0 ? "NOT_FOUND" : "FOUND",
++        ok: true,
++        data: {
++            query: nome,
++            source: "Ministério da Justiça e Segurança Pública — Projeto Captura",
++            total_matches: 0,
++            matches: [],
++            status: "NOT_FOUND",
++            partial: false,
++            pages_checked: pagesChecked,
++            pages_total: totalPages,
++            pages_failed: 0,
+             list_url: PROCURADOS_BASE_URL,
+-            note: matches.length === 0 ? `"${nome}" was NOT found in the federal wanted persons list.` : `⚠️ "${nome}" matched ${matches.length} entry(ies).`,
++            note: `"${nome}" was NOT found in the federal wanted persons list.`,
+         },
+     };
+ }
+@@ -230,6 +355,6 @@ OSINT value: Critical ESG/compliance indicator.`,
+     execute: async (args) => executeListaSuja(args as ListaSujaArgs),
+ });
+ 
+-// Export functions needed by deep_profile orchestrator
+-export { executeDatajud, executeListaSuja };
+-export type { DatajudArgs, ListaSujaArgs };
++// Export functions needed by deep_profile orchestrator and unit tests
++export { executeDatajud, executeBnmp, executeProcurados, executeListaSuja };
++export type { DatajudArgs, BnmpArgs, ProcuradosArgs, ListaSujaArgs };
+diff --git a/test/unit/legal-timeouts-intelligence.test.ts b/test/unit/legal-timeouts-intelligence.test.ts
+new file mode 100644
+index 0000000..9fda551
+--- /dev/null
++++ b/test/unit/legal-timeouts-intelligence.test.ts
+@@ -0,0 +1,432 @@
++import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
++import { TimeoutError } from "../../lib/shared/types/result.js";
++
++let mockTavilySearch = vi.fn();
++
++vi.mock("tavily", () => ({
++  TavilyClient: class MockTavilyClient {
++    search(...args: unknown[]) {
++      return mockTavilySearch(...args);
++    }
++  },
++}));
++
++import { PerplexityProvider, TavilyProvider } from "../../lib/core/search-providers.js";
++import { executeIntelligence } from "../../lib/core/intelligence.js";
++import { executeBnmp, executeDatajud, executeProcurados } from "../../lib/tools/legal.js";
++
++function createAbortAwareHangingFetch() {
++  return vi.fn((_url: string, init?: RequestInit) => {
++    return new Promise<Response>((_resolve, reject) => {
++      const onAbort = () => {
++        const err = new Error("The operation was aborted");
++        err.name = "AbortError";
++        reject(err);
++      };
++      if (init?.signal?.aborted) {
++        onAbort();
++        return;
++      }
++      init?.signal?.addEventListener("abort", onAbort, { once: true });
++    });
++  });
++}
++
++describe("FND-0007 / TCK-0019: Fetch timeouts, procurados fail-closed & intelligence cancellation", () => {
++  const originalEnv = { ...process.env };
++
++  beforeEach(() => {
++    mockTavilySearch = vi.fn();
++  });
++
++  afterEach(() => {
++    vi.restoreAllMocks();
++    vi.useRealTimers();
++    vi.unstubAllGlobals();
++    process.env = { ...originalEnv };
++  });
++
++  describe("PerplexityProvider timeouts & AbortSignal", () => {
++    it("passes AbortSignal, aborts hanging requests at timeout, and leaves zero active timers", async () => {
++      vi.useFakeTimers();
++      process.env.PERPLEXITY_API_KEY = "pplx-test-key";
++      const fetchMock = createAbortAwareHangingFetch();
++      vi.stubGlobal("fetch", fetchMock);
++
++      const provider = new PerplexityProvider();
++      const pending = provider.search("cnpj test", 3, { timeoutMs: 2500 });
++
++      expect(fetchMock).toHaveBeenCalledTimes(1);
++      const init = fetchMock.mock.calls[0]?.[1] as RequestInit | undefined;
++      expect(init?.signal).toBeInstanceOf(AbortSignal);
++      expect(init?.signal?.aborted).toBe(false);
++
++      await vi.advanceTimersByTimeAsync(2500);
++      const res = await pending;
++
++      expect(init?.signal?.aborted).toBe(true);
++      expect(res.ok).toBe(false);
++      if (!res.ok) {
++        expect(res.error).toBeInstanceOf(TimeoutError);
++        expect(res.error.message).toContain("timed out after 2500ms");
++      }
++      expect(vi.getTimerCount()).toBe(0);
++    });
++
++    it("skips fetch on pre-aborted signal and aborts mid-flight on parent signal", async () => {
++      vi.useFakeTimers();
++      process.env.PERPLEXITY_API_KEY = "pplx-test-key";
++      const fetchMock = createAbortAwareHangingFetch();
++      vi.stubGlobal("fetch", fetchMock);
++
++      const provider = new PerplexityProvider();
++
++      const preAborted = new AbortController();
++      preAborted.abort();
++      const preRes = await provider.search("query", 3, { signal: preAborted.signal });
++      expect(preRes.ok).toBe(false);
++      if (!preRes.ok) {
++        expect(preRes.error).toBeInstanceOf(TimeoutError);
++        expect(preRes.error.message).toContain("aborted");
++      }
++      expect(fetchMock).not.toHaveBeenCalled();
++
++      const midFlight = new AbortController();
++      const pending = provider.search("query", 3, { signal: midFlight.signal, timeoutMs: 10000 });
++      expect(fetchMock).toHaveBeenCalledTimes(1);
++      midFlight.abort();
++      const midRes = await pending;
++
++      expect(midRes.ok).toBe(false);
++      if (!midRes.ok) {
++        expect(midRes.error).toBeInstanceOf(TimeoutError);
++        expect(midRes.error.message).toContain("aborted");
++      }
++      expect(vi.getTimerCount()).toBe(0);
++    });
++
++    it("cleans timeout timer on 200 OK and HTTP 500", async () => {
++      vi.useFakeTimers();
++      process.env.PERPLEXITY_API_KEY = "pplx-test-key";
++      const provider = new PerplexityProvider();
++
++      vi.stubGlobal(
++        "fetch",
++        vi.fn(async () =>
++          Response.json({
++            choices: [{ message: { content: "ok" } }],
++            citations: ["https://example.org"],
++          }),
++        ),
++      );
++      const okRes = await provider.search("ok", 3, { timeoutMs: 5000 });
++      expect(okRes.ok).toBe(true);
++      expect(vi.getTimerCount()).toBe(0);
++
++      vi.stubGlobal("fetch", vi.fn(async () => new Response(null, { status: 500 })));
++      const errRes = await provider.search("fail", 3, { timeoutMs: 5000 });
++      expect(errRes.ok).toBe(false);
++      expect(vi.getTimerCount()).toBe(0);
++    });
++  });
++
++  describe("TavilyProvider timeout envelope & signal handling", () => {
++    it("times out hanging client.search() without unhandled rejections on late SDK failures", async () => {
++      vi.useFakeTimers();
++      process.env.TAVILY_API_KEY = "tvly-test-key";
++
++      let rejectLate!: (reason?: unknown) => void;
++      mockTavilySearch.mockImplementation(
++        () =>
++          new Promise((_resolve, reject) => {
++            rejectLate = reject;
++          }),
++      );
++
++      const provider = new TavilyProvider();
++      const pending = provider.search("empresa x", 5, { timeoutMs: 1500 });
++
++      await vi.advanceTimersByTimeAsync(1500);
++      const res = await pending;
++
++      expect(res.ok).toBe(false);
++      if (!res.ok) {
++        expect(res.error).toBeInstanceOf(TimeoutError);
++        expect(res.error.message).toContain("timed out after 1500ms");
++      }
++      expect(vi.getTimerCount()).toBe(0);
++
++      // Late SDK rejection after timeout must be safely swallowed
++      rejectLate(new Error("late socket hangup"));
++      await Promise.resolve();
++      await Promise.resolve();
++    });
++
++    it("respects pre-aborted and mid-flight parent signal and clears timers on resolve/reject", async () => {
++      vi.useFakeTimers();
++      process.env.TAVILY_API_KEY = "tvly-test-key";
++      const provider = new TavilyProvider();
++
++      const preAborted = new AbortController();
++      preAborted.abort();
++      const preRes = await provider.search("q", 5, { signal: preAborted.signal });
++      expect(preRes.ok).toBe(false);
++      expect(mockTavilySearch).not.toHaveBeenCalled();
++
++      mockTavilySearch.mockImplementation(() => new Promise(() => {}));
++      const midFlight = new AbortController();
++      const pending = provider.search("q", 5, { signal: midFlight.signal, timeoutMs: 10000 });
++      expect(mockTavilySearch).toHaveBeenCalledTimes(1);
++      midFlight.abort();
++      const midRes = await pending;
++      expect(midRes.ok).toBe(false);
++      if (!midRes.ok) {
++        expect(midRes.error).toBeInstanceOf(TimeoutError);
++        expect(midRes.error.message).toContain("aborted");
++      }
++      expect(vi.getTimerCount()).toBe(0);
++
++      mockTavilySearch.mockResolvedValueOnce({ results: [{ title: "T", url: "https://t.br", content: "C" }] });
++      expect((await provider.search("ok", 5)).ok).toBe(true);
++      expect(vi.getTimerCount()).toBe(0);
++
++      mockTavilySearch.mockRejectedValueOnce(new Error("boom"));
++      expect((await provider.search("err", 5)).ok).toBe(false);
++      expect(vi.getTimerCount()).toBe(0);
++    });
++  });
++
++  describe("executeDatajud & executeBnmp timeouts", () => {
++    it("passes AbortSignal in executeDatajud, aborts hanging calls, and cleans timers", async () => {
++      vi.useFakeTimers();
++      process.env.DATAJUD_API_KEY = "dj-test-key";
++      process.env.MCP_API_TIMEOUT = "3000";
++
++      const hangFetch = createAbortAwareHangingFetch();
++      vi.stubGlobal("fetch", hangFetch);
++      const pending = executeDatajud({ query: "12345678000190", tribunal: "tjsp" });
++      expect((hangFetch.mock.calls[0]?.[1] as RequestInit | undefined)?.signal).toBeInstanceOf(AbortSignal);
++      await vi.advanceTimersByTimeAsync(3000);
++      const timeoutRes = await pending;
++      expect(timeoutRes).toEqual({ ok: false, error: "Datajud error: request timeout after 3 seconds" });
++      expect(vi.getTimerCount()).toBe(0);
++
++      vi.stubGlobal("fetch", vi.fn(async () => Response.json({ hits: [] })));
++      expect((await executeDatajud({ query: "abc" })).ok).toBe(true);
++      expect(vi.getTimerCount()).toBe(0);
++
++      vi.stubGlobal("fetch", vi.fn(async () => new Response(null, { status: 500 })));
++      expect(await executeDatajud({ query: "abc" })).toEqual({ ok: false, error: "Datajud API error: HTTP 500" });
++      expect(vi.getTimerCount()).toBe(0);
++    });
++
++    it("passes AbortSignal in executeBnmp and annotates timed_out fallback cleanly", async () => {
++      vi.useFakeTimers();
++      process.env.MCP_API_TIMEOUT = "2000";
++
++      const hangFetch = createAbortAwareHangingFetch();
++      vi.stubGlobal("fetch", hangFetch);
++      const pending = executeBnmp({ nome: "FULANO DE TAL" });
++      expect((hangFetch.mock.calls[0]?.[1] as RequestInit | undefined)?.signal).toBeInstanceOf(AbortSignal);
++      await vi.advanceTimersByTimeAsync(2000);
++      const res = await pending;
++
++      expect(res.ok).toBe(true);
++      if (res.ok) {
++        const data = res.data as Record<string, unknown>;
++        expect(data.timed_out).toBe(true);
++        expect(String(data.note)).toContain("timed out");
++      }
++      expect(vi.getTimerCount()).toBe(0);
++
++      vi.stubGlobal("fetch", vi.fn(async () => Response.json({ content: [] })));
++      expect((await executeBnmp({ nome: "FULANO DE TAL" })).ok).toBe(true);
++      expect(vi.getTimerCount()).toBe(0);
++    });
++  });
++
++  describe("executeProcurados timeouts & fail-closed status", () => {
++    it("returns ok:false error when all 13 pages fail instead of silent NOT_FOUND", async () => {
++      const fetchMock = vi.fn(async () => new Response(null, { status: 503 }));
++      vi.stubGlobal("fetch", fetchMock);
++
++      const res = await executeProcurados({ nome: "ALVO TESTE" });
++      expect(fetchMock).toHaveBeenCalledTimes(13);
++      expect(res.ok).toBe(false);
++      if (!res.ok) {
++        expect(res.error).toContain("13/13 pages failed");
++      }
++    });
++
++    it("returns INCONCLUSIVE with partial:true when some pages succeed empty and others fail", async () => {
++      let callCount = 0;
++      const fetchMock = vi.fn(async () => {
++        callCount++;
++        if (callCount <= 3) {
++          return new Response(null, { status: 502 });
++        }
++        return new Response("<html><body>Sem ocorrencias</body></html>", { status: 200 });
++      });
++      vi.stubGlobal("fetch", fetchMock);
++
++      const res = await executeProcurados({ nome: "ALVO TESTE" });
++      expect(res.ok).toBe(true);
++      if (res.ok) {
++        const data = res.data as Record<string, unknown>;
++        expect(data.status).toBe("INCONCLUSIVE");
++        expect(data.partial).toBe(true);
++        expect(data.pages_checked).toBe(10);
++        expect(data.pages_total).toBe(13);
++        expect(data.pages_failed).toBe(3);
++        expect(Array.isArray(data.failed_pages)).toBe(true);
++      }
++    });
++
++    it("returns FOUND with partial:true when a match exists alongside a failing page", async () => {
++      let idx = 0;
++      const htmlMatch = `<a href="https://portal/lista-de-procurados/alvo-teste/view">ALVO TESTE - SP\n01/02/2025</a>`;
++      vi.stubGlobal(
++        "fetch",
++        vi.fn(async () => {
++          idx++;
++          if (idx === 1) {
++            return new Response(htmlMatch, { status: 200 });
++          }
++          if (idx === 2) {
++            return Promise.reject(new Error("ECONNRESET"));
++          }
++          return new Response("<html></html>", { status: 200 });
++        }),
++      );
++
++      const res = await executeProcurados({ nome: "ALVO TESTE" });
++      expect(res.ok).toBe(true);
++      if (res.ok) {
++        const data = res.data as Record<string, unknown>;
++        expect(data.status).toBe("FOUND");
++        expect(data.partial).toBe(true);
++        expect(data.total_matches).toBe(1);
++        expect(data.pages_checked).toBe(12);
++        expect(data.pages_failed).toBe(1);
++      }
++    });
++
++    it("returns NOT_FOUND with partial:false only when all 13 pages succeed with 0 matches", async () => {
++      vi.stubGlobal(
++        "fetch",
++        vi.fn(async () => new Response("<html><body>Vazio</body></html>", { status: 200 })),
++      );
++
++      const res = await executeProcurados({ nome: "PESSOA INEXISTENTE" });
++      expect(res.ok).toBe(true);
++      if (res.ok) {
++        const data = res.data as Record<string, unknown>;
++        expect(data.status).toBe("NOT_FOUND");
++        expect(data.partial).toBe(false);
++        expect(data.pages_checked).toBe(13);
++        expect(data.pages_total).toBe(13);
++        expect(data.pages_failed).toBe(0);
++      }
++    });
++
++    it("enforces per-page timeout and total loop deadline cleanly with zero leaked timers", async () => {
++      vi.useFakeTimers();
++      vi.setSystemTime(new Date("2026-11-20T12:00:00Z"));
++      process.env.MCP_API_TIMEOUT = "4000";
++      process.env.MCP_INTELLIGENCE_TIMEOUT = "10000";
++
++      const hangFetch = createAbortAwareHangingFetch();
++      vi.stubGlobal("fetch", hangFetch);
++
++      const pending = executeProcurados({ nome: "ALVO LENTO" });
++      await vi.advanceTimersByTimeAsync(10000);
++      const res = await pending;
++
++      // 4000ms + 4000ms + 2000ms = 10000ms -> 3 fetches attempted, remaining 10 skipped at deadline
++      expect(hangFetch).toHaveBeenCalledTimes(3);
++      expect(res.ok).toBe(false);
++      if (!res.ok) {
++        expect(res.error).toContain("13/13 pages failed");
++      }
++      expect(vi.getTimerCount()).toBe(0);
++    });
++  });
++
++  describe("executeIntelligence timer cleanup & abort propagation", () => {
++    const apiConfig = {
++      cnpjBaseUrl: "https://api.opencnpj.org/",
++      cepBaseUrl: "https://opencep.com/v1/",
++      authHeaders: undefined,
++    };
++
++    const cachedCompanyData = {
++      cnpj: "12345678000190",
++      razao_social: "EMPRESA TESTE LTDA",
++      nome_fantasia: "EMPRESA TESTE",
++      uf: "SP",
++      municipio: "SAO PAULO",
++    };
++
++    it("clears the 25s intelligence timeout timer when completing quickly", async () => {
++      vi.useFakeTimers();
++      process.env.PERPLEXITY_API_KEY = "pplx-test-key";
++      vi.stubGlobal(
++        "fetch",
++        vi.fn(async () =>
++          Response.json({
++            choices: [{ message: { content: "Sem ocorrencias 12345678000190" } }],
++            citations: ["https://example.org/doc"],
++          }),
++        ),
++      );
++
++      const res = await executeIntelligence(
++        {
++          cnpj: "12345678000190",
++          provider: "perplexity",
++          maxQueries: 2,
++          cachedCompanyData,
++        },
++        apiConfig,
++      );
++
++      expect(res.ok).toBe(true);
++      expect(vi.getTimerCount()).toBe(0);
++    });
++
++    it("aborts in-flight searches and prevents queued dorks when total timeout expires", async () => {
++      vi.useFakeTimers();
++      process.env.PERPLEXITY_API_KEY = "pplx-test-key";
++      process.env.MCP_INTELLIGENCE_TIMEOUT = "1500";
++      process.env.MCP_SEARCH_TIMEOUT = "10000";
++      process.env.MCP_INTELLIGENCE_CONCURRENCY = "1";
++
++      const hangFetch = createAbortAwareHangingFetch();
++      vi.stubGlobal("fetch", hangFetch);
++
++      const pending = executeIntelligence(
++        {
++          cnpj: "12345678000190",
++          provider: "perplexity",
++          maxQueries: 5,
++          cachedCompanyData,
++        },
++        apiConfig,
++      );
++
++      // Flush microtasks up to first search fetch, then advance past total timeout
++      await vi.advanceTimersByTimeAsync(1500);
++      const res = await pending;
++
++      expect(res.ok).toBe(false);
++      if (!res.ok) {
++        expect(res.error).toContain("Intelligence search timed out");
++      }
++      // Concurrency=1 means only query 1 started; queries 2..5 were never dispatched
++      expect(hangFetch.mock.calls.length).toBeLessThan(5);
++      const firstSignal = (hangFetch.mock.calls[0]?.[1] as RequestInit | undefined)?.signal;
++      expect(firstSignal?.aborted).toBe(true);
++      expect(vi.getTimerCount()).toBe(0);
++    });
++  });
++});
