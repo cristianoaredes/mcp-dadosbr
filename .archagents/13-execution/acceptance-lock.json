@@ -133,5 +133,14 @@
     "tree": null,
     "updated_at": "2026-11-20T17:10:48Z",
     "updated_by": "criteria-check"
+  },
+  "TCK-0018": {
+    "content_digest": null,
+    "criteria_digest": null,
+    "head": null,
+    "passes": true,
+    "tree": null,
+    "updated_at": "2026-11-20T17:29:24Z",
+    "updated_by": "criteria-check"
   }
 }
