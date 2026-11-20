@@ -66,21 +66,33 @@ No API key required. Returns time series data.`,
 // ─── FIPE ───────────────────────────────────────────────────────────────────
 
 const FIPE_API = "https://brasilapi.com.br/api/fipe";
+const ALLOWED_FIPE_TYPES = new Set<string>(["carros", "motos", "caminhoes"]);
+const FIPE_CODE_REGEX = /^[0-9]+(?:-[0-9]+)?$/;
 
 interface FipeArgs { codigo_fipe?: string; tipo?: "carros" | "motos" | "caminhoes"; }
 
 async function executeFipe(args: FipeArgs): Promise<LookupResult> {
-    const { codigo_fipe, tipo } = args;
-    if (codigo_fipe) {
+    const { codigo_fipe, tipo } = args ?? {};
+    if (codigo_fipe !== undefined) {
+        if (typeof codigo_fipe !== "string") {
+            return { ok: false, error: "Invalid codigo_fipe format (expected e.g. '001004-9')." };
+        }
+        const trimmed = codigo_fipe.trim();
+        if (!trimmed || !FIPE_CODE_REGEX.test(trimmed)) {
+            return { ok: false, error: "Invalid codigo_fipe format (expected e.g. '001004-9')." };
+        }
         try {
-            const result = await httpJson(`${FIPE_API}/preco/v1/${encodeURIComponent(codigo_fipe)}`);
-            if (result.ok) return { ok: true, data: { codigo_fipe, results: result.data, source: "Tabela FIPE via BrasilAPI" } };
+            const result = await httpJson(`${FIPE_API}/preco/v1/${encodeURIComponent(trimmed)}`);
+            if (result.ok) return { ok: true, data: { codigo_fipe: trimmed, results: result.data, source: "Tabela FIPE via BrasilAPI" } };
             return { ok: false, error: result.error || "FIPE lookup failed" };
         } catch (err) { return { ok: false, error: `FIPE error: ${err instanceof Error ? err.message : String(err)}` }; }
     }
-    if (tipo) {
+    if (tipo !== undefined) {
+        if (typeof tipo !== "string" || !ALLOWED_FIPE_TYPES.has(tipo)) {
+            return { ok: false, error: "Invalid FIPE vehicle type. Valid: carros, motos, caminhoes." };
+        }
         try {
-            const result = await httpJson(`${FIPE_API}/marcas/v1/${tipo}`);
+            const result = await httpJson(`${FIPE_API}/marcas/v1/${encodeURIComponent(tipo)}`);
             if (result.ok) return { ok: true, data: { tipo, brands: result.data, source: "Tabela FIPE via BrasilAPI", note: "Use the FIPE code to get prices." } };
             return { ok: false, error: result.error || "FIPE brands lookup failed" };
         } catch (err) { return { ok: false, error: `FIPE error: ${err instanceof Error ? err.message : String(err)}` }; }

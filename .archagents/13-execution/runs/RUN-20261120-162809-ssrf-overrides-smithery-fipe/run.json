@@ -1,0 +1,30 @@
+{
+  "id": "RUN-20261120-162809-ssrf-overrides-smithery-fipe",
+  "design": "DES-0014",
+  "ticket": "TCK-0014",
+  "started_at": "2026-11-20T16:28:09Z",
+  "started_by": "ops",
+  "environment": "dev",
+  "mode": "live",
+  "status": "completed",
+  "current_step": 4,
+  "total_steps": 4,
+  "ended_at": "2026-11-20T16:32:46Z",
+  "result": "32/32 testes SSRF/Smithery/FIPE, 315/315 Vitest (19 arquivos), tsc + tsc.worker TYPECHECK_OK, npm run build + build:worker BUILD_OK",
+  "loop_iterations": 1,
+  "attempt_count": 0,
+  "lessons_consulted": [],
+  "loop_cost_usd": null,
+  "cost_source": "unknown",
+  "loop_strategy": "default",
+  "context_peak": 0,
+  "final_judge_delta": 31,
+  "warmup": false,
+  "final_judge_delta_source": "judge",
+  "lesson_utility": {
+    "utility": 0.0,
+    "n_lessons": 0,
+    "lessons_consulted": [],
+    "signal": "no-lessons"
+  }
+}

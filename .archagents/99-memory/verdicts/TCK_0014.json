@@ -1,0 +1,72 @@
+{
+  "ticket": "TCK-0014",
+  "run": "RUN-20261120-162809-ssrf-overrides-smithery-fipe",
+  "timestamp": "2026-11-20T16:39:13.975436+00:00",
+  "overall": "ACCEPTABLE",
+  "score": 81,
+  "low_confidence": false,
+  "verify_loaded": true,
+  "markdown_rejected": false,
+  "diff_scope": "run_artifact",
+  "diff_scope_note": null,
+  "dimensions": {
+    "spec_compliance": {
+      "score": 50,
+      "notes": "0/3 critérios identificados no diff"
+    },
+    "code_quality": {
+      "score": 95,
+      "notes": "Test files present (2 for 3 code file(s)); Large diff (619 lines)"
+    },
+    "test_coverage": {
+      "score": 60,
+      "notes": "No test files detected in diff; 76 assertions/expectations"
+    },
+    "safety": {
+      "score": 100,
+      "notes": "No safety risks detected"
+    },
+    "documentation": {
+      "score": 50,
+      "notes": "No documentation changes (5 code file(s))"
+    },
+    "objective_alignment": {
+      "score": null,
+      "objective": null,
+      "notes": "null (no linked spec)"
+    }
+  },
+  "objective_alignment": null,
+  "what_went_right": [
+    "Todos os 1 critérios de aceitação passaram"
+  ],
+  "what_went_wrong": [
+    "Nenhuma falha significativa detectada"
+  ],
+  "root_causes": [],
+  "lessons": [],
+  "recommendations": [],
+  "iterations": 1,
+  "lesson_utility": {
+    "utility": 0.0,
+    "n_lessons": 0,
+    "lessons_consulted": [],
+    "signal": "no-lessons"
+  },
+  "strategy_effectiveness": {
+    "strategy": "default",
+    "effectiveness": 0.394,
+    "n_runs": 14,
+    "n_pre_era_excluded": 0,
+    "n_unmeasured_excluded": 0
+  },
+  "decision_outcome_backfill": {
+    "outcome": "approved",
+    "updated": [
+      "DEC-20261120-162712114716",
+      "DEC-20261120-162752175267"
+    ],
+    "skipped_human_review": [],
+    "error": null
+  }
+}
