@@ -1,0 +1,1238 @@
+diff --git a/.archagents/07-security-compliance.md b/.archagents/07-security-compliance.md
+index 76b20bb..bde9d60 100644
+--- a/.archagents/07-security-compliance.md
++++ b/.archagents/07-security-compliance.md
+@@ -1,19 +1,25 @@
+ # Segurança e limites
+ 
+-Base revisada: `79aa712` (`v0.5.0`; base inicial: `037dae4c`).
++Base revisada: `6c74db6` (em remediação no worktree sobre `v0.6.0` / `4199d0a`; base inicial: `037dae4c`).
+ 
+-O Worker define rotas públicas explícitas (`PUBLIC_PATHS`: `/health`, `/`, `/openapi.json`, `/.well-known/*`) e exige `MCP_API_KEY` com comparação constant-time em `/mcp`, `/sse` e rotas REST quando configurada, mantendo `/oauth/*` e descoberta OAuth desabilitados em modo fail-closed (`501 oauth_not_supported`) e aplicando CORS restritivo via `MCP_ALLOWED_ORIGINS` (sem `*` em rotas autenticadas). O CLI usa rate limit na entrada HTTP. URLs configuráveis de CNPJ e CEP passam por allowlist de hosts HTTPS e normalização (`validateAndNormalizeApiConfig`), tanto em `loadApiConfiguration()` quanto em `resolveApiConfig(overrides)` e no adaptador Smithery (`configSchema` / `createServer`), restringindo loopback (`localhost`, `127.0.0.1` exatos via HTTP/HTTPS) exclusivamente a `NODE_ENV` `development`/`test` (fail-closed quando ausente ou `production`), rejeitando credenciais embutidas (`username`/`password`) e sanitizando URLs em logs/erros. A tool `fipe_veiculos` valida `tipo` contra `ALLOWED_FIPE_TYPES` e `codigo_fipe` contra regex estrito antes de chamar `httpJson`. `readCnpjProfile` rejeita credenciais embutidas na URL do provedor, e `scripts/build-apps.mjs` bloqueia fechamentos inline `</script`/`</style` ao empacotar os MCP Apps. Exposição efetiva, controles ativos no host e conformidade ficam **a confirmar** por ambiente. Credenciais e evidências de execução ficam fora do Git.
++O Worker define rotas públicas explícitas (`PUBLIC_PATHS`: `/health`, `/`, `/openapi.json`, `/.well-known/*`) e exige `MCP_API_KEY` com comparação constant-time em `/mcp`, `/sse` e rotas REST quando configurada, mantendo `/oauth/*` e descoberta OAuth desabilitados em modo fail-closed (`501 oauth_not_supported`) e aplicando CORS restritivo via `MCP_ALLOWED_ORIGINS` (sem `*` em rotas autenticadas). O CLI usa rate limit na entrada HTTP. URLs configuráveis de CNPJ e CEP passam por allowlist de hosts HTTPS e normalização (`validateAndNormalizeApiConfig`), tanto em `loadApiConfiguration()` quanto em `resolveApiConfig(overrides)` e no adaptador Smithery (`configSchema` / `createServer`), restringindo loopback (`localhost`, `127.0.0.1` exatos via HTTP/HTTPS) exclusivamente a `NODE_ENV` `development`/`test` (fail-closed quando ausente ou `production`), rejeitando credenciais embutidas (`username`/`password`) e sanitizando URLs em logs/erros. A tool `fipe_veiculos` valida `tipo` contra `ALLOWED_FIPE_TYPES` e `codigo_fipe` contra regex estrito antes de chamar `httpJson`. Todas as **23** ferramentas MCP registradas exigem `zodSchema` em tempo de compilação e passam por `zodSchema.safeParse(...)` centralizado em `executeRegisteredTool` (`lib/core/registry.ts` + `lib/core/tool-schemas.ts`) antes de qualquer chamada externa, com limites explícitos de paginação/tamanho; `cnpj_intelligence` removeu `api_key` do schema e rejeita argumentos extras (`.strict()`). As capacidades e a allowlist agêntica (`SAFETY.md §SC-9`) estão versionadas em `.archagents/_capabilities.json` e `.archagents/mcp-tool-allowlist.json`. `readCnpjProfile` rejeita credenciais embutidas na URL do provedor, e `scripts/build-apps.mjs` bloqueia fechamentos inline `</script`/`</style` ao empacotar os MCP Apps. Exposição efetiva, controles ativos no host e conformidade ficam **a confirmar** por ambiente. Credenciais e evidências de execução ficam fora do Git.
+ 
+ ## Fontes
+ 
+ - `lib/workers/auth.ts:L12-L89`
+ - `lib/workers/oauth.ts:L1-L47`
+-- `lib/adapters/cloudflare.ts:L19-L130`
++- `lib/adapters/cloudflare.ts:L19-L170`
++- `lib/workers/mcp-agent.ts:L69`
+ - `lib/workers/worker.ts:L156-L192`
+-- `lib/adapters/cli.ts:L95-L127`
+-- `lib/adapters/cli.ts:L165-L205`
++- `lib/adapters/cli.ts:L61-L232`
+ - `lib/config/index.ts:L7-L218`
+ - `lib/adapters/smithery.ts:L14-L53`
+ - `lib/tools/financial.ts:L68-L101`
++- `lib/core/tool-schemas.ts:L1-L272`
++- `lib/core/registry.ts:L8-L94`
++- `lib/core/intelligence.ts:L58-L454`
++- `lib/tools/core.ts:L53-L148`
++- `.archagents/_capabilities.json`
++- `.archagents/mcp-tool-allowlist.json`
+ - `lib/shared/cnpj-profile.ts:L92-L100`
+ - `scripts/build-apps.mjs:L30-L35`
+diff --git a/lib/core/intelligence.ts b/lib/core/intelligence.ts
+index a91a5b2..bea5d4b 100644
+--- a/lib/core/intelligence.ts
++++ b/lib/core/intelligence.ts
+@@ -61,7 +61,6 @@ export interface IntelligenceOptions {
+   provider?: ProviderType;
+   maxResultsPerQuery?: number;
+   maxQueries?: number;
+-  apiKey?: string;
+   cachedCompanyData?: CNPJData; // Reuse company data if already fetched
+ }
+ 
+@@ -414,14 +413,25 @@ Note: You must set TAVILY_API_KEY to enable web search queries.`,
+         type: "array",
+         items: {
+           type: "string",
+-          enum: ["government", "legal", "news", "documents", "social", "partners"]
++          enum: [
++            "government",
++            "legal",
++            "news",
++            "documents",
++            "social",
++            "partners",
++            "security",
++            "databases",
++            "infrastructure",
++            "social_media"
++          ]
+         },
+         description: "Search categories to include (default: all)"
+       },
+       provider: {
+         type: "string",
+-        enum: ["tavily"],
+-        description: "Search provider to use (requires TAVILY_API_KEY)",
++        enum: ["tavily", "perplexity"],
++        description: "Search provider to use (server-configured API key required)",
+         default: "tavily"
+       },
+       max_results_per_query: {
+@@ -437,10 +447,6 @@ Note: You must set TAVILY_API_KEY to enable web search queries.`,
+         minimum: 1,
+         maximum: 20,
+         default: 10
+-      },
+-      api_key: {
+-        type: "string",
+-        description: "Optional Tavily API key (if not provided, uses server configuration)"
+       }
+     },
+     required: ["cnpj"]
+diff --git a/lib/core/registry.ts b/lib/core/registry.ts
+index db162d0..8b18587 100644
+--- a/lib/core/registry.ts
++++ b/lib/core/registry.ts
+@@ -5,12 +5,14 @@
+  * The registry provides tool definitions and execution without if/else chains.
+  */
+ 
++import type { ZodTypeAny } from "zod";
+ import { Cache, LookupResult, ApiConfig } from "../types/index.js";
+ 
+ export interface ToolHandler {
+     name: string;
+     description: string;
+     inputSchema: Record<string, unknown>;
++    zodSchema: ZodTypeAny;
+     execute: (args: unknown, apiConfig: ApiConfig, cache?: Cache) => Promise<LookupResult>;
+ }
+ 
+@@ -39,7 +41,7 @@ export function getToolDefinitions(): Array<{ name: string; description: string;
+ }
+ 
+ /**
+- * Execute a registered tool by name.
++ * Execute a registered tool by name after runtime Zod validation.
+  */
+ export async function executeRegisteredTool(
+     name: string,
+@@ -51,7 +53,23 @@ export async function executeRegisteredTool(
+     if (!tool) {
+         throw new Error(`Unknown tool: ${name}. Available: ${Array.from(registry.keys()).join(", ")}`);
+     }
+-    return tool.execute(args, apiConfig, cache);
++
++    const input = args === undefined ? {} : args;
++    const parsed = tool.zodSchema.safeParse(input);
++    if (!parsed.success) {
++        const details = parsed.error.issues
++            .map((issue) => {
++                const path = issue.path.length > 0 ? `${issue.path.join(".")}: ` : "";
++                return `${path}${issue.message}`;
++            })
++            .join("; ");
++        return {
++            ok: false,
++            error: `Invalid parameters for ${name}: ${details}`,
++        };
++    }
++
++    return tool.execute(parsed.data, apiConfig, cache);
+ }
+ 
+ /**
+@@ -61,6 +79,13 @@ export function hasTool(name: string): boolean {
+     return registry.has(name);
+ }
+ 
++/**
++ * Check if a registered tool has a runtime Zod schema attached.
++ */
++export function hasToolSchema(name: string): boolean {
++    return Boolean(registry.get(name)?.zodSchema);
++}
++
+ /**
+  * Get the count of registered tools.
+  */
+diff --git a/lib/tools/company.ts b/lib/tools/company.ts
+index ad472be..d92939e 100644
+--- a/lib/tools/company.ts
++++ b/lib/tools/company.ts
+@@ -5,7 +5,12 @@
+ import { registerTool } from "../core/registry.js";
+ import { httpJson } from "../core/http-client.js";
+ import { Cache, LookupResult, ApiConfig } from "../types/index.js";
+-import { CnpjSchema } from "../core/validation.js";
++import {
++    ConsumidorSchema,
++    CpfValidateSchema,
++    DeepProfileSchema,
++    DomainWhoisSchema,
++} from "../core/tool-schemas.js";
+ import { executeSearch } from "../core/search.js";
+ 
+ // ─── CPF Validate ───────────────────────────────────────────────────────────
+@@ -60,6 +65,7 @@ No API key required. Local computation only.`,
+         properties: { cpf: { type: "string", description: "CPF number (with or without formatting)" } },
+         required: ["cpf"],
+     },
++    zodSchema: CpfValidateSchema,
+     execute: async (args) => executeCpfValidate(args as CpfValidateArgs),
+ });
+ 
+@@ -93,6 +99,7 @@ OSINT value: Verify company digital presence, registration dates, nameservers.`,
+         properties: { domain: { type: "string", description: "Domain name (e.g. 'nubank.com.br')" } },
+         required: ["domain"],
+     },
++    zodSchema: DomainWhoisSchema,
+     execute: async (args) => executeWhois(args as WhoisArgs),
+ });
+ 
+@@ -128,6 +135,7 @@ OSINT value: Assess company reputation and customer service quality.`,
+         properties: { empresa: { type: "string", description: "Company name to search" } },
+         required: ["empresa"],
+     },
++    zodSchema: ConsumidorSchema,
+     execute: async (args) => executeConsumidor(args as ConsumidorArgs),
+ });
+ 
+@@ -199,6 +207,7 @@ This is the most powerful tool for company due diligence.`,
+         },
+         required: ["cnpj"],
+     },
++    zodSchema: DeepProfileSchema,
+     execute: async (args, apiConfig, cache) => executeDeepProfile(args as DeepProfileArgs, apiConfig, cache),
+ });
+ 
+diff --git a/lib/tools/core.ts b/lib/tools/core.ts
+index ff91037..f82c0c6 100644
+--- a/lib/tools/core.ts
++++ b/lib/tools/core.ts
+@@ -5,6 +5,13 @@
+ import { registerTool } from "../core/registry.js";
+ import { httpJson } from "../core/http-client.js";
+ import { CnpjSchema, CepSchema } from "../core/validation.js";
++import {
++    CnpjIntelligenceSchema,
++    CnpjSearchSchema,
++    DORK_CATEGORIES,
++    SEARCH_PROVIDERS,
++    SequentialThinkingSchema,
++} from "../core/tool-schemas.js";
+ import { Cache, LookupResult, ApiConfig } from "../types/index.js";
+ import { SEARCH_TOOL, executeSearch } from "../core/search.js";
+ 
+@@ -50,8 +57,9 @@ registerTool({
+         properties: { cnpj: { type: "string", description: "Brazilian CNPJ number (with or without formatting)" } },
+         required: ["cnpj"],
+     },
++    zodSchema: CnpjSchema,
+     execute: async (args, apiConfig, cache) => {
+-        const parsed = CnpjSchema.parse(args);
++        const parsed = args as { cnpj: string };
+         return await lookup("cnpj", parsed.cnpj, apiConfig, cache);
+     },
+ });
+@@ -66,8 +74,9 @@ registerTool({
+         properties: { cep: { type: "string", description: "Brazilian CEP postal code (with or without formatting)" } },
+         required: ["cep"],
+     },
++    zodSchema: CepSchema,
+     execute: async (args, apiConfig, cache) => {
+-        const parsed = CepSchema.parse(args);
++        const parsed = args as { cep: string };
+         return await lookup("cep", parsed.cep, apiConfig, cache);
+     },
+ });
+@@ -76,6 +85,7 @@ registerTool({
+ 
+ registerTool({
+     ...SEARCH_TOOL,
++    zodSchema: CnpjSearchSchema,
+     execute: async (args, _apiConfig, cache) => {
+         const { query, max_results = 5 } = args as { query: string; max_results?: number };
+         return await executeSearch(query, max_results, cache);
+@@ -91,15 +101,35 @@ registerTool({
+         type: "object",
+         properties: {
+             cnpj: { type: "string", description: "Brazilian CNPJ number (with or without formatting)" },
+-            categories: { type: "array", items: { type: "string" }, description: "Categories to search" },
+-            max_results: { type: "number", description: "Maximum results per category", default: 10 },
+-            api_key: { type: "string", description: "Optional Tavily API key" },
++            categories: { type: "array", items: { type: "string", enum: [...DORK_CATEGORIES] }, description: "Categories to search" },
++            provider: { type: "string", enum: [...SEARCH_PROVIDERS], description: "Search provider to use (server-configured API key required)", default: "tavily" },
++            max_results_per_query: { type: "number", description: "Maximum results per query", minimum: 1, maximum: 10, default: 5 },
++            max_queries: { type: "number", description: "Maximum number of search queries", minimum: 1, maximum: 20, default: 10 },
+         },
+         required: ["cnpj"],
+     },
++    zodSchema: CnpjIntelligenceSchema,
+     execute: async (args, apiConfig, cache) => {
++        const parsed = args as {
++            cnpj: string;
++            categories?: typeof DORK_CATEGORIES[number][];
++            provider?: typeof SEARCH_PROVIDERS[number];
++            max_results_per_query?: number;
++            max_results?: number;
++            max_queries?: number;
++        };
+         const mod = await import("../core/intelligence.js");
+-        return await mod.executeIntelligence(args as unknown as Parameters<typeof mod.executeIntelligence>[0], apiConfig, cache);
++        return await mod.executeIntelligence(
++            {
++                cnpj: parsed.cnpj,
++                categories: parsed.categories,
++                provider: parsed.provider,
++                maxResultsPerQuery: parsed.max_results_per_query ?? parsed.max_results,
++                maxQueries: parsed.max_queries,
++            },
++            apiConfig,
++            cache,
++        );
+     },
+ });
+ 
+@@ -111,6 +141,7 @@ const thinkingProcessor = new SequentialThinkingProcessor();
+ 
+ registerTool({
+     ...SEQUENTIAL_THINKING_TOOL,
++    zodSchema: SequentialThinkingSchema,
+     execute: async (args) => thinkingProcessor.processThought(args),
+ });
+ 
+diff --git a/lib/tools/financial.ts b/lib/tools/financial.ts
+index 6b2a2e0..d095cc6 100644
+--- a/lib/tools/financial.ts
++++ b/lib/tools/financial.ts
+@@ -4,6 +4,7 @@
+ 
+ import { registerTool } from "../core/registry.js";
+ import { httpJson } from "../core/http-client.js";
++import { BacenSchema, FipeSchema } from "../core/tool-schemas.js";
+ import { LookupResult } from "../types/index.js";
+ import { BACEN_PERIODS, BACEN_SERIES, bacenWindow, isBacenIndicator, isBacenPeriod } from "../shared/bacen.js";
+ import type { BacenIndicator, BacenPeriod } from "../shared/bacen.js";
+@@ -55,11 +56,12 @@ No API key required. Returns time series data.`,
+         type: "object",
+         properties: {
+             indicador: { type: "string", enum: Object.keys(BACEN_SERIES), description: "Financial indicator" },
+-            ultimos: { type: "number", description: "Number of recent data points (default: 10)", default: 10 },
++            ultimos: { type: "number", description: "Number of recent data points (default: 10)", minimum: 1, maximum: 1000, default: 10 },
+             periodo_dias: { type: "integer", enum: [...BACEN_PERIODS], description: "Calendar-day window through today in São Paulo. Overrides ultimos when supplied." },
+         },
+         required: ["indicador"],
+     },
++    zodSchema: BacenSchema,
+     execute: async (args) => executeBacen(args as BacenArgs),
+ });
+ 
+@@ -112,5 +114,6 @@ Via BrasilAPI. No API key required.`,
+             tipo: { type: "string", enum: ["carros", "motos", "caminhoes"], description: "Vehicle type to list brands" },
+         },
+     },
++    zodSchema: FipeSchema,
+     execute: async (args) => executeFipe(args as FipeArgs),
+ });
+diff --git a/lib/tools/government.ts b/lib/tools/government.ts
+index c44484e..3517aba 100644
+--- a/lib/tools/government.ts
++++ b/lib/tools/government.ts
+@@ -4,6 +4,13 @@
+ 
+ import { registerTool } from "../core/registry.js";
+ import { httpJson } from "../core/http-client.js";
++import {
++    CeisCnepSchema,
++    IbgeSchema,
++    PncpSchema,
++    QueridoDiarioSchema,
++    TransparenciaSchema,
++} from "../core/tool-schemas.js";
+ import { LookupResult } from "../types/index.js";
+ import { PNCP_ORIGIN, pncpCnpj, pncpDate, positiveInteger } from "../shared/pncp.js";
+ 
+@@ -57,6 +64,7 @@ No API key required.`,
+         },
+         required: ["tipo"],
+     },
++    zodSchema: IbgeSchema,
+     execute: async (args) => executeIBGE(args as IBGEArgs),
+ });
+ 
+@@ -122,10 +130,11 @@ Requires a free API key from portaldatransparencia.gov.br.`,
+             tipo: { type: "string", enum: ["contratos", "licitacoes", "convenios", "servidores", "sancoes"], description: "Query type" },
+             dataInicio: { type: "string", description: "Start date (DD/MM/YYYY, optional)" },
+             dataFim: { type: "string", description: "End date (DD/MM/YYYY, optional)" },
+-            pagina: { type: "number", description: "Page number (default: 1)", default: 1 },
++            pagina: { type: "number", description: "Page number (default: 1)", minimum: 1, maximum: 1000, default: 1 },
+         },
+         required: ["cnpj", "tipo"],
+     },
++    zodSchema: TransparenciaSchema,
+     execute: async (args) => executeTransparencia(args as TransparenciaArgs),
+ });
+ 
+@@ -201,10 +210,11 @@ Requires TRANSPARENCIA_API_KEY — falls back to manual check URLs without it.`,
+         properties: {
+             query: { type: "string", description: "CNPJ or company name to search in sanctions databases" },
+             tipo: { type: "string", enum: ["ceis", "cnep", "cepim", "all"], description: "Which database (default: 'all')", default: "all" },
+-            pagina: { type: "number", description: "Page number (default: 1)", default: 1 },
++            pagina: { type: "number", description: "Page number (default: 1)", minimum: 1, maximum: 1000, default: 1 },
+         },
+         required: ["query"],
+     },
++    zodSchema: CeisCnepSchema,
+     execute: async (args) => executeCeisCnep(args as CeisCnepArgs),
+ });
+ 
+@@ -283,11 +293,12 @@ For the legacy portal keyword search, provide query without modalidade_id. No AP
+             cnpj_orgao: { type: "string", description: "Contracting body's CNPJ (optional)" },
+             data_inicial: { type: "string", description: "Publication start date (YYYY-MM-DD, DD/MM/YYYY or YYYYMMDD), required with modalidade_id" },
+             data_final: { type: "string", description: "Publication end date (YYYY-MM-DD, DD/MM/YYYY or YYYYMMDD), required with modalidade_id" },
+-            modalidade_id: { type: "integer", minimum: 1, description: "PNCP contracting modality ID, e.g. 6 for Pregão Eletrônico" },
+-            pagina: { type: "number", description: "Page number (default: 1)", default: 1 },
++            modalidade_id: { type: "integer", minimum: 1, maximum: 100, description: "PNCP contracting modality ID, e.g. 6 for Pregão Eletrônico" },
++            pagina: { type: "number", description: "Page number (default: 1)", minimum: 1, maximum: 1000, default: 1 },
+         },
+         required: ["query"],
+     },
++    zodSchema: PncpSchema,
+     execute: async (args) => executePncp(args as PncpArgs),
+ });
+ 
+@@ -330,11 +341,12 @@ OSINT value: Find company mentions in government publications, contracts, sancti
+             territory_id: { type: "string", description: "IBGE territory code (e.g. '3550308' for São Paulo)" },
+             since: { type: "string", description: "Start date (YYYY-MM-DD, optional)" },
+             until: { type: "string", description: "End date (YYYY-MM-DD, optional)" },
+-            page: { type: "number", description: "Page number (0-indexed, default: 0)", default: 0 },
+-            size: { type: "number", description: "Results per page (default: 10, max: 100)", default: 10 },
++            page: { type: "number", description: "Page number (0-indexed, default: 0)", minimum: 0, maximum: 1000, default: 0 },
++            size: { type: "number", description: "Results per page (default: 10, max: 100)", minimum: 1, maximum: 100, default: 10 },
+         },
+         required: ["query"],
+     },
++    zodSchema: QueridoDiarioSchema,
+     execute: async (args) => executeQueridoDiario(args as QueridoDiarioArgs),
+ });
+ 
+diff --git a/lib/tools/health.ts b/lib/tools/health.ts
+index c09f6c2..d66f8fe 100644
+--- a/lib/tools/health.ts
++++ b/lib/tools/health.ts
+@@ -4,6 +4,7 @@
+ 
+ import { registerTool } from "../core/registry.js";
+ import { httpJson } from "../core/http-client.js";
++import { CnesSchema } from "../core/tool-schemas.js";
+ import { LookupResult } from "../types/index.js";
+ 
+ const CNES_API = "https://apidadosabertos.saude.gov.br/cnes";
+@@ -42,5 +43,6 @@ No API key required.`,
+         },
+         required: ["tipo"],
+     },
++    zodSchema: CnesSchema,
+     execute: async (args) => executeCnes(args as CnesArgs),
+ });
+diff --git a/lib/tools/legal.ts b/lib/tools/legal.ts
+index 2d660ba..a40cea3 100644
+--- a/lib/tools/legal.ts
++++ b/lib/tools/legal.ts
+@@ -4,6 +4,13 @@
+ 
+ import { registerTool } from "../core/registry.js";
+ import { httpJson } from "../core/http-client.js";
++import {
++    BnmpSchema,
++    DatajudSchema,
++    ListaSujaSchema,
++    OabSchema,
++    ProcuradosSchema,
++} from "../core/tool-schemas.js";
+ import { LookupResult } from "../types/index.js";
+ 
+ // ─── Datajud / CNJ ──────────────────────────────────────────────────────────
+@@ -51,10 +58,11 @@ Requires DATAJUD_API_KEY. Supports 17+ tribunals.`,
+         properties: {
+             query: { type: "string", description: "Search term (CNPJ, CPF, company name, case number)" },
+             tribunal: { type: "string", description: "Court code (default: 'tjsp'). Options: tst, trf1-5, tjsp, tjrj, tjmg, etc." },
+-            tamanho: { type: "number", description: "Max results (default: 10)", default: 10 },
++            tamanho: { type: "number", description: "Max results (default: 10)", minimum: 1, maximum: 100, default: 10 },
+         },
+         required: ["query"],
+     },
++    zodSchema: DatajudSchema,
+     execute: async (args) => executeDatajud(args as DatajudArgs),
+ });
+ 
+@@ -89,6 +97,7 @@ OSINT value: Verify legal representatives, check lawyer standing.`,
+             uf: { type: "string", description: "State code (e.g. 'SP', 'MG')" },
+         },
+     },
++    zodSchema: OabSchema,
+     execute: async (args) => executeOab(args as OabArgs),
+ });
+ 
+@@ -125,6 +134,7 @@ OSINT value: Critical for background checks and criminal record verification.`,
+         },
+         required: ["nome"],
+     },
++    zodSchema: BnmpSchema,
+     execute: async (args) => executeBnmp(args as BnmpArgs),
+ });
+ 
+@@ -179,6 +189,7 @@ OSINT value: Critical for background checks, due diligence, and security screeni
+         properties: { nome: { type: "string", description: "Person's name to search" } },
+         required: ["nome"],
+     },
++    zodSchema: ProcuradosSchema,
+     execute: async (args) => executeProcurados(args as ProcuradosArgs),
+ });
+ 
+@@ -215,6 +226,7 @@ OSINT value: Critical ESG/compliance indicator.`,
+         properties: { query: { type: "string", description: "Company name or CNPJ to search" } },
+         required: ["query"],
+     },
++    zodSchema: ListaSujaSchema,
+     execute: async (args) => executeListaSuja(args as ListaSujaArgs),
+ });
+ 
+diff --git a/lib/tools/osint.ts b/lib/tools/osint.ts
+index a886fd6..e234203 100644
+--- a/lib/tools/osint.ts
++++ b/lib/tools/osint.ts
+@@ -3,6 +3,7 @@
+  */
+ 
+ import { registerTool } from "../core/registry.js";
++import { StrategicOsintPromptSchema } from "../core/tool-schemas.js";
+ import { LookupResult } from "../types/index.js";
+ 
+ type PromptTemplate = "due_diligence" | "competitor_analysis" | "fraud_detection" | "esg_compliance" | "investment_screening";
+@@ -134,5 +135,6 @@ Each template produces a structured prompt referencing all available MCP tools.`
+         },
+         required: ["template"],
+     },
++    zodSchema: StrategicOsintPromptSchema,
+     execute: async (args) => executeStrategicPrompt(args as StrategicPromptArgs),
+ });
+diff --git a/lib/core/tool-schemas.ts b/lib/core/tool-schemas.ts
+new file mode 100644
+index 0000000..000b579
+--- /dev/null
++++ b/lib/core/tool-schemas.ts
+@@ -0,0 +1,272 @@
++/**
++ * Runtime Zod validation schemas for all 23 registered MCP tools.
++ * Enforces runtime type safety, explicit min/max bounds, and format allowlists
++ * before any registered tool handler executes.
++ */
++
++import { z, type ZodTypeAny } from "zod";
++import { CnpjSchema, CepSchema } from "./validation.js";
++
++export const DORK_CATEGORIES = [
++  "government",
++  "legal",
++  "news",
++  "documents",
++  "social",
++  "partners",
++  "security",
++  "databases",
++  "infrastructure",
++  "social_media",
++] as const;
++
++export const SEARCH_PROVIDERS = ["tavily", "perplexity"] as const;
++
++export const DATAJUD_TRIBUNALS = new Set<string>([
++  "tst",
++  "trf1",
++  "trf2",
++  "trf3",
++  "trf4",
++  "trf5",
++  "tjsp",
++  "tjrj",
++  "tjmg",
++  "tjrs",
++  "tjpr",
++  "tjsc",
++  "tjba",
++  "tjpe",
++  "tjce",
++  "tjgo",
++  "tjdf",
++]);
++
++export const CnpjLookupSchema = CnpjSchema;
++export const CepLookupSchema = CepSchema;
++
++export const CnpjSearchSchema = z.object({
++  query: z.string().trim().min(1, "query is required").max(500),
++  max_results: z.number().int().min(1).max(20).optional().default(5),
++});
++
++export const CnpjIntelligenceSchema = z
++  .object({
++    cnpj: CnpjSchema.shape.cnpj,
++    categories: z.array(z.enum(DORK_CATEGORIES)).min(1).max(10).optional(),
++    provider: z.enum(SEARCH_PROVIDERS).optional(),
++    max_results_per_query: z.number().int().min(1).max(10).optional(),
++    max_queries: z.number().int().min(1).max(20).optional(),
++    max_results: z.number().int().min(1).max(10).optional(),
++  })
++  .strict();
++
++export const SequentialThinkingSchema = z.object({
++  thought: z.string().min(1, "thought is required").max(10000),
++  thoughtNumber: z.number().int().min(1).max(1000),
++  totalThoughts: z.number().int().min(1).max(1000),
++  nextThoughtNeeded: z.boolean(),
++  isRevision: z.boolean().optional(),
++  revisesThought: z.number().int().min(1).max(1000).optional(),
++  branchFromThought: z.number().int().min(1).max(1000).optional(),
++  branchId: z.string().min(1).max(100).optional(),
++  needsMoreThoughts: z.boolean().optional(),
++});
++
++export const CpfValidateSchema = z.object({
++  cpf: z.string().trim().min(1, "cpf is required").max(30),
++});
++
++export const DomainWhoisSchema = z.object({
++  domain: z.string().trim().min(1, "domain is required").max(255),
++});
++
++export const ConsumidorSchema = z.object({
++  empresa: z.string().trim().min(1, "empresa is required").max(200),
++});
++
++export const DeepProfileSchema = z.object({
++  cnpj: CnpjSchema.shape.cnpj,
++  include_news: z.boolean().optional().default(true),
++  include_legal: z.boolean().optional().default(true),
++  include_government: z.boolean().optional().default(true),
++  domain: z.string().trim().min(1).max(255).optional(),
++});
++
++export const IbgeSchema = z
++  .object({
++    tipo: z.enum(["estados", "municipios", "municipios_por_uf", "regioes"]),
++    uf: z.string().trim().min(1).max(10).optional(),
++    id: z.number().int().min(1).max(99999999).optional(),
++  })
++  .refine((v) => v.tipo !== "municipios_por_uf" || Boolean(v.uf), {
++    message: "UF is required for municipios_por_uf",
++    path: ["uf"],
++  });
++
++export const TransparenciaSchema = z.object({
++  cnpj: z.string().trim().min(11).max(20),
++  tipo: z.enum(["contratos", "licitacoes", "convenios", "servidores", "sancoes"]),
++  dataInicio: z
++    .string()
++    .trim()
++    .regex(/^\d{2}\/\d{2}\/\d{4}$/, "Expected DD/MM/YYYY")
++    .optional(),
++  dataFim: z
++    .string()
++    .trim()
++    .regex(/^\d{2}\/\d{2}\/\d{4}$/, "Expected DD/MM/YYYY")
++    .optional(),
++  pagina: z.number().int().min(1).max(1000).optional().default(1),
++});
++
++export const CeisCnepSchema = z.object({
++  query: z.string().trim().min(1, "query is required").max(200),
++  tipo: z.enum(["ceis", "cnep", "cepim", "all"]).optional().default("all"),
++  pagina: z.number().int().min(1).max(1000).optional().default(1),
++});
++
++export const PncpSchema = z.object({
++  query: z.string().max(500),
++  cnpj_orgao: z.string().trim().max(30).optional(),
++  data_inicial: z.string().trim().max(20).optional(),
++  data_final: z.string().trim().max(20).optional(),
++  modalidade_id: z.number().int().min(1).max(100).optional(),
++  pagina: z.number().int().min(1).max(1000).optional().default(1),
++});
++
++export const QueridoDiarioSchema = z.object({
++  query: z.string().max(500),
++  territory_id: z
++    .string()
++    .trim()
++    .regex(/^\d{1,10}$/, "Expected numeric IBGE territory_id")
++    .optional(),
++  since: z
++    .string()
++    .trim()
++    .regex(/^\d{4}-\d{2}-\d{2}$/, "Expected YYYY-MM-DD")
++    .optional(),
++  until: z
++    .string()
++    .trim()
++    .regex(/^\d{4}-\d{2}-\d{2}$/, "Expected YYYY-MM-DD")
++    .optional(),
++  page: z.number().int().min(0).max(1000).optional().default(0),
++  size: z.number().int().min(1).max(100).optional().default(10),
++});
++
++export const DatajudSchema = z.object({
++  query: z.string().trim().min(1, "query is required").max(500),
++  tribunal: z
++    .string()
++    .trim()
++    .transform((s) => s.toLowerCase())
++    .refine((s) => DATAJUD_TRIBUNALS.has(s), {
++      message: "Unsupported tribunal code",
++    })
++    .optional()
++    .default("tjsp"),
++  tamanho: z.number().int().min(1).max(100).optional().default(10),
++});
++
++export const OabSchema = z
++  .object({
++    nome: z.string().trim().min(1).max(200).optional(),
++    inscricao: z.string().trim().min(1).max(30).optional(),
++    uf: z
++      .string()
++      .trim()
++      .regex(/^[A-Za-z]{2}$/, "Expected 2-letter UF")
++      .optional(),
++  })
++  .refine((v) => Boolean(v.nome || v.inscricao), {
++    message: "Provide at least nome or inscricao",
++  });
++
++export const BnmpSchema = z.object({
++  nome: z.string().trim().min(2).max(200),
++  orgaoJulgador: z.string().trim().min(1).max(200).optional(),
++});
++
++export const ProcuradosSchema = z.object({
++  nome: z.string().trim().min(2).max(200),
++});
++
++export const ListaSujaSchema = z.object({
++  query: z.string().trim().min(1, "query is required").max(200),
++});
++
++export const BacenSchema = z.object({
++  indicador: z.enum(["selic", "ipca", "dolar", "euro", "cdi"]),
++  ultimos: z.number().int().min(1).max(1000).optional().default(10),
++  periodo_dias: z.union([z.literal(30), z.literal(90), z.literal(365)]).optional(),
++});
++
++export const FipeSchema = z
++  .object({
++    codigo_fipe: z
++      .string({
++        invalid_type_error: "Invalid codigo_fipe format (expected e.g. '001004-9').",
++      })
++      .trim()
++      .regex(/^[0-9]+(?:-[0-9]+)?$/, "Invalid codigo_fipe format (expected e.g. '001004-9').")
++      .optional(),
++    tipo: z
++      .enum(["carros", "motos", "caminhoes"], {
++        errorMap: () => ({
++          message: "Invalid FIPE vehicle type. Valid: carros, motos, caminhoes.",
++        }),
++      })
++      .optional(),
++  })
++  .refine((v) => v.codigo_fipe !== undefined || v.tipo !== undefined, {
++    message: "Provide either codigo_fipe or tipo (carros/motos/caminhoes).",
++  });
++
++export const CnesSchema = z.object({
++  tipo: z.enum(["estabelecimento", "profissional"]),
++  codigo_cnes: z.string().trim().max(30).optional(),
++  nome: z.string().trim().max(200).optional(),
++  uf: z.string().trim().max(10).optional(),
++  municipio: z.string().trim().max(10).optional(),
++});
++
++export const StrategicOsintPromptSchema = z.object({
++  template: z.enum([
++    "due_diligence",
++    "competitor_analysis",
++    "fraud_detection",
++    "esg_compliance",
++    "investment_screening",
++  ]),
++  company_name: z.string().trim().max(200).optional(),
++  cnpj: z.string().trim().max(30).optional(),
++  context: z.string().trim().max(2000).optional(),
++});
++
++export const TOOL_SCHEMAS: Record<string, ZodTypeAny> = {
++  cnpj_lookup: CnpjLookupSchema,
++  cep_lookup: CepLookupSchema,
++  cnpj_search: CnpjSearchSchema,
++  cnpj_intelligence: CnpjIntelligenceSchema,
++  sequentialthinking: SequentialThinkingSchema,
++  cpf_validate: CpfValidateSchema,
++  domain_whois: DomainWhoisSchema,
++  consumidor_reclamacoes: ConsumidorSchema,
++  company_deep_profile: DeepProfileSchema,
++  ibge_localidades: IbgeSchema,
++  transparencia_lookup: TransparenciaSchema,
++  ceis_cnep_lookup: CeisCnepSchema,
++  pncp_licitacoes: PncpSchema,
++  querido_diario: QueridoDiarioSchema,
++  datajud_processos: DatajudSchema,
++  oab_advogado: OabSchema,
++  bnmp_mandados: BnmpSchema,
++  procurados_lookup: ProcuradosSchema,
++  lista_suja_lookup: ListaSujaSchema,
++  bacen_taxas: BacenSchema,
++  fipe_veiculos: FipeSchema,
++  cnes_saude: CnesSchema,
++  strategic_osint_prompt: StrategicOsintPromptSchema,
++};
+diff --git a/test/unit/tool-validation-allowlist.test.ts b/test/unit/tool-validation-allowlist.test.ts
+new file mode 100644
+index 0000000..80fa695
+--- /dev/null
++++ b/test/unit/tool-validation-allowlist.test.ts
+@@ -0,0 +1,136 @@
++import { readFileSync } from "node:fs";
++import { resolve } from "node:path";
++import { describe, it, expect, vi, afterEach } from "vitest";
++import "../../lib/tools/index.js";
++import { TOOL_DEFINITIONS } from "../../lib/core/tools.js";
++import {
++  executeRegisteredTool,
++  getToolCount,
++  hasToolSchema,
++} from "../../lib/core/registry.js";
++import { TOOL_SCHEMAS } from "../../lib/core/tool-schemas.js";
++import { CNPJ_INTELLIGENCE_TOOL } from "../../lib/core/intelligence.js";
++import { resolveApiConfig } from "../../lib/config/index.js";
++
++describe("TCK-0016: Runtime Zod Validation Across All 23 MCP Tools", () => {
++  afterEach(() => {
++    vi.restoreAllMocks();
++  });
++
++  it("registers all 23 tools with a runtime Zod schema and zero api_key parameters", () => {
++    expect(getToolCount()).toBe(23);
++    expect(TOOL_DEFINITIONS).toHaveLength(23);
++
++    for (const def of TOOL_DEFINITIONS) {
++      expect(hasToolSchema(def.name)).toBe(true);
++      expect(TOOL_SCHEMAS[def.name]).toBeDefined();
++      const props = (def.inputSchema as { properties?: Record<string, unknown> })
++        .properties;
++      expect(props).not.toHaveProperty("api_key");
++    }
++
++    expect(
++      CNPJ_INTELLIGENCE_TOOL.inputSchema.properties as Record<string, unknown>
++    ).not.toHaveProperty("api_key");
++  });
++
++  it("rejects invalid types, missing fields, and out-of-bounds limits for every tool without calling fetch", async () => {
++    const fetchSpy = vi.spyOn(globalThis, "fetch");
++    const apiConfig = resolveApiConfig();
++
++    const invalidCases: Array<{ tool: string; args: unknown; label: string }> = [
++      { tool: "cnpj_lookup", args: { cnpj: 123 }, label: "non-string cnpj" },
++      { tool: "cnpj_lookup", args: { cnpj: "11222333000180" }, label: "bad checksum" },
++      { tool: "cep_lookup", args: { cep: "123" }, label: "short cep" },
++      { tool: "cnpj_search", args: { query: "", max_results: 5 }, label: "empty query" },
++      { tool: "cnpj_search", args: { query: "acme", max_results: 999 }, label: "unbounded max_results" },
++      { tool: "cnpj_intelligence", args: { cnpj: "11222333000181", api_key: "client-key" }, label: "forbidden api_key" },
++      { tool: "cnpj_intelligence", args: { cnpj: "11222333000181", max_queries: 100 }, label: "unbounded max_queries" },
++      { tool: "cnpj_intelligence", args: { cnpj: "11222333000181", categories: ["invalid_cat"] }, label: "invalid category" },
++      { tool: "sequentialthinking", args: { thought: "hi", thoughtNumber: 0, totalThoughts: 1, nextThoughtNeeded: true }, label: "thoughtNumber < 1" },
++      { tool: "sequentialthinking", args: { thought: "", thoughtNumber: 1, totalThoughts: 1, nextThoughtNeeded: "yes" }, label: "wrong boolean type" },
++      { tool: "cpf_validate", args: { cpf: 12345678900 }, label: "non-string cpf" },
++      { tool: "domain_whois", args: { domain: "" }, label: "empty domain" },
++      { tool: "consumidor_reclamacoes", args: { empresa: null }, label: "null empresa" },
++      { tool: "company_deep_profile", args: { cnpj: "invalid" }, label: "invalid cnpj" },
++      { tool: "ibge_localidades", args: { tipo: "municipios_por_uf" }, label: "missing uf" },
++      { tool: "ibge_localidades", args: { tipo: "bairros" }, label: "invalid tipo enum" },
++      { tool: "transparencia_lookup", args: { cnpj: "123", tipo: "contratos" }, label: "short cnpj" },
++      { tool: "transparencia_lookup", args: { cnpj: "11222333000181", tipo: "contratos", dataInicio: "2026-01-01" }, label: "bad date format" },
++      { tool: "transparencia_lookup", args: { cnpj: "11222333000181", tipo: "contratos", pagina: 0 }, label: "pagina < 1" },
++      { tool: "ceis_cnep_lookup", args: { query: "", pagina: -1 }, label: "empty query and negative pagina" },
++      { tool: "pncp_licitacoes", args: { query: "ti", modalidade_id: 0 }, label: "modalidade_id < 1" },
++      { tool: "pncp_licitacoes", args: { query: "ti", pagina: 5000 }, label: "pagina > 1000" },
++      { tool: "querido_diario", args: { query: "licitacao", size: 500 }, label: "size > 100" },
++      { tool: "querido_diario", args: { query: "licitacao", size: 0 }, label: "size < 1" },
++      { tool: "querido_diario", args: { query: "licitacao", since: "01/01/2026" }, label: "invalid since date" },
++      { tool: "querido_diario", args: { query: "licitacao", territory_id: "../etc" }, label: "non-numeric territory_id" },
++      { tool: "datajud_processos", args: { query: "teste", tribunal: "unknown_court" }, label: "unknown tribunal" },
++      { tool: "datajud_processos", args: { query: "teste", tamanho: -5 }, label: "negative tamanho" },
++      { tool: "oab_advogado", args: {}, label: "missing nome and inscricao" },
++      { tool: "oab_advogado", args: { nome: "Maria", uf: "123" }, label: "invalid UF" },
++      { tool: "bnmp_mandados", args: { nome: "A" }, label: "name too short" },
++      { tool: "procurados_lookup", args: { nome: "" }, label: "empty nome" },
++      { tool: "lista_suja_lookup", args: null, label: "null args" },
++      { tool: "bacen_taxas", args: { indicador: "bitcoin" }, label: "invalid indicador" },
++      { tool: "bacen_taxas", args: { indicador: "selic", ultimos: 0 }, label: "ultimos < 1" },
++      { tool: "fipe_veiculos", args: {}, label: "missing codigo_fipe and tipo" },
++      { tool: "fipe_veiculos", args: { tipo: "../../cnpj/v1/11222333000181" }, label: "traversal tipo" },
++      { tool: "cnes_saude", args: { tipo: "invalid_type" }, label: "invalid cnes tipo" },
++      { tool: "strategic_osint_prompt", args: { template: "unknown_tpl" }, label: "invalid template" },
++    ];
++
++    // Confirm invalidCases covers all 23 registered tools at least once
++    const testedTools = new Set(invalidCases.map((c) => c.tool));
++    expect(testedTools.size).toBe(23);
++
++    for (const { tool, args, label } of invalidCases) {
++      const res = await executeRegisteredTool(tool, args, apiConfig);
++      expect(res.ok, `Expected ${tool} (${label}) to fail Zod validation`).toBe(false);
++      expect(res.error, `Expected parameter error on ${tool} (${label})`).toMatch(
++        /^Invalid parameters for /
++      );
++    }
++
++    expect(fetchSpy).not.toHaveBeenCalled();
++  });
++
++  it("versions valid .archagents/_capabilities.json and .archagents/mcp-tool-allowlist.json matching all 23 tools", () => {
++    const capPath = resolve(process.cwd(), ".archagents/_capabilities.json");
++    const allowlistPath = resolve(
++      process.cwd(),
++      ".archagents/mcp-tool-allowlist.json"
++    );
++
++    const cap = JSON.parse(readFileSync(capPath, "utf-8"));
++    expect(cap.enabled).toBe(false);
++    expect(cap.agentic?.mcp).toBe(true);
++    expect(cap.agentic?.tool_count).toBe(23);
++
++    const allowlist = JSON.parse(readFileSync(allowlistPath, "utf-8"));
++    expect(
++      allowlist.mcp_servers?.allowed?.some(
++        (s: { server?: string }) => s.server === "mcp-dadosbr"
++      )
++    ).toBe(true);
++
++    const entries = allowlist.entries as Array<Record<string, unknown>>;
++    expect(entries).toHaveLength(23);
++
++    const ids = new Set<string>();
++    const names: string[] = [];
++    for (const entry of entries) {
++      expect(entry.id).toBeTypeOf("string");
++      expect(entry.name).toBeTypeOf("string");
++      expect(entry.risk_level).toBeTypeOf("string");
++      expect(entry.destructive).toBe(false);
++      expect(typeof entry.requires_approval).toBe("boolean");
++      ids.add(String(entry.id));
++      names.push(String(entry.name));
++    }
++    expect(ids.size).toBe(23);
++
++    const registeredNames = TOOL_DEFINITIONS.map((t) => t.name).sort();
++    expect(names.sort()).toEqual(registeredNames);
++  });
++});
+diff --git a/.archagents/_capabilities.json b/.archagents/_capabilities.json
+new file mode 100644
+index 0000000..bf0d5ee
+--- /dev/null
++++ b/.archagents/_capabilities.json
+@@ -0,0 +1,20 @@
++{
++  "enabled": false,
++  "schema_version": "1.0",
++  "agentic": {
++    "mcp": true,
++    "llm": false,
++    "role": "mcp-server",
++    "server_name": "mcp-dadosbr",
++    "tool_count": 23,
++    "transports": [
++      "stdio",
++      "http",
++      "sse",
++      "cloudflare-worker",
++      "smithery"
++    ],
++    "runtime_validation": "zod",
++    "allowlist_path": ".archagents/mcp-tool-allowlist.json"
++  }
++}
+diff --git a/.archagents/mcp-tool-allowlist.json b/.archagents/mcp-tool-allowlist.json
+new file mode 100644
+index 0000000..3bd402c
+--- /dev/null
++++ b/.archagents/mcp-tool-allowlist.json
+@@ -0,0 +1,270 @@
++{
++  "schema_version": "1.0",
++  "server": "mcp-dadosbr",
++  "updated_at": "2026-11-20T16:50:30Z",
++  "mcp_servers": {
++    "allowed": [
++      {
++        "server": "mcp-dadosbr",
++        "rationale": "First-party read-only Brazilian public data & OSINT MCP server with Zod runtime input validation and host-allowlisted upstream connectors",
++        "approved_by": "audit-remediation",
++        "approved_at": "2026-11-20T16:50:30Z"
++      }
++    ]
++  },
++  "entries": [
++    {
++      "id": "MCP-TOOL-01",
++      "name": "cnpj_lookup",
++      "risk_level": "low",
++      "destructive": false,
++      "requires_approval": false,
++      "description": "Look up Brazilian company registration data by CNPJ.",
++      "rationale": "Read-only lookup validated by CnpjSchema against allowlisted HTTPS CNPJ hosts.",
++      "network_access": "allowlisted-https",
++      "api_key_env": null
++    },
++    {
++      "id": "MCP-TOOL-02",
++      "name": "cep_lookup",
++      "risk_level": "low",
++      "destructive": false,
++      "requires_approval": false,
++      "description": "Look up Brazilian postal address data by CEP.",
++      "rationale": "Read-only lookup validated by CepSchema against allowlisted HTTPS CEP hosts.",
++      "network_access": "allowlisted-https",
++      "api_key_env": null
++    },
++    {
++      "id": "MCP-TOOL-03",
++      "name": "cnpj_search",
++      "risk_level": "medium",
++      "destructive": false,
++      "requires_approval": false,
++      "description": "Web search for companies, CNPJs, and public mentions via configured provider.",
++      "rationale": "Read-only search using server-side provider API key only; query and max_results bounded (1..20).",
++      "network_access": "external-https",
++      "api_key_env": "TAVILY_API_KEY|PERPLEXITY_API_KEY"
++    },
++    {
++      "id": "MCP-TOOL-04",
++      "name": "cnpj_intelligence",
++      "risk_level": "medium",
++      "destructive": false,
++      "requires_approval": false,
++      "description": "Multi-dork OSINT research orchestrated around a validated CNPJ.",
++      "rationale": "Read-only search bounded to 10 queries/10 results per query; api_key input strictly rejected.",
++      "network_access": "external-https",
++      "api_key_env": "TAVILY_API_KEY|PERPLEXITY_API_KEY"
++    },
++    {
++      "id": "MCP-TOOL-05",
++      "name": "sequentialthinking",
++      "risk_level": "low",
++      "destructive": false,
++      "requires_approval": false,
++      "description": "Structured step-by-step reasoning processor.",
++      "rationale": "Pure in-memory computation with strict length and step-count bounds; no network access.",
++      "network_access": "none",
++      "api_key_env": null
++    },
++    {
++      "id": "MCP-TOOL-06",
++      "name": "ibge_localidades",
++      "risk_level": "low",
++      "destructive": false,
++      "requires_approval": false,
++      "description": "Query Brazilian states, municipalities, and regions from IBGE.",
++      "rationale": "Read-only public IBGE API validated by enum and required UF check.",
++      "network_access": "external-https",
++      "api_key_env": null
++    },
++    {
++      "id": "MCP-TOOL-07",
++      "name": "transparencia_lookup",
++      "risk_level": "medium",
++      "destructive": false,
++      "requires_approval": false,
++      "description": "Query Federal Government Transparency Portal (contracts, bids, grants, civil servants, sanctions).",
++      "rationale": "Read-only official API using server-side TRANSPARENCIA_API_KEY and bounded pagina (1..1000).",
++      "network_access": "external-https",
++      "api_key_env": "TRANSPARENCIA_API_KEY"
++    },
++    {
++      "id": "MCP-TOOL-08",
++      "name": "ceis_cnep_lookup",
++      "risk_level": "medium",
++      "destructive": false,
++      "requires_approval": false,
++      "description": "Search Federal sanctions databases (CEIS, CNEP, CEPIM).",
++      "rationale": "Read-only compliance screening with bounded pagina (1..1000) and server-side API key.",
++      "network_access": "external-https",
++      "api_key_env": "TRANSPARENCIA_API_KEY"
++    },
++    {
++      "id": "MCP-TOOL-09",
++      "name": "pncp_licitacoes",
++      "risk_level": "low",
++      "destructive": false,
++      "requires_approval": false,
++      "description": "Search Brazilian public procurement notices (PNCP).",
++      "rationale": "Read-only official procurement API with bounded pagina (1..1000) and modalidade_id (1..100).",
++      "network_access": "external-https",
++      "api_key_env": null
++    },
++    {
++      "id": "MCP-TOOL-10",
++      "name": "querido_diario",
++      "risk_level": "low",
++      "destructive": false,
++      "requires_approval": false,
++      "description": "Search Brazilian municipal official gazettes via Querido Diario.",
++      "rationale": "Read-only open-data API with date/territory validation and bounded page/size (1..100).",
++      "network_access": "external-https",
++      "api_key_env": null
++    },
++    {
++      "id": "MCP-TOOL-11",
++      "name": "datajud_processos",
++      "risk_level": "medium",
++      "destructive": false,
++      "requires_approval": false,
++      "description": "Search court proceedings via CNJ Datajud Public API.",
++      "rationale": "Read-only judicial API restricted to 17 allowlisted tribunals, tamanho (1..100), and server-side DATAJUD_API_KEY.",
++      "network_access": "external-https",
++      "api_key_env": "DATAJUD_API_KEY"
++    },
++    {
++      "id": "MCP-TOOL-12",
++      "name": "oab_advogado",
++      "risk_level": "low",
++      "destructive": false,
++      "requires_approval": false,
++      "description": "Search Brazilian Bar Association (OAB/CNA) lawyer registry.",
++      "rationale": "Read-only lookup requiring nome or inscricao and optional 2-letter UF.",
++      "network_access": "external-https",
++      "api_key_env": null
++    },
++    {
++      "id": "MCP-TOOL-13",
++      "name": "bnmp_mandados",
++      "risk_level": "medium",
++      "destructive": false,
++      "requires_approval": false,
++      "description": "Search CNJ National Arrest Warrant Database (BNMP).",
++      "rationale": "Read-only public judicial database search with bounded nome/orgaoJulgador inputs.",
++      "network_access": "external-https",
++      "api_key_env": null
++    },
++    {
++      "id": "MCP-TOOL-14",
++      "name": "procurados_lookup",
++      "risk_level": "low",
++      "destructive": false,
++      "requires_approval": false,
++      "description": "Search MJSP Projeto Captura federal wanted persons list.",
++      "rationale": "Read-only lookup on fixed gov.br endpoint with bounded nome string.",
++      "network_access": "external-https",
++      "api_key_env": null
++    },
++    {
++      "id": "MCP-TOOL-15",
++      "name": "lista_suja_lookup",
++      "risk_level": "low",
++      "destructive": false,
++      "requires_approval": false,
++      "description": "Check Brazil slave labor blacklist (Lista Suja / Portal da Transparencia).",
++      "rationale": "Read-only compliance check with URL-encoded bounded query.",
++      "network_access": "external-https",
++      "api_key_env": null
++    },
++    {
++      "id": "MCP-TOOL-16",
++      "name": "cpf_validate",
++      "risk_level": "low",
++      "destructive": false,
++      "requires_approval": false,
++      "description": "Validate Brazilian CPF checksum locally.",
++      "rationale": "Pure local computation with bounded input length; no network calls or upstream persistence.",
++      "network_access": "none",
++      "api_key_env": null
++    },
++    {
++      "id": "MCP-TOOL-17",
++      "name": "domain_whois",
++      "risk_level": "low",
++      "destructive": false,
++      "requires_approval": false,
++      "description": "Look up domain registration via Registro.br and IANA RDAP.",
++      "rationale": "Read-only RDAP query with bounded domain length and URI encoding.",
++      "network_access": "external-https",
++      "api_key_env": null
++    },
++    {
++      "id": "MCP-TOOL-18",
++      "name": "consumidor_reclamacoes",
++      "risk_level": "low",
++      "destructive": false,
++      "requires_approval": false,
++      "description": "Search consumer complaints via Consumidor.gov.br (SENACON).",
++      "rationale": "Read-only public consumer data lookup with bounded empresa query.",
++      "network_access": "external-https",
++      "api_key_env": null
++    },
++    {
++      "id": "MCP-TOOL-19",
++      "name": "company_deep_profile",
++      "risk_level": "medium",
++      "destructive": false,
++      "requires_approval": false,
++      "description": "Orchestrate multi-source read-only company OSINT profile from validated CNPJ.",
++      "rationale": "Read-only fan-out across validated sub-tools from checksum-verified CNPJ.",
++      "network_access": "external-https",
++      "api_key_env": "TRANSPARENCIA_API_KEY|DATAJUD_API_KEY|TAVILY_API_KEY|PERPLEXITY_API_KEY"
++    },
++    {
++      "id": "MCP-TOOL-20",
++      "name": "bacen_taxas",
++      "risk_level": "low",
++      "destructive": false,
++      "requires_approval": false,
++      "description": "Fetch Central Bank of Brazil (SGS) financial indicators and FX rates.",
++      "rationale": "Read-only official BCB API restricted to allowed indicator enum and bounded ultimos (1..1000).",
++      "network_access": "external-https",
++      "api_key_env": null
++    },
++    {
++      "id": "MCP-TOOL-21",
++      "name": "fipe_veiculos",
++      "risk_level": "low",
++      "destructive": false,
++      "requires_approval": false,
++      "description": "Look up Brazilian FIPE vehicle reference prices and brands via BrasilAPI.",
++      "rationale": "Read-only BrasilAPI lookup with strict vehicle-type enum and FIPE code regex.",
++      "network_access": "external-https",
++      "api_key_env": null
++    },
++    {
++      "id": "MCP-TOOL-22",
++      "name": "cnes_saude",
++      "risk_level": "low",
++      "destructive": false,
++      "requires_approval": false,
++      "description": "Search Brazilian National Healthcare Facility Registry (CNES - DataSUS).",
++      "rationale": "Read-only DataSUS lookup with enum tipo and bounded string parameters.",
++      "network_access": "external-https",
++      "api_key_env": null
++    },
++    {
++      "id": "MCP-TOOL-23",
++      "name": "strategic_osint_prompt",
++      "risk_level": "low",
++      "destructive": false,
++      "requires_approval": false,
++      "description": "Generate structured OSINT analysis prompt templates.",
++      "rationale": "Pure local template rendering restricted to fixed template enum and bounded strings.",
++      "network_access": "none",
++      "api_key_env": null
++    }
++  ]
++}

@@ -3,6 +3,7 @@
  */
 
 import { registerTool } from "../core/registry.js";
+import { StrategicOsintPromptSchema } from "../core/tool-schemas.js";
 import { LookupResult } from "../types/index.js";
 
 type PromptTemplate = "due_diligence" | "competitor_analysis" | "fraud_detection" | "esg_compliance" | "investment_screening";
@@ -134,5 +135,6 @@ Each template produces a structured prompt referencing all available MCP tools.`
         },
         required: ["template"],
     },
+    zodSchema: StrategicOsintPromptSchema,
     execute: async (args) => executeStrategicPrompt(args as StrategicPromptArgs),
 });

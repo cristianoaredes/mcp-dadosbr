@@ -5,7 +5,12 @@
 import { registerTool } from "../core/registry.js";
 import { httpJson } from "../core/http-client.js";
 import { Cache, LookupResult, ApiConfig } from "../types/index.js";
-import { CnpjSchema } from "../core/validation.js";
+import {
+    ConsumidorSchema,
+    CpfValidateSchema,
+    DeepProfileSchema,
+    DomainWhoisSchema,
+} from "../core/tool-schemas.js";
 import { executeSearch } from "../core/search.js";
 
 // ─── CPF Validate ───────────────────────────────────────────────────────────
@@ -60,6 +65,7 @@ No API key required. Local computation only.`,
         properties: { cpf: { type: "string", description: "CPF number (with or without formatting)" } },
         required: ["cpf"],
     },
+    zodSchema: CpfValidateSchema,
     execute: async (args) => executeCpfValidate(args as CpfValidateArgs),
 });
 
@@ -93,6 +99,7 @@ OSINT value: Verify company digital presence, registration dates, nameservers.`,
         properties: { domain: { type: "string", description: "Domain name (e.g. 'nubank.com.br')" } },
         required: ["domain"],
     },
+    zodSchema: DomainWhoisSchema,
     execute: async (args) => executeWhois(args as WhoisArgs),
 });
 
@@ -128,6 +135,7 @@ OSINT value: Assess company reputation and customer service quality.`,
         properties: { empresa: { type: "string", description: "Company name to search" } },
         required: ["empresa"],
     },
+    zodSchema: ConsumidorSchema,
     execute: async (args) => executeConsumidor(args as ConsumidorArgs),
 });
 
@@ -199,6 +207,7 @@ This is the most powerful tool for company due diligence.`,
         },
         required: ["cnpj"],
     },
+    zodSchema: DeepProfileSchema,
     execute: async (args, apiConfig, cache) => executeDeepProfile(args as DeepProfileArgs, apiConfig, cache),
 });
 

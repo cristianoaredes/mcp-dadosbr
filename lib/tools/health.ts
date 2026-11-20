@@ -4,6 +4,7 @@
 
 import { registerTool } from "../core/registry.js";
 import { httpJson } from "../core/http-client.js";
+import { CnesSchema } from "../core/tool-schemas.js";
 import { LookupResult } from "../types/index.js";
 
 const CNES_API = "https://apidadosabertos.saude.gov.br/cnes";
@@ -42,5 +43,6 @@ No API key required.`,
         },
         required: ["tipo"],
     },
+    zodSchema: CnesSchema,
     execute: async (args) => executeCnes(args as CnesArgs),
 });
