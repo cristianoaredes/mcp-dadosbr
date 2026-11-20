@@ -178,5 +178,14 @@
     "tree": "b95135bd3d37b2eb0e7e74d514bd957aeab9e273",
     "updated_at": "2026-11-20T17:59:00Z",
     "updated_by": "criteria-check"
+  },
+  "TCK-0022": {
+    "content_digest": "sha256:1e115ba191c398229891d0b9ef9bf059cbf8920152e9e8cb8daba0f997fffaaf",
+    "criteria_digest": "sha256:4a57f85cd347f29a536c4d5a5d38c3f9d28ec6fe4a01819c74fef178ee79ecad",
+    "head": "08ce71fcb61ce87ce7d20d84e5931e34df0970a7",
+    "passes": true,
+    "tree": "07a9f996ca982a1ac4bf4eb87498d5a2943831eb",
+    "updated_at": "2026-11-20T19:13:48Z",
+    "updated_by": "criteria-check"
   }
 }

@@ -1,0 +1,34 @@
+{
+  "id": "RUN-20261120-191159-tck-0022",
+  "design": "DES-0022",
+  "ticket": "TCK-0022",
+  "started_at": "2026-11-20T19:11:59Z",
+  "started_by": "ops",
+  "environment": "dev",
+  "mode": "live",
+  "status": "completed",
+  "current_step": 4,
+  "total_steps": 4,
+  "ended_at": "2026-11-20T19:13:48Z",
+  "result": "npm audit 0 vulnerabilities (0C/0H/0M/0L), npm ci OK, 7/7 dependency-hygiene.test.ts, npm test passed, tsc + tsc.worker TYPECHECK_OK, build + build:worker + test:transport PASS, criteria-check 4/4 pass",
+  "loop_iterations": 1,
+  "attempt_count": 0,
+  "lessons_consulted": [
+    "Precisou de 2 iterações (re-execução)"
+  ],
+  "loop_cost_usd": null,
+  "cost_source": "unknown",
+  "loop_strategy": "default",
+  "context_peak": 0,
+  "final_judge_delta": 33,
+  "warmup": false,
+  "final_judge_delta_source": "judge",
+  "lesson_utility": {
+    "utility": 0.66,
+    "n_lessons": 1,
+    "lessons_consulted": [
+      "Precisou de 2 iterações (re-execução)"
+    ],
+    "signal": "computed"
+  }
+}

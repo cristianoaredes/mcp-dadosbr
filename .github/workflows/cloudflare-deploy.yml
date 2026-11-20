@@ -68,7 +68,7 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           environment: ${{ github.event.inputs.environment || 'staging' }}
           workingDirectory: "."
-          wranglerVersion: "3.95.0"
+          wranglerVersion: "4.166.0"
           command: deploy --env ${{ github.event.inputs.environment || 'staging' }}
 
       - name: Get worker URL
