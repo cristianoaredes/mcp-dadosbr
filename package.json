@@ -91,6 +91,7 @@
     "@modelcontextprotocol/ext-apps": "1.7.5",
     "@types/express": "^4.17.21",
     "@types/node": "^22.0.0",
+    "@vitest/coverage-v8": "^4.1.12",
     "@vitest/ui": "^4.1.12",
     "c8": "^9.0.0",
     "esbuild": "0.25.10",

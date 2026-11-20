@@ -98,3 +98,24 @@ describe("TCK-0022 / FND-0010: DevDependencies CVE patches & CI wranglerVersion 
     expect(isAtLeastSemver(lock.packages["node_modules/handlebars"]?.version ?? "0.0.0", [4, 7, 10])).toBe(true);
   });
 });
+
+describe("TCK-0027 / FND-0014: Coverage tooling, Worker inclusion & circuit-breaker fake timers", () => {
+  it("aligns @vitest/coverage-v8 with vitest in package.json and includes Workers in vitest.config.ts", () => {
+    const pkg = JSON.parse(readFileSync(resolve(ROOT, "package.json"), "utf8")) as {
+      devDependencies: Record<string, string>;
+    };
+    expect(pkg.devDependencies["@vitest/coverage-v8"]).toBe(pkg.devDependencies.vitest);
+
+    const vitestCfg = readFileSync(resolve(ROOT, "vitest.config.ts"), "utf8");
+    expect(vitestCfg).toContain("include: ['lib/**/*.ts']");
+    expect(vitestCfg).not.toContain("'lib/workers/'");
+    expect(vitestCfg).not.toContain("'lib/adapters/cloudflare.ts'");
+  });
+
+  it("uses fake timers without real 1100ms sleeps in test/unit/circuit-breaker.test.ts", () => {
+    const testSrc = readFileSync(resolve(ROOT, "test/unit/circuit-breaker.test.ts"), "utf8");
+    expect(testSrc).toContain("vi.useFakeTimers()");
+    expect(testSrc).toContain("vi.useRealTimers()");
+    expect(testSrc).not.toMatch(/setTimeout\(resolve,\s*1100\)/);
+  });
+});
