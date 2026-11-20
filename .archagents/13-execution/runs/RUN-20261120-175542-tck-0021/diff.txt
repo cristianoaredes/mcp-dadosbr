@@ -1,0 +1,393 @@
+diff --git a/.archagents/06-infra-devops.md b/.archagents/06-infra-devops.md
+index 83e0f31..421bcc2 100644
+--- a/.archagents/06-infra-devops.md
++++ b/.archagents/06-infra-devops.md
+@@ -6,9 +6,15 @@ O snapshot inicial continha workflows de CI, release por tag e Cloudflare com ru
+ 
+ ## Fontes
+ 
+-- `.github/workflows/ci.yml:L1-L80`
++- `.github/workflows/ci.yml:L1-L142`
+ - `.github/workflows/release.yml:L1-L80`
+ - `.github/workflows/cloudflare-deploy.yml:L1-L32`
++- `package.json:L82-L88`
++
++## Gate de auditoria de dependências em produção (`TCK-0021`)
++
++- O job `lint` (`Code Quality`) de `.github/workflows/ci.yml:L116-L117` executa `npm audit --omit=dev --audit-level=high` após `npm ci`.
++- Dependências de runtime mortas (`agents`, `@smithery/sdk`, `workers-mcp`, `async-mutex`) e o módulo obsoleto `lib/workers/mcp-agent.ts` foram removidos em `TCK-0021`; `zod` (`^4.6.7`) e `express` (`^5.3.0`) + transitivas foram saneados com `package-lock.json` validado via `npm ci`. A execução efetiva do pipeline no GitHub Actions após essa alteração permanece **a confirmar**.
+ 
+ ## Alteração preparada para o runner próprio
+ 
+diff --git a/.archagents/07-security-compliance.md b/.archagents/07-security-compliance.md
+index 052ec8a..1f8118f 100644
+--- a/.archagents/07-security-compliance.md
++++ b/.archagents/07-security-compliance.md
+@@ -1,28 +1,29 @@
+ # Segurança e limites
+ 
+-Base revisada: `9308fe0` (em remediação no worktree sobre `v0.6.0` / `4199d0a`; base inicial: `037dae4c`).
++Base revisada: `2f0e25c` + remediação `TCK-0021` (em worktree sobre `v0.6.0` / `4199d0a`; base inicial: `037dae4c`).
+ 
+-O Worker define rotas públicas explícitas (`PUBLIC_PATHS`: `/health`, `/`, `/openapi.json`, `/.well-known/*`) e exige `MCP_API_KEY` com comparação constant-time em `/mcp`, `/sse` e rotas REST quando configurada, mantendo `/oauth/*` e descoberta OAuth desabilitados em modo fail-closed (`501 oauth_not_supported`) e aplicando CORS restritivo via `MCP_ALLOWED_ORIGINS` (sem `*` em rotas autenticadas). O CLI usa rate limit na entrada HTTP. URLs configuráveis de CNPJ e CEP passam por allowlist de hosts HTTPS e normalização (`validateAndNormalizeApiConfig`), tanto em `loadApiConfiguration()` quanto em `resolveApiConfig(overrides)` e no adaptador Smithery (`configSchema` / `createServer`), restringindo loopback (`localhost`, `127.0.0.1` exatos via HTTP/HTTPS) exclusivamente a `NODE_ENV` `development`/`test` (fail-closed quando ausente ou `production`), rejeitando credenciais embutidas (`username`/`password`) e sanitizando URLs em logs/erros. A tool `fipe_veiculos` valida `tipo` contra `ALLOWED_FIPE_TYPES` e `codigo_fipe` contra regex estrito antes de chamar `httpJson`. Todas as **23** ferramentas MCP registradas exigem `zodSchema` em tempo de compilação e passam por `zodSchema.safeParse(...)` centralizado em `executeRegisteredTool` (`lib/core/registry.ts` + `lib/core/tool-schemas.ts`) antes de qualquer chamada externa, com limites explícitos de paginação/tamanho; `cnpj_intelligence` removeu `api_key` do schema e rejeita argumentos extras (`.strict()`). As capacidades e a allowlist agêntica (`SAFETY.md §SC-9`) estão versionadas em `.archagents/_capabilities.json` e `.archagents/mcp-tool-allowlist.json`. O histórico de `sequentialthinking` é isolado por sessão via `ToolExecutionContext` (`lib/core/mcp-server.ts`, `lib/workers/mcp-agent.ts`, `lib/tools/core.ts` — sem singleton de módulo), usa `Map` seguro contra colisão de protótipo com tetos FIFO (`100/20/50`) e mantém logging de pensamentos desligado por padrão; logs de `search.ts` e `intelligence.ts` redigem/resumem queries, CNPJ (`***XXXX`), razão social, dorks e PII via `lib/shared/log-redaction.ts`; o dispatcher MCP (`mcp-server.ts` / `mcp-agent.ts`) aplica rate limit configurável por sessão (`MCP_TOOL_RATE_LIMIT_MAX`, default `120` chamadas/janela) inclusive em `stdio`. `readCnpjProfile` rejeita credenciais embutidas na URL do provedor, e `scripts/build-apps.mjs` bloqueia fechamentos inline `</script`/`</style` ao empacotar os MCP Apps. Exposição efetiva, controles ativos no host e conformidade ficam **a confirmar** por ambiente. Credenciais e evidências de execução ficam fora do Git.
++O Worker define rotas públicas explícitas (`PUBLIC_PATHS`: `/health`, `/`, `/openapi.json`, `/.well-known/*`) e exige `MCP_API_KEY` com comparação constant-time em `/mcp`, `/sse` e rotas REST quando configurada, mantendo `/oauth/*` e descoberta OAuth desabilitados em modo fail-closed (`501 oauth_not_supported`) e aplicando CORS restritivo via `MCP_ALLOWED_ORIGINS` (sem `*` em rotas autenticadas). O CLI usa rate limit na entrada HTTP. URLs configuráveis de CNPJ e CEP passam por allowlist de hosts HTTPS e normalização (`validateAndNormalizeApiConfig`), tanto em `loadApiConfiguration()` quanto em `resolveApiConfig(overrides)` e no adaptador Smithery (`configSchema` / `createServer`), restringindo loopback (`localhost`, `127.0.0.1` exatos via HTTP/HTTPS) exclusivamente a `NODE_ENV` `development`/`test` (fail-closed quando ausente ou `production`), rejeitando credenciais embutidas (`username`/`password`) e sanitizando URLs em logs/erros. A tool `fipe_veiculos` valida `tipo` contra `ALLOWED_FIPE_TYPES` e `codigo_fipe` contra regex estrito antes de chamar `httpJson`. Todas as **23** ferramentas MCP registradas exigem `zodSchema` em tempo de compilação e passam por `zodSchema.safeParse(...)` centralizado em `executeRegisteredTool` (`lib/core/registry.ts` + `lib/core/tool-schemas.ts`, Zod `v4`) antes de qualquer chamada externa, com limites explícitos de paginação/tamanho; `cnpj_intelligence` removeu `api_key` do schema e rejeita argumentos extras (`.strict()`). As capacidades e a allowlist agêntica (`SAFETY.md §SC-9`) estão versionadas em `.archagents/_capabilities.json` e `.archagents/mcp-tool-allowlist.json`. O histórico de `sequentialthinking` é isolado por sessão via `ToolExecutionContext` (`lib/core/mcp-server.ts`, `lib/tools/core.ts` — sem singleton de módulo; o arquivo morto `lib/workers/mcp-agent.ts` foi removido em `TCK-0021`), usa `Map` seguro contra colisão de protótipo com tetos FIFO (`100/20/50`) e mantém logging de pensamentos desligado por padrão; logs de `search.ts` e `intelligence.ts` redigem/resumem queries, CNPJ (`***XXXX`), razão social, dorks e PII via `lib/shared/log-redaction.ts`; o dispatcher MCP (`lib/core/mcp-server.ts`) aplica rate limit configurável por sessão (`MCP_TOOL_RATE_LIMIT_MAX`, default `120` chamadas/janela) inclusive em `stdio`. Em dependências de produção (`package.json` / `package-lock.json`), foram removidas `@smithery/sdk`, `agents`, `workers-mcp` e `async-mutex`, atualizados `zod` (`^4.6.7`) e `express` (`^5.3.0`), e adicionado o gate `npm audit --omit=dev --audit-level=high` em `.github/workflows/ci.yml:L116-L117`. `readCnpjProfile` rejeita credenciais embutidas na URL do provedor, e `scripts/build-apps.mjs` bloqueia fechamentos inline `</script`/`</style` ao empacotar os MCP Apps. Exposição efetiva, controles ativos no host e conformidade ficam **a confirmar** por ambiente. Credenciais e evidências de execução ficam fora do Git.
+ 
+ ## Fontes
+ 
+ - `lib/workers/auth.ts:L12-L89`
+ - `lib/workers/oauth.ts:L1-L47`
+ - `lib/adapters/cloudflare.ts:L19-L170`
+-- `lib/workers/mcp-agent.ts:L29-L145`
+ - `lib/workers/worker.ts:L156-L192`
+ - `lib/adapters/cli.ts:L61-L246`
+ - `lib/config/index.ts:L7-L218`
+-- `lib/adapters/smithery.ts:L14-L53`
++- `lib/adapters/smithery.ts:L1-L53`
+ - `lib/tools/financial.ts:L68-L103`
+-- `lib/core/tool-schemas.ts:L1-L272`
++- `lib/core/tool-schemas.ts:L1-L270`
+ - `lib/core/registry.ts:L8-L101`
+-- `lib/core/intelligence.ts:L58-L455`
++- `package.json:L82-L88`
++- `.github/workflows/ci.yml:L113-L118`
++- `lib/core/intelligence.ts:L58-L523`
+ - `lib/core/search.ts:L17-L95`
+ - `lib/core/sequential-thinking.ts:L1-L185`
+ - `lib/shared/log-redaction.ts:L1-L32`
+ - `lib/infrastructure/rate-limiter.ts:L8-L135`
+-- `lib/core/mcp-server.ts:L11-L175`
++- `lib/core/mcp-server.ts:L11-L241`
+ - `lib/tools/core.ts:L52-L149`
+ - `.archagents/_capabilities.json`
+ - `.archagents/mcp-tool-allowlist.json`
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+index d17496c..aaf4ffd 100644
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -113,6 +113,9 @@ jobs:
+       - name: Install dependencies
+         run: npm ci
+ 
++      - name: Audit production dependencies
++        run: npm audit --omit=dev --audit-level=high
++
+       - name: Check TypeScript
+         run: npx tsc --noEmit
+ 
+diff --git a/lib/adapters/smithery.ts b/lib/adapters/smithery.ts
+index edcd87c..37094d5 100644
+--- a/lib/adapters/smithery.ts
++++ b/lib/adapters/smithery.ts
+@@ -30,7 +30,7 @@ export const configSchema = z
+       .describe(`Custom CEP API base URL (default: ${DEFAULT_CEP_URL})`)
+       .default(DEFAULT_CEP_URL),
+     authHeaders: z
+-      .record(z.string())
++      .record(z.string(), z.string())
+       .describe("Extra headers for API requests (optional)")
+       .optional(),
+   })
+diff --git a/lib/core/registry.ts b/lib/core/registry.ts
+index 695fc7d..c017c5b 100644
+--- a/lib/core/registry.ts
++++ b/lib/core/registry.ts
+@@ -5,7 +5,7 @@
+  * The registry provides tool definitions and execution without if/else chains.
+  */
+ 
+-import type { ZodTypeAny } from "zod";
++import type { ZodType } from "zod";
+ import type { SequentialThinkingProcessor } from "./sequential-thinking.js";
+ import { Cache, LookupResult, ApiConfig } from "../types/index.js";
+ 
+@@ -18,7 +18,7 @@ export interface ToolHandler {
+     name: string;
+     description: string;
+     inputSchema: Record<string, unknown>;
+-    zodSchema: ZodTypeAny;
++    zodSchema: ZodType;
+     execute: (args: unknown, apiConfig: ApiConfig, cache?: Cache, context?: ToolExecutionContext) => Promise<LookupResult>;
+ }
+ 
+diff --git a/lib/core/tool-schemas.ts b/lib/core/tool-schemas.ts
+index 000b579..5daa5dd 100644
+--- a/lib/core/tool-schemas.ts
++++ b/lib/core/tool-schemas.ts
+@@ -4,7 +4,7 @@
+  * before any registered tool handler executes.
+  */
+ 
+-import { z, type ZodTypeAny } from "zod";
++import { z, type ZodType } from "zod";
+ import { CnpjSchema, CepSchema } from "./validation.js";
+ 
+ export const DORK_CATEGORIES = [
+@@ -207,16 +207,14 @@ export const FipeSchema = z
+   .object({
+     codigo_fipe: z
+       .string({
+-        invalid_type_error: "Invalid codigo_fipe format (expected e.g. '001004-9').",
++        error: "Invalid codigo_fipe format (expected e.g. '001004-9').",
+       })
+       .trim()
+       .regex(/^[0-9]+(?:-[0-9]+)?$/, "Invalid codigo_fipe format (expected e.g. '001004-9').")
+       .optional(),
+     tipo: z
+       .enum(["carros", "motos", "caminhoes"], {
+-        errorMap: () => ({
+-          message: "Invalid FIPE vehicle type. Valid: carros, motos, caminhoes.",
+-        }),
++        error: "Invalid FIPE vehicle type. Valid: carros, motos, caminhoes.",
+       })
+       .optional(),
+   })
+@@ -245,7 +243,7 @@ export const StrategicOsintPromptSchema = z.object({
+   context: z.string().trim().max(2000).optional(),
+ });
+ 
+-export const TOOL_SCHEMAS: Record<string, ZodTypeAny> = {
++export const TOOL_SCHEMAS: Record<string, ZodType> = {
+   cnpj_lookup: CnpjLookupSchema,
+   cep_lookup: CepLookupSchema,
+   cnpj_search: CnpjSearchSchema,
+diff --git a/lib/workers/mcp-agent.ts b/lib/workers/mcp-agent.ts
+deleted file mode 100644
+index 5b0bfeb..0000000
+--- a/lib/workers/mcp-agent.ts
++++ /dev/null
+@@ -1,163 +0,0 @@
+-/**
+- * DadosBR MCP Agent for Cloudflare Workers
+- * Uses Cloudflare's agents SDK with Durable Objects for persistent state
+- */
+-
+-import { McpAgent } from "agents/mcp";
+-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+-import { TOOL_DEFINITIONS, executeTool } from "../core/tools.js";
+-import { SequentialThinkingProcessor } from "../core/sequential-thinking.js";
+-import { RateLimiter } from "../infrastructure/rate-limiter.js";
+-import { RateLimitError } from "../shared/errors.js";
+-import { resolveApiConfig, SERVER_VERSION } from "../config/index.js";
+-import { KVCache } from "../core/cache.js";
+-import { TIMEOUTS } from "../config/timeouts.js";
+-import { CACHE } from "../shared/utils/constants.js";
+-import type { Cache, ApiConfig } from "../types/index.js";
+-
+-/**
+- * Environment bindings for DadosBR MCP Agent
+- */
+-export interface DadosBRMCPEnv {
+-  MCP_CACHE?: KVNamespace;
+-  MCP_KV?: KVNamespace;
+-  MCP_TRANSPORT?: string;
+-  MCP_HTTP_PORT?: string;
+-  MCP_CACHE_SIZE?: string;
+-  MCP_CACHE_TTL?: string;
+-  MCP_API_KEY?: string;
+-  MCP_DISABLE_RATE_LIMIT?: string;
+-  MCP_TOOL_RATE_LIMIT_MAX?: string;
+-  TAVILY_API_KEY?: string;
+-  PERPLEXITY_API_KEY?: string;
+-  TRANSPARENCIA_API_KEY?: string;
+-  DATAJUD_API_KEY?: string;
+-}
+-
+-/**
+- * DadosBR MCP Agent
+- * Extends McpAgent to provide Brazilian public data access (CNPJ/CEP)
+- */
+-export class DadosBRMCP extends McpAgent<DadosBRMCPEnv> {
+-  server = new McpServer({
+-    name: "mcp-dadosbr",
+-    version: SERVER_VERSION,
+-  });
+-
+-  protected declare env: DadosBRMCPEnv;
+-  private cache: Cache | null = null;
+-  private apiConfig: ApiConfig | null = null;
+-  private thinkingProcessor = new SequentialThinkingProcessor();
+-  private toolRateLimiter: RateLimiter | null = null;
+-
+-  /**
+-   * Initialize the MCP server and register all tools
+-   */
+-  async init() {
+-    console.log('[DadosBRMCP] Initializing server...');
+-
+-    // Inject Cloudflare Workers environment variables into process.env
+-    // This allows tools to access secrets like TAVILY_API_KEY
+-    if (this.env.TAVILY_API_KEY) {
+-      process.env.TAVILY_API_KEY = this.env.TAVILY_API_KEY;
+-    }
+-    if (this.env.PERPLEXITY_API_KEY) {
+-      process.env.PERPLEXITY_API_KEY = this.env.PERPLEXITY_API_KEY;
+-    }
+-    if (this.env.TRANSPARENCIA_API_KEY) {
+-      process.env.TRANSPARENCIA_API_KEY = this.env.TRANSPARENCIA_API_KEY;
+-    }
+-    if (this.env.DATAJUD_API_KEY) {
+-      process.env.DATAJUD_API_KEY = this.env.DATAJUD_API_KEY;
+-    }
+-
+-    // Resolve API configuration
+-    this.apiConfig = resolveApiConfig();
+-
+-    // Initialize per-session tool rate limiter unless explicitly disabled
+-    if (this.env.MCP_DISABLE_RATE_LIMIT !== "true") {
+-      const parsedMax = this.env.MCP_TOOL_RATE_LIMIT_MAX
+-        ? parseInt(this.env.MCP_TOOL_RATE_LIMIT_MAX, 10)
+-        : NaN;
+-      const maxRequests = Number.isFinite(parsedMax) && parsedMax > 0 ? parsedMax : 120;
+-      this.toolRateLimiter = new RateLimiter({
+-        windowMs: TIMEOUTS.RATE_LIMIT_WINDOW_MS,
+-        maxRequests,
+-        enableCleanupTimer: false,
+-      });
+-    } else {
+-      this.toolRateLimiter = null;
+-    }
+-
+-    // Initialize cache if KV namespace is available
+-    if (this.env.MCP_CACHE) {
+-      const cacheTTL = parseInt(this.env.MCP_CACHE_TTL || String(CACHE.DEFAULT_TTL_MS));
+-      this.cache = new KVCache(this.env.MCP_CACHE, cacheTTL);
+-      console.log('[DadosBRMCP] KV Cache initialized with TTL:', cacheTTL);
+-    }
+-
+-    // Register all tools
+-    await this.registerTools();
+-
+-    console.log('[DadosBRMCP] Server initialized successfully');
+-  }
+-
+-  /**
+-   * Register all tools with the MCP server
+-   */
+-  private async registerTools() {
+-    if (!this.apiConfig) {
+-      throw new Error('API config not initialized');
+-    }
+-
+-    const apiConfig = this.apiConfig;
+-    const cache = this.cache;
+-
+-    for (const tool of TOOL_DEFINITIONS) {
+-      // Register tool with name, description and handler
+-      this.server.tool(
+-        tool.name,
+-        tool.description,
+-        async (args: unknown) => {
+-          try {
+-            if (this.toolRateLimiter && !this.toolRateLimiter.checkLimit("mcp-agent")) {
+-              const retryAfter = Math.max(
+-                1,
+-                Math.ceil(this.toolRateLimiter.getResetTime("mcp-agent") / 1000)
+-              );
+-              throw new RateLimitError(retryAfter);
+-            }
+-            const result = await executeTool(tool.name, args, apiConfig, cache || undefined, {
+-              thinkingProcessor: this.thinkingProcessor,
+-            });
+-
+-            // Format result for MCP response
+-            if (result.ok) {
+-              return {
+-                content: [
+-                  {
+-                    type: "text",
+-                    text: JSON.stringify(result.data, null, 2),
+-                  },
+-                ],
+-              };
+-            } else {
+-              throw new Error(result.error || "Tool execution failed");
+-            }
+-          } catch (error) {
+-            console.error(`[DadosBRMCP] Tool ${tool.name} error:`, error);
+-            throw error;
+-          }
+-        }
+-      );
+-    }
+-
+-    console.log(`[DadosBRMCP] Registered ${TOOL_DEFINITIONS.length} tools`);
+-  }
+-}
+-
+-/**
+- * Export the mounted MCP agent for Cloudflare Workers
+- * This is the default export that Wrangler expects
+- */
+-export default DadosBRMCP.mount("/sse");
+diff --git a/package.json b/package.json
+index ecf86b0..ad58e10 100644
+--- a/package.json
++++ b/package.json
+@@ -81,14 +81,10 @@
+   "homepage": "https://github.com/cristianoaredes/mcp-dadosbr#readme",
+   "dependencies": {
+     "@modelcontextprotocol/sdk": "^1.32.2",
+-    "@smithery/sdk": "^1.7.4",
+-    "agents": "^0.2.21",
+-    "async-mutex": "^0.5.0",
+     "chalk": "^5.6.2",
+-    "express": "^5.0.1",
++    "express": "^5.3.0",
+     "tavily": "^1.0.2",
+-    "workers-mcp": "^0.0.13",
+-    "zod": "^3.23.8"
++    "zod": "^4.6.7"
+   },
+   "devDependencies": {
+     "@cloudflare/workers-types": "^4.20250927.0",
+diff --git a/test/unit/dependency-hygiene.test.ts b/test/unit/dependency-hygiene.test.ts
+new file mode 100644
+index 0000000..3780fe7
+--- /dev/null
++++ b/test/unit/dependency-hygiene.test.ts
+@@ -0,0 +1,45 @@
++import { readFileSync, existsSync } from "node:fs";
++import { resolve } from "node:path";
++import { describe, expect, it } from "vitest";
++import { configSchema } from "../../lib/adapters/smithery.js";
++
++const ROOT = resolve(import.meta.dirname, "../..");
++
++describe("TCK-0021 / FND-0009: Runtime dependency hygiene & CI audit gate", () => {
++  it("removes dead runtime dependencies and upgrades zod and express", () => {
++    const pkg = JSON.parse(readFileSync(resolve(ROOT, "package.json"), "utf8")) as {
++      dependencies: Record<string, string>;
++    };
++
++    for (const removed of ["agents", "@smithery/sdk", "workers-mcp", "async-mutex"]) {
++      expect(pkg.dependencies).not.toHaveProperty(removed);
++    }
++
++    expect(pkg.dependencies.zod).toMatch(/^\^4\./);
++    expect(pkg.dependencies.express).toMatch(/^\^5\.[2-9]\./);
++  });
++
++  it("removes dead Durable Object module lib/workers/mcp-agent.ts", () => {
++    expect(existsSync(resolve(ROOT, "lib/workers/mcp-agent.ts"))).toBe(false);
++  });
++
++  it("enforces production npm audit gate in .github/workflows/ci.yml", () => {
++    const ci = readFileSync(resolve(ROOT, ".github/workflows/ci.yml"), "utf8");
++    expect(ci).toMatch(/npm audit --omit=dev --audit-level=high/);
++  });
++
++  it("validates Smithery configSchema authHeaders record and defaults under Zod v4", () => {
++    const okDefault = configSchema.safeParse({});
++    expect(okDefault.success).toBe(true);
++
++    const okHeaders = configSchema.safeParse({
++      authHeaders: { "X-Test": "1" },
++    });
++    expect(okHeaders.success).toBe(true);
++
++    const badHeaders = configSchema.safeParse({
++      authHeaders: { "X-Test": 123 },
++    });
++    expect(badHeaders.success).toBe(false);
++  });
++});
