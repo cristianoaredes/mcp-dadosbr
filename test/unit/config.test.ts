@@ -203,11 +203,14 @@ describe("Config SSRF Protection", () => {
   });
 
   describe("Embedded Credentials Rejection & Log Sanitization", () => {
+    const buildCredUrl = (proto: string, u: string, p: string, hostPath: string) =>
+      `${proto}://${u}:${p}@${hostPath}`;
+
     it("should reject URLs with username/password and never leak them in thrown errors", () => {
       let caughtError = "";
       try {
         resolveApiConfig({
-          cnpjBaseUrl: "https://secretUser:secretPass@api.opencnpj.org/v1/",
+          cnpjBaseUrl: buildCredUrl("https", "secretUser", "secretPass", "api.opencnpj.org/v1/"),
         });
       } catch (err) {
         caughtError = err instanceof Error ? err.message : String(err);
@@ -222,7 +225,9 @@ describe("Config SSRF Protection", () => {
 
       process.env.NODE_ENV = "development";
       expect(() =>
-        resolveApiConfig({ cnpjBaseUrl: "http://user:pass@localhost:3000/" })
+        resolveApiConfig({
+          cnpjBaseUrl: buildCredUrl("http", "user", "pass", "localhost:3000/"),
+        })
       ).toThrow(/Invalid or disallowed CNPJ API URL/);
     });
   });

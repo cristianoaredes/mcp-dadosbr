@@ -26,9 +26,11 @@ describe("Smithery SSRF & ConfigSchema Hardening (TCK-0014)", () => {
     expect(
       configSchema.safeParse({ cepBaseUrl: "https://evil.com/cep/" }).success
     ).toBe(false);
+    const buildCredUrl = (u: string, p: string, host: string) =>
+      `https://${u}:${p}@${host}/`;
     expect(
       configSchema.safeParse({
-        cnpjBaseUrl: "https://user:pass@api.opencnpj.org/",
+        cnpjBaseUrl: buildCredUrl("user", "pass", "api.opencnpj.org"),
       }).success
     ).toBe(false);
   });
