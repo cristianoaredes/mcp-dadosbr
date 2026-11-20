@@ -1,0 +1,2423 @@
+diff --git a/lib/core/intelligence.ts b/lib/core/intelligence.ts
+index f9c1c5c..ec2f861 100644
+--- a/lib/core/intelligence.ts
++++ b/lib/core/intelligence.ts
+@@ -18,7 +18,7 @@ import { maskCnpj, maskSensitiveText, summarizeQueryForLog } from '../shared/log
+  * @param limit - Maximum number of concurrent tasks (default: 3)
+  * @returns Array of settled results
+  */
+-async function executeWithConcurrencyLimit<T>(
++export async function executeWithConcurrencyLimit<T>(
+   tasks: (() => Promise<T>)[],
+   limit: number = 3,
+   signal?: AbortSignal
+@@ -92,7 +92,7 @@ export interface SearchResultWithMeta extends SearchResult {
+ /**
+  * Normalize CNPJ to digits only for comparison
+  */
+-function normalizeCnpj(cnpj: string): string {
++export function normalizeCnpj(cnpj: string): string {
+   return cnpj.replace(/\D/g, '');
+ }
+ 
+@@ -140,7 +140,7 @@ function getCnpjPatterns(cnpj: string): RegExp[] {
+  * Check if a text contains the CNPJ (with or without formatting)
+  * Uses word boundaries to avoid false positives
+  */
+-function containsCnpj(text: string, cnpj: string): boolean {
++export function containsCnpj(text: string, cnpj: string): boolean {
+   const patterns = getCnpjPatterns(cnpj);
+   return patterns.some(pattern => pattern.test(text));
+ }
+@@ -148,7 +148,7 @@ function containsCnpj(text: string, cnpj: string): boolean {
+ /**
+  * Filter search results to only include those that mention the CNPJ
+  */
+-function filterResultsByCnpj(results: SearchResult[], cnpj: string): SearchResult[] {
++export function filterResultsByCnpj(results: SearchResult[], cnpj: string): SearchResult[] {
+   return results.filter(result => {
+     // Check title, URL, and snippet for CNPJ
+     const searchText = `${result.title} ${result.url} ${result.snippet}`.toLowerCase();
+diff --git a/lib/tools/core.ts b/lib/tools/core.ts
+index 421847d..0ba182b 100644
+--- a/lib/tools/core.ts
++++ b/lib/tools/core.ts
+@@ -14,19 +14,50 @@ import {
+ } from "../core/tool-schemas.js";
+ import { Cache, LookupResult, ApiConfig } from "../types/index.js";
+ import { SEARCH_TOOL, executeSearch } from "../core/search.js";
++import { TIMEOUTS } from "../config/timeouts.js";
+ 
+ // ─── Shared lookup with caching and deduplication ───────────────────────────
+ 
+-interface PendingRequest { promise: Promise<LookupResult>; timestamp: number; timeoutId: NodeJS.Timeout; }
++interface PendingRequest {
++    promise: Promise<unknown>;
++    timestamp: number;
++    timeoutId: ReturnType<typeof setTimeout>;
++}
+ const pendingRequests = new Map<string, PendingRequest>();
+ 
+-async function deduplicate<T>(key: string, fn: () => Promise<T>): Promise<T> {
++export function getPendingRequestCount(): number {
++    return pendingRequests.size;
++}
++
++export async function deduplicate<T>(key: string, fn: () => Promise<T>): Promise<T> {
++    const timeoutMs = TIMEOUTS.DEDUP_TIMEOUT_MS;
+     const existing = pendingRequests.get(key);
+-    if (existing && Date.now() - existing.timestamp < 30000) return existing.promise as Promise<T>;
++    if (existing) {
++        if (Date.now() - existing.timestamp < timeoutMs) {
++            return existing.promise as Promise<T>;
++        }
++        clearTimeout(existing.timeoutId);
++    }
+     const promise = fn();
+-    const timeoutId = setTimeout(() => pendingRequests.delete(key), 30000);
+-    pendingRequests.set(key, { promise: promise as Promise<LookupResult>, timestamp: Date.now(), timeoutId });
+-    try { return await promise; } finally { clearTimeout(timeoutId); pendingRequests.delete(key); }
++    const timeoutId = setTimeout(() => {
++        if (pendingRequests.get(key)?.promise === promise) {
++            pendingRequests.delete(key);
++        }
++    }, timeoutMs);
++    (timeoutId as { unref?: () => void }).unref?.();
++    pendingRequests.set(key, {
++        promise,
++        timestamp: Date.now(),
++        timeoutId,
++    });
++    try {
++        return await promise;
++    } finally {
++        clearTimeout(timeoutId);
++        if (pendingRequests.get(key)?.promise === promise) {
++            pendingRequests.delete(key);
++        }
++    }
+ }
+ 
+ async function lookup(type: "cnpj" | "cep", input: string, apiConfig: ApiConfig, cache?: Cache): Promise<LookupResult> {
+diff --git a/package.json b/package.json
+index ec9eb81..8c7aeba 100644
+--- a/package.json
++++ b/package.json
+@@ -91,6 +91,7 @@
+     "@modelcontextprotocol/ext-apps": "1.7.5",
+     "@types/express": "^4.17.21",
+     "@types/node": "^22.0.0",
++    "@vitest/coverage-v8": "^4.1.12",
+     "@vitest/ui": "^4.1.12",
+     "c8": "^9.0.0",
+     "esbuild": "0.25.10",
+diff --git a/test/unit/circuit-breaker.test.ts b/test/unit/circuit-breaker.test.ts
+index 71c75bb..801f34b 100644
+--- a/test/unit/circuit-breaker.test.ts
++++ b/test/unit/circuit-breaker.test.ts
+@@ -3,13 +3,15 @@
+  * Tests thread-safety, state transitions, and failure handling
+  */
+ 
+-import { describe, it, expect, beforeEach, vi } from 'vitest';
++import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+ import { CircuitBreaker, CircuitBreakerOpenError } from '../../lib/infrastructure/http/circuit-breaker';
+ 
+ describe('CircuitBreaker', () => {
+   let circuitBreaker: CircuitBreaker;
+ 
+   beforeEach(() => {
++    vi.useFakeTimers();
++    vi.setSystemTime(new Date('2026-11-20T18:00:00.000Z'));
+     circuitBreaker = new CircuitBreaker({
+       failureThreshold: 3,
+       resetTimeoutMs: 1000,
+@@ -17,6 +19,11 @@ describe('CircuitBreaker', () => {
+     });
+   });
+ 
++  afterEach(() => {
++    vi.restoreAllMocks();
++    vi.useRealTimers();
++  });
++
+   describe('CLOSED state', () => {
+     it('should execute successfully in CLOSED state', async () => {
+       const result = await circuitBreaker.execute(async () => 'success');
+@@ -78,7 +85,7 @@ describe('CircuitBreaker', () => {
+ 
+     it('should transition to HALF_OPEN after timeout', async () => {
+       // Wait for reset timeout
+-      await new Promise(resolve => setTimeout(resolve, 1100));
++      vi.advanceTimersByTime(1100);
+ 
+       // Next call should attempt execution (HALF_OPEN)
+       const result = await circuitBreaker.execute(async () => 'success');
+@@ -97,7 +104,7 @@ describe('CircuitBreaker', () => {
+           })
+         ).rejects.toThrow();
+       }
+-      await new Promise(resolve => setTimeout(resolve, 1100));
++      vi.advanceTimersByTime(1100);
+     });
+ 
+     it('should transition to CLOSED on success', async () => {
+@@ -189,6 +196,7 @@ describe('CircuitBreaker', () => {
+         })
+       );
+ 
++      await vi.advanceTimersByTimeAsync(10);
+       const results = await Promise.all(promises);
+       expect(results).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
+     });
+diff --git a/test/unit/concurrency.test.ts b/test/unit/concurrency.test.ts
+index 20d6a57..8bf29d9 100644
+--- a/test/unit/concurrency.test.ts
++++ b/test/unit/concurrency.test.ts
+@@ -1,49 +1,17 @@
+-import { describe, it, expect, beforeEach } from 'vitest';
+-
+-/**
+- * Test concurrent execution with limit
+- * This replicates the executeWithConcurrencyLimit function for testing
+- */
+-
+-async function executeWithConcurrencyLimit<T>(
+-  tasks: (() => Promise<T>)[],
+-  limit: number = 3
+-): Promise<PromiseSettledResult<T>[]> {
+-  const results: PromiseSettledResult<T>[] = new Array(tasks.length);
+-  const executing: Set<Promise<void>> = new Set();
+-
+-  for (let i = 0; i < tasks.length; i++) {
+-    const task = tasks[i];
+-
+-    // Create a promise that stores result and removes itself when done
+-    const promise = task()
+-      .then(
+-        value => {
+-          results[i] = { status: 'fulfilled', value };
+-        },
+-        reason => {
+-          results[i] = { status: 'rejected', reason };
+-        }
+-      )
+-      .then(() => {
+-        executing.delete(promise);
+-      });
+-
+-    executing.add(promise);
+-
+-    // If we hit the concurrency limit, wait for one to complete
+-    if (executing.size >= limit) {
+-      await Promise.race(executing);
+-    }
+-  }
++import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
++import { executeWithConcurrencyLimit } from '../../lib/core/intelligence.js';
+ 
+-  // Wait for all remaining promises
+-  await Promise.all(executing);
++describe('Concurrency Limiter (lib/core/intelligence)', () => {
++  beforeEach(() => {
++    vi.useFakeTimers();
++    vi.setSystemTime(new Date('2026-11-20T18:00:00.000Z'));
++  });
+ 
+-  return results;
+-}
++  afterEach(() => {
++    vi.restoreAllMocks();
++    vi.useRealTimers();
++  });
+ 
+-describe('Concurrency Limiter', () => {
+   describe('executeWithConcurrencyLimit', () => {
+     it('should execute all tasks and return results', async () => {
+       const tasks = [
+@@ -63,7 +31,7 @@ describe('Concurrency Limiter', () => {
+       expect(values).toEqual([1, 2, 3, 4, 5]);
+     });
+ 
+-    it('should respect concurrency limit', async () => {
++    it('should respect concurrency limit using fake timers', async () => {
+       let currentlyRunning = 0;
+       let maxConcurrent = 0;
+ 
+@@ -72,7 +40,6 @@ describe('Concurrency Limiter', () => {
+           currentlyRunning++;
+           maxConcurrent = Math.max(maxConcurrent, currentlyRunning);
+ 
+-          // Simulate async work
+           await new Promise(resolve => setTimeout(resolve, 10));
+ 
+           currentlyRunning--;
+@@ -81,11 +48,12 @@ describe('Concurrency Limiter', () => {
+       });
+ 
+       const limit = 3;
+-      await executeWithConcurrencyLimit(tasks, limit);
++      const runPromise = executeWithConcurrencyLimit(tasks, limit);
++      await vi.runAllTimersAsync();
++      const results = await runPromise;
+ 
+-      // Maximum concurrent should not exceed limit
+-      expect(maxConcurrent).toBeLessThanOrEqual(limit);
+-      expect(maxConcurrent).toBeGreaterThan(0);
++      expect(results).toHaveLength(10);
++      expect(maxConcurrent).toBe(limit);
+     });
+ 
+     it('should handle task failures gracefully', async () => {
+@@ -100,13 +68,10 @@ describe('Concurrency Limiter', () => {
+       const results = await executeWithConcurrencyLimit(tasks, 2);
+ 
+       expect(results).toHaveLength(5);
+-
+-      // Check successful tasks
+       expect(results[0]).toEqual({ status: 'fulfilled', value: 'success1' });
+       expect(results[2]).toEqual({ status: 'fulfilled', value: 'success2' });
+       expect(results[4]).toEqual({ status: 'fulfilled', value: 'success3' });
+ 
+-      // Check failed tasks
+       expect(results[1].status).toBe('rejected');
+       expect(results[3].status).toBe('rejected');
+ 
+@@ -150,10 +115,11 @@ describe('Concurrency Limiter', () => {
+         };
+       });
+ 
+-      const results = await executeWithConcurrencyLimit(tasks, 10);
++      const runPromise = executeWithConcurrencyLimit(tasks, 10);
++      await vi.runAllTimersAsync();
++      const results = await runPromise;
+ 
+       expect(results).toHaveLength(3);
+-      // All tasks should run concurrently since limit > task count
+       expect(maxConcurrent).toBe(3);
+     });
+ 
+@@ -168,9 +134,10 @@ describe('Concurrency Limiter', () => {
+         };
+       });
+ 
+-      await executeWithConcurrencyLimit(tasks, 1);
++      const runPromise = executeWithConcurrencyLimit(tasks, 1);
++      await vi.runAllTimersAsync();
++      await runPromise;
+ 
+-      // With limit 1, tasks should execute in order
+       expect(executionOrder).toEqual([0, 1, 2, 3, 4]);
+     });
+ 
+@@ -190,45 +157,63 @@ describe('Concurrency Limiter', () => {
+         },
+       ];
+ 
+-      const results = await executeWithConcurrencyLimit(tasks, 3);
++      const runPromise = executeWithConcurrencyLimit(tasks, 3);
++      await vi.runAllTimersAsync();
++      const results = await runPromise;
+ 
+-      // Results should be in original task order, not completion order
+       expect(results[0]).toEqual({ status: 'fulfilled', value: 'slow' });
+       expect(results[1]).toEqual({ status: 'fulfilled', value: 'fast' });
+       expect(results[2]).toEqual({ status: 'fulfilled', value: 'medium' });
+     });
+ 
+-    it('should handle varying task durations with concurrency limit', async () => {
++    it('should handle varying task durations with concurrency limit under virtual time', async () => {
+       const durations = [50, 10, 30, 15, 25, 5];
+-      const startTimes: number[] = [];
+-      const endTimes: number[] = [];
+ 
+       const tasks = durations.map((duration, i) => {
+         return async () => {
+-          startTimes[i] = Date.now();
+           await new Promise(resolve => setTimeout(resolve, duration));
+-          endTimes[i] = Date.now();
+           return i;
+         };
+       });
+ 
+       const startTime = Date.now();
+-      const results = await executeWithConcurrencyLimit(tasks, 2);
++      const runPromise = executeWithConcurrencyLimit(tasks, 2);
++      await vi.runAllTimersAsync();
++      const results = await runPromise;
+       const totalTime = Date.now() - startTime;
+ 
+-      // All tasks should complete
+       expect(results).toHaveLength(6);
+       expect(results.every(r => r.status === 'fulfilled')).toBe(true);
+ 
+-      // Total time should be less than sequential execution
+       const sequentialTime = durations.reduce((sum, d) => sum + d, 0);
+       expect(totalTime).toBeLessThan(sequentialTime);
+     });
++
++    it('stops scheduling remaining tasks when AbortSignal aborts', async () => {
++      const controller = new AbortController();
++      const started: number[] = [];
++
++      const tasks = Array.from({ length: 6 }, (_, i) => async () => {
++        started.push(i);
++        if (i === 1) {
++          controller.abort();
++        }
++        await new Promise(resolve => setTimeout(resolve, 10));
++        return i;
++      });
++
++      const runPromise = executeWithConcurrencyLimit(tasks, 2, controller.signal);
++      await vi.runAllTimersAsync();
++      const results = await runPromise;
++
++      expect(started).toEqual([0, 1]);
++      expect(results.slice(2).every(r => r === undefined)).toBe(true);
++    });
+   });
+ 
+-  describe('Performance characteristics', () => {
+-    it('should provide significant speedup over sequential execution', async () => {
+-      const taskDuration = 20; // ms
++  describe('Performance characteristics (virtual clock)', () => {
++    it('should provide deterministic speedup over sequential execution', async () => {
++      const taskDuration = 20;
+       const taskCount = 10;
+       const concurrencyLimit = 5;
+ 
+@@ -240,17 +225,14 @@ describe('Concurrency Limiter', () => {
+       });
+ 
+       const startTime = Date.now();
+-      await executeWithConcurrencyLimit(tasks, concurrencyLimit);
++      const runPromise = executeWithConcurrencyLimit(tasks, concurrencyLimit);
++      await vi.runAllTimersAsync();
++      await runPromise;
+       const concurrentTime = Date.now() - startTime;
+ 
+-      // Expected time should be approximately:
+-      // (taskCount / concurrencyLimit) * taskDuration
+       const expectedTime = Math.ceil(taskCount / concurrencyLimit) * taskDuration;
++      expect(concurrentTime).toBe(expectedTime);
+ 
+-      // Allow 50% margin for overhead and timing variability
+-      expect(concurrentTime).toBeLessThan(expectedTime * 1.5);
+-
+-      // Should be significantly faster than sequential
+       const sequentialTime = taskCount * taskDuration;
+       expect(concurrentTime).toBeLessThan(sequentialTime * 0.7);
+     });
+diff --git a/test/unit/deduplication.test.ts b/test/unit/deduplication.test.ts
+index ff2866f..7c47135 100644
+--- a/test/unit/deduplication.test.ts
++++ b/test/unit/deduplication.test.ts
+@@ -1,11 +1,17 @@
+ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+-
+-describe("Request Deduplication", () => {
+-  // We'll test the deduplication logic by importing the tools module
+-  // and checking concurrent requests behavior
+-
++import {
++  deduplicate,
++  getPendingRequestCount,
++  lookup,
++} from "../../lib/tools/core.js";
++import { MemoryCache } from "../../lib/core/cache.js";
++import { resolveApiConfig } from "../../lib/config/index.js";
++import { TIMEOUTS } from "../../lib/config/timeouts.js";
++
++describe("Request Deduplication (lib/tools/core)", () => {
+   beforeEach(() => {
+     vi.useFakeTimers();
++    vi.setSystemTime(new Date("2026-11-20T18:00:00.000Z"));
+   });
+ 
+   afterEach(() => {
+@@ -13,142 +19,122 @@ describe("Request Deduplication", () => {
+     vi.useRealTimers();
+   });
+ 
+-  it("should deduplicate concurrent identical requests", async () => {
+-    vi.useRealTimers(); // Use real timers for this test
+-
+-    // Create a mock function that simulates an API call
++  it("should deduplicate concurrent identical requests using fake timers", async () => {
+     let callCount = 0;
+     const mockApiCall = async () => {
+       callCount++;
+-      await new Promise(resolve => setTimeout(resolve, 10)); // Short delay
++      await new Promise((resolve) => setTimeout(resolve, 10));
+       return { data: "test", callNumber: callCount };
+     };
+ 
+-    // Simulate deduplicate function behavior
+-    const pendingRequests = new Map<string, Promise<any>>();
++    const p1 = deduplicate("concurrent-key", mockApiCall);
++    const p2 = deduplicate("concurrent-key", mockApiCall);
++    const p3 = deduplicate("concurrent-key", mockApiCall);
+ 
+-    const deduplicate = async <T>(key: string, fn: () => Promise<T>): Promise<T> => {
+-      if (pendingRequests.has(key)) {
+-        return pendingRequests.get(key);
+-      }
+-      const promise = fn().finally(() => pendingRequests.delete(key));
+-      pendingRequests.set(key, promise);
+-      return promise;
+-    };
++    expect(getPendingRequestCount()).toBe(1);
+ 
+-    // Make 3 concurrent requests with the same key
+-    const promises = [
+-      deduplicate("test-key", mockApiCall),
+-      deduplicate("test-key", mockApiCall),
+-      deduplicate("test-key", mockApiCall)
+-    ];
++    await vi.advanceTimersByTimeAsync(10);
++    const results = await Promise.all([p1, p2, p3]);
+ 
+-    const results = await Promise.all(promises);
+-
+-    // All should return the same result (from first call)
+     expect(results[0]).toBe(results[1]);
+     expect(results[1]).toBe(results[2]);
+-
+-    // API should only be called once
+     expect(callCount).toBe(1);
+-
+-    vi.useFakeTimers(); // Restore fake timers for other tests
++    expect(getPendingRequestCount()).toBe(0);
+   });
+ 
+-  it("should cleanup stale requests after timeout", async () => {
+-    const TIMEOUT_MS = 30000;
+-    const pendingRequests = new Map<string, any>();
+-
+-    const deduplicate = async <T>(key: string, fn: () => Promise<T>): Promise<T> => {
+-      if (pendingRequests.has(key)) {
+-        return pendingRequests.get(key).promise;
+-      }
+-
+-      const timeoutId = setTimeout(() => {
+-        pendingRequests.delete(key);
+-      }, TIMEOUT_MS);
+-
+-      const promise = fn().finally(() => {
+-        clearTimeout(timeoutId);
+-        pendingRequests.delete(key);
+-      });
+-
+-      pendingRequests.set(key, { promise, timeoutId });
+-      return promise;
+-    };
+-
+-    // Create a long-running request
+-    const slowApiCall = () => new Promise(resolve => {
+-      setTimeout(() => resolve({ data: "slow" }), 60000); // 60 seconds
+-    });
+-
+-    // Start request
+-    const requestPromise = deduplicate("slow-key", slowApiCall);
+-
+-    // Verify it's in the map
+-    expect(pendingRequests.has("slow-key")).toBe(true);
+-
+-    // Fast-forward time by 30 seconds (timeout)
+-    vi.advanceTimersByTime(30000);
+-
+-    // Should be cleaned up
+-    expect(pendingRequests.has("slow-key")).toBe(false);
++  it("should cleanup stale requests after DEDUP_TIMEOUT_MS without evicting newer requests on late resolution", async () => {
++    let resolveSlow!: (value: { data: string; generation: number }) => void;
++    const slowPromise = deduplicate(
++      "stale-key",
++      () =>
++        new Promise<{ data: string; generation: number }>((resolve) => {
++          resolveSlow = resolve;
++        }),
++    );
++
++    expect(getPendingRequestCount()).toBe(1);
++
++    await vi.advanceTimersByTimeAsync(TIMEOUTS.DEDUP_TIMEOUT_MS);
++    expect(getPendingRequestCount()).toBe(0);
++
++    // Start a fresh request on the same key while generation 1 is still pending
++    let resolveFresh!: (value: { data: string; generation: number }) => void;
++    const freshPromise = deduplicate(
++      "stale-key",
++      () =>
++        new Promise<{ data: string; generation: number }>((resolve) => {
++          resolveFresh = resolve;
++        }),
++    );
++    expect(getPendingRequestCount()).toBe(1);
++
++    // Generation 1 settles late — must NOT remove generation 2 from pendingRequests
++    resolveSlow({ data: "slow", generation: 1 });
++    expect(await slowPromise).toEqual({ data: "slow", generation: 1 });
++    expect(getPendingRequestCount()).toBe(1);
++
++    // Generation 2 finishes and clears its own entry
++    resolveFresh({ data: "fresh", generation: 2 });
++    expect(await freshPromise).toEqual({ data: "fresh", generation: 2 });
++    expect(getPendingRequestCount()).toBe(0);
+   });
+ 
+   it("should allow new requests after previous request completes", async () => {
+     let callCount = 0;
+-    const pendingRequests = new Map<string, Promise<any>>();
+-
+-    const deduplicate = async <T>(key: string, fn: () => Promise<T>): Promise<T> => {
+-      if (pendingRequests.has(key)) {
+-        return pendingRequests.get(key);
+-      }
+-      const promise = fn().finally(() => pendingRequests.delete(key));
+-      pendingRequests.set(key, promise);
+-      return promise;
+-    };
+-
+     const mockApiCall = async () => {
+       callCount++;
+       return { data: "test", count: callCount };
+     };
+ 
+-    // First request
+-    const result1 = await deduplicate("test", mockApiCall);
++    const result1 = await deduplicate("sequential-key", mockApiCall);
+     expect(result1.count).toBe(1);
+-    expect(pendingRequests.size).toBe(0); // Cleaned up after completion
++    expect(getPendingRequestCount()).toBe(0);
+ 
+-    // Second request (should be allowed since first completed)
+-    const result2 = await deduplicate("test", mockApiCall);
++    const result2 = await deduplicate("sequential-key", mockApiCall);
+     expect(result2.count).toBe(2);
+     expect(callCount).toBe(2);
++    expect(getPendingRequestCount()).toBe(0);
+   });
+ 
+-  it("should handle errors without leaking memory", async () => {
+-    const pendingRequests = new Map<string, any>();
+-    let cleanupCalled = false;
+-
+-    const deduplicate = async <T>(key: string, fn: () => Promise<T>): Promise<T> => {
+-      if (pendingRequests.has(key)) {
+-        return pendingRequests.get(key);
+-      }
+-      const promise = fn().finally(() => {
+-        pendingRequests.delete(key);
+-        cleanupCalled = true;
+-      });
+-      pendingRequests.set(key, promise);
+-      return promise;
+-    };
+-
++  it("should handle errors without leaking pending entries or timers", async () => {
+     const failingApiCall = async () => {
+       throw new Error("API Error");
+     };
+ 
+-    // Should throw error
+     await expect(deduplicate("error-key", failingApiCall)).rejects.toThrow("API Error");
++    expect(getPendingRequestCount()).toBe(0);
++    expect(vi.getTimerCount()).toBe(0);
++  });
++
++  it("deduplicates concurrent lookup() calls and serves subsequent calls from MemoryCache", async () => {
++    const cache = new MemoryCache(10, 60_000);
++    const apiConfig = resolveApiConfig();
++
++    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async () => {
++      await new Promise((resolve) => setTimeout(resolve, 15));
++      return new Response(
++        JSON.stringify({ razao_social: "EMPRESA TESTE LTDA" }),
++        {
++          status: 200,
++          headers: { "content-type": "application/json" },
++        },
++      );
++    });
++
++    const p1 = lookup("cnpj", "11222333000181", apiConfig, cache);
++    const p2 = lookup("cnpj", "11222333000181", apiConfig, cache);
++
++    await vi.advanceTimersByTimeAsync(15);
++    const [r1, r2] = await Promise.all([p1, p2]);
++
++    expect(r1.ok).toBe(true);
++    expect(r2.ok).toBe(true);
++    expect(fetchSpy).toHaveBeenCalledTimes(1);
++    expect(getPendingRequestCount()).toBe(0);
+ 
+-    // Should cleanup even on error
+-    expect(cleanupCalled).toBe(true);
+-    expect(pendingRequests.size).toBe(0);
++    // Third call hits MemoryCache without calling fetch again
++    const r3 = await lookup("cnpj", "11222333000181", apiConfig, cache);
++    expect(r3.ok).toBe(true);
++    expect(fetchSpy).toHaveBeenCalledTimes(1);
+   });
+ });
+diff --git a/test/unit/dependency-hygiene.test.ts b/test/unit/dependency-hygiene.test.ts
+index 98075c7..e06c36f 100644
+--- a/test/unit/dependency-hygiene.test.ts
++++ b/test/unit/dependency-hygiene.test.ts
+@@ -98,3 +98,44 @@ describe("TCK-0022 / FND-0010: DevDependencies CVE patches & CI wranglerVersion
+     expect(isAtLeastSemver(lock.packages["node_modules/handlebars"]?.version ?? "0.0.0", [4, 7, 10])).toBe(true);
+   });
+ });
++
++describe("TCK-0027 / FND-0014: Coverage tooling, Worker inclusion & circuit-breaker fake timers", () => {
++  it("aligns @vitest/coverage-v8 with vitest in package.json and includes Workers in vitest.config.ts", () => {
++    const pkg = JSON.parse(readFileSync(resolve(ROOT, "package.json"), "utf8")) as {
++      devDependencies: Record<string, string>;
++    };
++    expect(pkg.devDependencies["@vitest/coverage-v8"]).toBe(pkg.devDependencies.vitest);
++
++    const vitestCfg = readFileSync(resolve(ROOT, "vitest.config.ts"), "utf8");
++    expect(vitestCfg).toContain("include: ['lib/**/*.ts']");
++    expect(vitestCfg).not.toContain("'lib/workers/'");
++    expect(vitestCfg).not.toContain("'lib/adapters/cloudflare.ts'");
++  });
++
++  it("uses fake timers without real 1100ms sleeps in test/unit/circuit-breaker.test.ts", () => {
++    const testSrc = readFileSync(resolve(ROOT, "test/unit/circuit-breaker.test.ts"), "utf8");
++    expect(testSrc).toContain("vi.useFakeTimers()");
++    expect(testSrc).toContain("vi.useRealTimers()");
++    expect(testSrc).not.toMatch(/setTimeout\(resolve,\s*1100\)/);
++  });
++});
++
++describe("TCK-0028 / FND-0014: Replicated unit suites connected directly to lib/ modules", () => {
++  it("imports real production modules without inline duplicates across sse, concurrency, deduplication, and intelligence suites", () => {
++    const sseSrc = readFileSync(resolve(ROOT, "test/unit/sse.test.ts"), "utf8");
++    expect(sseSrc).toContain("../../lib/workers/sse.js");
++    expect(sseSrc).toContain("../../lib/adapters/cli-http.js");
++
++    const concurrencySrc = readFileSync(resolve(ROOT, "test/unit/concurrency.test.ts"), "utf8");
++    expect(concurrencySrc).toContain("../../lib/core/intelligence.js");
++    expect(concurrencySrc).not.toMatch(/function executeWithConcurrencyLimit/);
++
++    const dedupSrc = readFileSync(resolve(ROOT, "test/unit/deduplication.test.ts"), "utf8");
++    expect(dedupSrc).toContain("../../lib/tools/core.js");
++    expect(dedupSrc).not.toMatch(/const deduplicate\s*=/);
++
++    const intelligenceSrc = readFileSync(resolve(ROOT, "test/unit/intelligence.test.ts"), "utf8");
++    expect(intelligenceSrc).toContain("../../lib/core/intelligence.js");
++    expect(intelligenceSrc).not.toMatch(/function containsCnpj/);
++  });
++});
+diff --git a/test/unit/intelligence.test.ts b/test/unit/intelligence.test.ts
+index 2ca8569..6a685f5 100644
+--- a/test/unit/intelligence.test.ts
++++ b/test/unit/intelligence.test.ts
+@@ -1,41 +1,12 @@
+ import { describe, it, expect } from 'vitest';
+-
+-/**
+- * Test the CNPJ filtering logic
+- * This is a white-box test of the internal containsCnpj function
+- */
+-
+-// Replicate the functions from intelligence.ts for testing
+-function normalizeCnpj(cnpj: string): string {
+-  return cnpj.replace(/\D/g, '');
+-}
+-
+-function containsCnpj(text: string, cnpj: string): boolean {
+-  const normalizedCnpj = normalizeCnpj(cnpj);
+-
+-  // Build formatted CNPJ pattern: 12.345.678/0001-90
+-  const formatted = normalizedCnpj.replace(
+-    /^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/,
+-    '$1.$2.$3/$4-$5'
+-  );
+-
+-  // Escape special regex characters in formatted version
+-  const escapedFormatted = formatted.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+-
+-  // Create patterns with word boundaries
+-  // \b doesn't work well with non-word chars, so use lookahead/lookbehind
+-  const patterns = [
+-    // Unformatted: 12345678000190 (with word boundaries)
+-    new RegExp(`(?<!\\d)${normalizedCnpj}(?!\\d)`, 'i'),
+-    // Formatted: 12.345.678/0001-90
+-    new RegExp(escapedFormatted, 'i')
+-  ];
+-
+-  // Check if any pattern matches
+-  return patterns.some(pattern => pattern.test(text));
+-}
+-
+-describe('Intelligence - CNPJ Filtering', () => {
++import {
++  normalizeCnpj,
++  containsCnpj,
++  filterResultsByCnpj,
++} from '../../lib/core/intelligence.js';
++import type { SearchResult } from '../../lib/core/search-providers.js';
++
++describe('Intelligence - CNPJ Filtering (lib/core/intelligence)', () => {
+   const testCnpj = '12345678000190';
+   const formattedCnpj = '12.345.678/0001-90';
+ 
+@@ -118,7 +89,6 @@ describe('Intelligence - CNPJ Filtering', () => {
+     });
+ 
+     it('should NOT match CNPJ with different formatting style', () => {
+-      // This is a tricky case - wrong separator characters
+       const text = 'Wrong format: 12-345-678-0001-90';
+       expect(containsCnpj(text, testCnpj)).toBe(false);
+     });
+@@ -152,8 +122,7 @@ describe('Intelligence - CNPJ Filtering', () => {
+ 
+     it('should normalize input CNPJ before matching', () => {
+       const text = 'CNPJ 12345678000190';
+-      const inputWithFormatting = '12.345.678/0001-90';
+-      expect(containsCnpj(text, inputWithFormatting)).toBe(true);
++      expect(containsCnpj(text, formattedCnpj)).toBe(true);
+     });
+   });
+ 
+@@ -175,6 +144,41 @@ describe('Intelligence - CNPJ Filtering', () => {
+     });
+   });
+ 
++  describe('filterResultsByCnpj', () => {
++    it('filters search results by title, URL, or snippet containing target CNPJ', () => {
++      const results: SearchResult[] = [
++        {
++          title: 'Ficha 12.345.678/0001-90',
++          url: 'https://example.com/a',
++          snippet: 'Empresa cadastrada',
++        },
++        {
++          title: 'Processo',
++          url: 'https://example.com/empresa/12345678000190',
++          snippet: 'Diario oficial',
++        },
++        {
++          title: 'Edital',
++          url: 'https://example.com/b',
++          snippet: 'Contrato CNPJ: 12345678000190 homologado',
++        },
++        {
++          title: 'Outra empresa',
++          url: 'https://example.com/c',
++          snippet: 'CNPJ: 98.765.432/0001-00 e numero 123456780001909',
++        },
++      ];
++
++      const filtered = filterResultsByCnpj(results, formattedCnpj);
++      expect(filtered).toHaveLength(3);
++      expect(filtered.map((r) => r.url)).toEqual([
++        'https://example.com/a',
++        'https://example.com/empresa/12345678000190',
++        'https://example.com/b',
++      ]);
++    });
++  });
++
+   describe('Real-world scenarios', () => {
+     it('should match CNPJ in government portal URL', () => {
+       const text = 'https://solucoes.receita.fazenda.gov.br/Servicos/cnpjreva/Cnpjreva_Solicitacao.asp?cnpj=12345678000190';
+diff --git a/test/unit/sse.test.ts b/test/unit/sse.test.ts
+index 68e606c..9324b83 100644
+--- a/test/unit/sse.test.ts
++++ b/test/unit/sse.test.ts
+@@ -1,345 +1,249 @@
+-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+-import { TIMEOUTS } from '../../lib/config/timeouts.js';
+-
+-/**
+- * SSE Connection Management Tests
+- * Tests for robustness improvements inspired by mcp-camara
+- */
+-
+-describe('SSE Connection Management', () => {
+-  describe('TIMEOUTS Configuration', () => {
+-    it('should have reasonable SSE connection timeout', () => {
++import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
++import { TIMEOUTS } from "../../lib/config/timeouts.js";
++import { handleSSEEndpoint } from "../../lib/workers/sse.js";
++import { createCliHttpApp, type CliHttpContext } from "../../lib/adapters/cli-http.js";
++import { MemoryCache } from "../../lib/core/cache.js";
++import { resolveApiConfig } from "../../lib/config/index.js";
++
++describe("SSE Connection Management (lib/workers/sse & lib/adapters/cli-http)", () => {
++  const originalEnv = { ...process.env };
++  const activeContexts: CliHttpContext[] = [];
++
++  describe("TIMEOUTS Configuration", () => {
++    it("should have reasonable SSE connection timeout", () => {
+       const timeout = TIMEOUTS.SSE_CONNECTION_MS;
+ 
+-      // Should be 50 seconds or less (Workers CPU limit)
+       expect(timeout).toBeLessThanOrEqual(50000);
+       expect(timeout).toBeGreaterThan(0);
+     });
+ 
+-    it('should have reasonable ping interval', () => {
++    it("should have reasonable ping interval", () => {
+       const interval = TIMEOUTS.PING_INTERVAL_MS;
+ 
+-      // Should be 30 seconds (standard heartbeat)
+       expect(interval).toBe(30000);
+       expect(interval).toBeGreaterThan(0);
+-
+-      // Ping interval should be less than connection timeout
+       expect(interval).toBeLessThan(TIMEOUTS.SSE_CONNECTION_MS);
+     });
+ 
+-    it('should allow at least 1 ping before timeout', () => {
++    it("should allow at least 1 ping before timeout", () => {
+       const pingsBeforeTimeout = Math.floor(
+-        TIMEOUTS.SSE_CONNECTION_MS / TIMEOUTS.PING_INTERVAL_MS
++        TIMEOUTS.SSE_CONNECTION_MS / TIMEOUTS.PING_INTERVAL_MS,
+       );
+ 
+-      // Should allow at least 1 ping
+       expect(pingsBeforeTimeout).toBeGreaterThanOrEqual(1);
+     });
+   });
+ 
+-  describe('Connection Lifecycle Simulation', () => {
++  describe("Worker SSE Connection Lifecycle (real handleSSEEndpoint)", () => {
+     beforeEach(() => {
+       vi.useFakeTimers();
++      vi.setSystemTime(new Date("2026-11-20T18:00:00.000Z"));
+     });
+ 
+     afterEach(() => {
++      while (activeContexts.length > 0) {
++        activeContexts.pop()!.closeAll();
++      }
+       vi.restoreAllMocks();
++      vi.useRealTimers();
++      process.env = { ...originalEnv };
+     });
+ 
+-    it('should send periodic pings', async () => {
+-      const pingSpy = vi.fn();
+-
+-      // Simulate heartbeat mechanism
+-      const pingInterval = setInterval(() => {
+-        pingSpy({
+-          type: 'ping',
+-          timestamp: new Date().toISOString()
+-        });
+-      }, TIMEOUTS.PING_INTERVAL_MS);
+-
+-      // Advance time by 90 seconds (should trigger 3 pings at 30s interval)
+-      vi.advanceTimersByTime(90000);
+-
+-      expect(pingSpy).toHaveBeenCalledTimes(3);
+-
+-      clearInterval(pingInterval);
+-    });
+-
+-    it('should timeout connection after configured period', async () => {
+-      const closeSpy = vi.fn();
+-
+-      // Simulate timeout mechanism
+-      const timeoutHandle = setTimeout(() => {
+-        closeSpy();
+-      }, TIMEOUTS.SSE_CONNECTION_MS);
+-
+-      // Advance time to just before timeout
+-      vi.advanceTimersByTime(TIMEOUTS.SSE_CONNECTION_MS - 1000);
+-      expect(closeSpy).not.toHaveBeenCalled();
+-
+-      // Advance to timeout
+-      vi.advanceTimersByTime(1000);
+-      expect(closeSpy).toHaveBeenCalledTimes(1);
+-
+-      clearTimeout(timeoutHandle);
+-    });
+-
+-    it('should clean up resources on shutdown', () => {
+-      const cleanupSpy = vi.fn();
+-      let pingInterval: NodeJS.Timeout | undefined;
+-      let timeoutHandle: NodeJS.Timeout | undefined;
+-
+-      // Simulate SSE connection lifecycle
+-      const initConnection = () => {
+-        pingInterval = setInterval(() => {
+-          // ping logic
+-        }, TIMEOUTS.PING_INTERVAL_MS);
+-
+-        timeoutHandle = setTimeout(() => {
+-          // timeout logic
+-        }, TIMEOUTS.SSE_CONNECTION_MS);
+-      };
+-
+-      const cleanup = () => {
+-        if (pingInterval) clearInterval(pingInterval);
+-        if (timeoutHandle) clearTimeout(timeoutHandle);
+-        cleanupSpy();
+-      };
+-
+-      // Initialize connection
+-      initConnection();
+-      expect(pingInterval).toBeDefined();
+-      expect(timeoutHandle).toBeDefined();
+-
+-      // Cleanup
+-      cleanup();
+-      expect(cleanupSpy).toHaveBeenCalledTimes(1);
+-
+-      // Verify intervals/timeouts are cleared (they won't fire)
+-      const pingCount = vi.fn();
+-      pingInterval = setInterval(pingCount, TIMEOUTS.PING_INTERVAL_MS);
+-      clearInterval(pingInterval);
+-
+-      vi.advanceTimersByTime(TIMEOUTS.PING_INTERVAL_MS * 2);
+-      expect(pingCount).not.toHaveBeenCalled();
+-    });
+-  });
+-
+-  describe('Session Tracking', () => {
+-    interface TransportSession {
+-      createdAt: Date;
+-      lastActivity: Date;
+-    }
+-
+-    it('should track session creation time', () => {
+-      const now = new Date();
+-      const session: TransportSession = {
+-        createdAt: now,
+-        lastActivity: now
+-      };
+-
+-      expect(session.createdAt).toEqual(now);
+-      expect(session.lastActivity).toEqual(now);
+-    });
+-
+-    it('should update last activity on message', () => {
+-      const createdAt = new Date('2025-01-01T00:00:00Z');
+-      const session: TransportSession = {
+-        createdAt,
+-        lastActivity: createdAt
+-      };
+-
+-      // Simulate message received 30 seconds later
+-      const messageTime = new Date('2025-01-01T00:00:30Z');
+-      session.lastActivity = messageTime;
+-
+-      expect(session.lastActivity).toEqual(messageTime);
+-      expect(session.lastActivity.getTime()).toBeGreaterThan(session.createdAt.getTime());
+-    });
+-
+-    it('should identify stale sessions', () => {
+-      vi.useFakeTimers();
+-      const createdAt = new Date();
+-
+-      const session: TransportSession = {
+-        createdAt,
+-        lastActivity: createdAt
+-      };
+-
+-      // Advance time beyond timeout
+-      vi.advanceTimersByTime(TIMEOUTS.SSE_CONNECTION_MS + 1000);
+-      const now = new Date();
+-
+-      const age = now.getTime() - session.lastActivity.getTime();
+-      const isStale = age > TIMEOUTS.SSE_CONNECTION_MS;
+-
+-      expect(isStale).toBe(true);
+-      expect(age).toBeGreaterThan(TIMEOUTS.SSE_CONNECTION_MS);
+-
+-      vi.restoreAllMocks();
+-    });
+-
+-    it('should keep active sessions alive', () => {
+-      vi.useFakeTimers();
+-      const createdAt = new Date();
+-
+-      const session: TransportSession = {
+-        createdAt,
+-        lastActivity: createdAt
+-      };
++    it("rejects incompatible Accept header with 400", async () => {
++      const res = await handleSSEEndpoint(
++        new Request("https://worker.example/sse", {
++          method: "GET",
++          headers: { Accept: "application/json" },
++        }),
++        {},
++      );
+ 
+-      // Advance time by half the timeout
+-      vi.advanceTimersByTime(TIMEOUTS.SSE_CONNECTION_MS / 2);
++      expect(res.status).toBe(400);
++      expect(await res.text()).toContain("text/event-stream");
++    });
++
++    it("sends initial connection/init events, emits periodic pings, and closes at SSE_CONNECTION_MS", async () => {
++      const decoder = new TextDecoder();
++      const waitUntilPromises: Array<Promise<unknown>> = [];
++      const ctx = {
++        waitUntil: vi.fn((p: Promise<unknown>) => waitUntilPromises.push(p)),
++        passThroughOnException: vi.fn(),
++      } as unknown as ExecutionContext;
++
++      const res = await handleSSEEndpoint(
++        new Request("https://worker.example/sse", {
++          method: "GET",
++          headers: { Accept: "text/event-stream" },
++        }),
++        {},
++        ctx,
++      );
+ 
+-      // Update activity (simulate message)
+-      session.lastActivity = new Date();
++      expect(res.status).toBe(200);
++      const reader = res.body!.getReader();
+ 
+-      // Advance time by another half timeout
+-      vi.advanceTimersByTime(TIMEOUTS.SSE_CONNECTION_MS / 2);
+-      const now = new Date();
++      const first = await reader.read();
++      const second = await reader.read();
++      expect(decoder.decode(first.value)).toContain("event: connection");
++      expect(decoder.decode(second.value)).toContain('"id":"init"');
+ 
+-      const age = now.getTime() - session.lastActivity.getTime();
+-      const isStale = age > TIMEOUTS.SSE_CONNECTION_MS;
++      // Advance to first PING_INTERVAL_MS (30s) -> heartbeat emitted
++      await vi.advanceTimersByTimeAsync(TIMEOUTS.PING_INTERVAL_MS);
++      const pingChunk = await reader.read();
++      expect(decoder.decode(pingChunk.value)).toContain("event: ping");
+ 
+-      // Should NOT be stale because we updated lastActivity halfway
+-      expect(isStale).toBe(false);
+-      expect(age).toBeLessThan(TIMEOUTS.SSE_CONNECTION_MS);
++      // Advance remaining time up to SSE_CONNECTION_MS (50s) -> closed cleanly
++      await vi.advanceTimersByTimeAsync(
++        TIMEOUTS.SSE_CONNECTION_MS - TIMEOUTS.PING_INTERVAL_MS,
++      );
++      const eof = await reader.read();
++      expect(eof.done).toBe(true);
++      await waitUntilPromises[0];
++      expect(vi.getTimerCount()).toBe(0);
++    });
++
++    it("cleans up all resources on AbortController abort and consumer cancel", async () => {
++      const ac = new AbortController();
++      const waitUntilAbort: Array<Promise<unknown>> = [];
++      const ctxAbort = {
++        waitUntil: vi.fn((p: Promise<unknown>) => waitUntilAbort.push(p)),
++        passThroughOnException: vi.fn(),
++      } as unknown as ExecutionContext;
++
++      const res1 = await handleSSEEndpoint(
++        new Request("https://worker.example/sse", {
++          method: "GET",
++          headers: { Accept: "text/event-stream" },
++          signal: ac.signal,
++        }),
++        {},
++        ctxAbort,
++      );
++      const reader1 = res1.body!.getReader();
++      await reader1.read();
++      ac.abort();
++      await waitUntilAbort[0];
++      expect(vi.getTimerCount()).toBe(0);
++      await expect(reader1.read()).rejects.toThrow("SSE client disconnected");
++
++      const waitUntilCancel: Array<Promise<unknown>> = [];
++      const ctxCancel = {
++        waitUntil: vi.fn((p: Promise<unknown>) => waitUntilCancel.push(p)),
++        passThroughOnException: vi.fn(),
++      } as unknown as ExecutionContext;
++
++      const res2 = await handleSSEEndpoint(
++        new Request("https://worker.example/sse", {
++          method: "GET",
++          headers: { Accept: "text/event-stream" },
++        }),
++        {},
++        ctxCancel,
++      );
++      const reader2 = res2.body!.getReader();
++      await reader2.cancel("client disconnect");
++      await waitUntilCancel[0];
++      expect(vi.getTimerCount()).toBe(0);
++    });
++
++    it("handles malformed JSON on POST /sse with -32700 error event", async () => {
++      const res = await handleSSEEndpoint(
++        new Request("https://worker.example/sse", {
++          method: "POST",
++          headers: {
++            Accept: "text/event-stream",
++            "Content-Type": "application/json",
++          },
++          body: "{broken-json",
++        }),
++        {},
++      );
++      const reader = res.body!.getReader();
++      const decoder = new TextDecoder();
++      await vi.advanceTimersByTimeAsync(0);
++
++      let output = "";
++      for (let i = 0; i < 3; i++) {
++        const chunk = await reader.read();
++        if (chunk.value) output += decoder.decode(chunk.value);
++      }
+ 
+-      vi.restoreAllMocks();
++      expect(output).toContain("event: error");
++      expect(output).toContain("-32700");
++      await reader.cancel();
+     });
+   });
+ 
+-  describe('Connection Monitoring', () => {
++  describe("CLI Session Tracking & Connection Monitoring (real createCliHttpApp)", () => {
+     beforeEach(() => {
+       vi.useFakeTimers();
++      vi.setSystemTime(new Date("2026-11-20T18:00:00.000Z"));
+     });
+ 
+     afterEach(() => {
+-      vi.restoreAllMocks();
+-    });
+-
+-    it('should periodically check for stale connections', () => {
+-      const monitorSpy = vi.fn();
+-
+-      // Simulate connection monitoring interval
+-      const monitor = setInterval(() => {
+-        monitorSpy();
+-      }, TIMEOUTS.PING_INTERVAL_MS);
+-
+-      // Advance time by 2 monitoring cycles
+-      vi.advanceTimersByTime(TIMEOUTS.PING_INTERVAL_MS * 2);
+-
+-      expect(monitorSpy).toHaveBeenCalledTimes(2);
+-
+-      clearInterval(monitor);
+-    });
+-
+-    it('should clean up stale sessions during monitoring', () => {
+-      vi.useFakeTimers();
+-
+-      interface Session {
+-        id: string;
+-        lastActivity: Date;
++      while (activeContexts.length > 0) {
++        activeContexts.pop()!.closeAll();
+       }
+-
+-      const sessions: Record<string, Session> = {
+-        active1: { id: 'active1', lastActivity: new Date() },
+-        stale1: { id: 'stale1', lastActivity: new Date(Date.now() - TIMEOUTS.SSE_CONNECTION_MS - 5000) }
+-      };
+-
+-      const removedSessions: string[] = [];
+-
+-      // Simulate monitoring logic
+-      const monitor = () => {
+-        const now = new Date();
+-        for (const [sessionId, session] of Object.entries(sessions)) {
+-          const age = now.getTime() - session.lastActivity.getTime();
+-          if (age > TIMEOUTS.SSE_CONNECTION_MS) {
+-            delete sessions[sessionId];
+-            removedSessions.push(sessionId);
+-          }
+-        }
+-      };
+-
+-      // Run monitor
+-      monitor();
+-
+-      // Should have removed stale session only
+-      expect(removedSessions).toContain('stale1');
+-      expect(removedSessions).not.toContain('active1');
+-      expect(sessions).toHaveProperty('active1');
+-      expect(sessions).not.toHaveProperty('stale1');
+-
+       vi.restoreAllMocks();
++      vi.useRealTimers();
++      process.env = { ...originalEnv };
++    });
++
++    it("evicts only stale SSE sessions during periodic connectionMonitor ticks while keeping active ones", async () => {
++      const ctx = createCliHttpApp({
++        apiConfig: resolveApiConfig(),
++        cache: new MemoryCache(10, 60_000),
++        host: "127.0.0.1",
++      });
++      activeContexts.push(ctx);
++
++      const activeClose = vi.fn();
++      const staleClose = vi.fn();
++
++      ctx.transports.set("active-1", {
++        transport: { close: activeClose } as never,
++        createdAt: new Date(Date.now() - TIMEOUTS.SSE_CONNECTION_MS / 2),
++        lastActivity: new Date(Date.now() - TIMEOUTS.SSE_CONNECTION_MS / 2),
++      });
++      ctx.transports.set("stale-1", {
++        transport: { close: staleClose } as never,
++        createdAt: new Date(Date.now() - TIMEOUTS.SSE_CONNECTION_MS - 5000),
++        lastActivity: new Date(Date.now() - TIMEOUTS.SSE_CONNECTION_MS - 5000),
++      });
++
++      // Keep active-1 fresh halfway through the monitoring window
++      await vi.advanceTimersByTimeAsync(TIMEOUTS.PING_INTERVAL_MS / 2);
++      ctx.transports.get("active-1")!.lastActivity = new Date();
++
++      await vi.advanceTimersByTimeAsync(TIMEOUTS.PING_INTERVAL_MS / 2);
++
++      expect(staleClose).toHaveBeenCalledTimes(1);
++      expect(activeClose).not.toHaveBeenCalled();
++      expect(ctx.transports.has("stale-1")).toBe(false);
++      expect(ctx.transports.has("active-1")).toBe(true);
++
++      // Closing everything clears active transports and stops monitor/rateLimiter timers
++      ctx.closeAll();
++      expect(activeClose).toHaveBeenCalledTimes(1);
++      expect(ctx.transports.size).toBe(0);
+     });
+   });
+ 
+-  describe('Error Handling', () => {
+-    it('should handle ping errors gracefully', async () => {
+-      const errorSpy = vi.fn();
+-
+-      const sendPing = async () => {
+-        throw new Error('Network error');
+-      };
+-
+-      // Simulate error handling directly (without setInterval timing issues)
+-      try {
+-        await sendPing();
+-      } catch (error) {
+-        errorSpy(error);
+-      }
+-
+-      expect(errorSpy).toHaveBeenCalled();
+-      expect(errorSpy).toHaveBeenCalledWith(
+-        expect.objectContaining({
+-          message: 'Network error'
+-        })
+-      );
+-    });
+-
+-    it('should handle write errors in SSE stream', async () => {
+-      const errorSpy = vi.fn();
+-
+-      const sendSSEMessage = async (data: unknown) => {
+-        try {
+-          // Simulate write error
+-          throw new Error('Stream closed');
+-        } catch (error) {
+-          errorSpy(error);
+-        }
+-      };
+-
+-      await sendSSEMessage({ type: 'test' });
+-
+-      expect(errorSpy).toHaveBeenCalled();
+-      expect(errorSpy).toHaveBeenCalledWith(
+-        expect.objectContaining({
+-          message: 'Stream closed'
+-        })
+-      );
+-    });
+-  });
+-
+-  describe('Integration with Workers CPU Limit', () => {
+-    it('should respect Workers 50 second CPU limit', () => {
++  describe("Integration with Workers CPU Limit", () => {
++    it("should respect Workers 50 second CPU limit", () => {
+       const timeout = TIMEOUTS.SSE_CONNECTION_MS;
+ 
+-      // Workers have ~50 second CPU time limit
+-      // SSE timeout should be at or below this limit
+       expect(timeout).toBeLessThanOrEqual(50000);
+     });
+ 
+-    it('should allow multiple pings within timeout window', () => {
++    it("should allow multiple pings within timeout window", () => {
+       const timeout = TIMEOUTS.SSE_CONNECTION_MS;
+       const pingInterval = TIMEOUTS.PING_INTERVAL_MS;
+ 
+       const possiblePings = Math.floor(timeout / pingInterval);
+ 
+-      // Should allow at least 1 ping within timeout window
+       expect(possiblePings).toBeGreaterThanOrEqual(1);
+ 
+-      // With 50s timeout and 30s ping, should allow 1 ping
+-      // (50000 / 30000 = 1.66 → floor = 1)
+       if (timeout === 50000 && pingInterval === 30000) {
+         expect(possiblePings).toBe(1);
+       }
+diff --git a/test/unit/tools-company-health-osint-legal.test.ts b/test/unit/tools-company-health-osint-legal.test.ts
+new file mode 100644
+index 0000000..c80117e
+--- /dev/null
++++ b/test/unit/tools-company-health-osint-legal.test.ts
+@@ -0,0 +1,522 @@
++import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
++import { executeTool, getMetrics, resetMetrics } from "../../lib/core/tools.js";
++import { MemoryCache } from "../../lib/core/cache.js";
++import { deduplicate, getPendingRequestCount, lookup } from "../../lib/tools/core.js";
++import { resetCircuitBreakers } from "../../lib/core/http-client.js";
++import { resolveApiConfig } from "../../lib/config/index.js";
++
++function jsonResponse(body: unknown, status = 200): Response {
++  return new Response(JSON.stringify(body), {
++    status,
++    headers: { "Content-Type": "application/json" },
++  });
++}
++
++function textResponse(body: string, status = 200): Response {
++  return new Response(body, {
++    status,
++    headers: { "Content-Type": "text/html" },
++  });
++}
++
++describe("MCP Tools (Company, Health, OSINT, Legal, Government) & Tool Orchestrator", () => {
++  const apiConfig = resolveApiConfig();
++  const originalDatajud = process.env.DATAJUD_API_KEY;
++  const originalTransparencia = process.env.TRANSPARENCIA_API_KEY;
++  const originalTavily = process.env.TAVILY_API_KEY;
++  const originalPerplexity = process.env.PERPLEXITY_API_KEY;
++
++  beforeEach(() => {
++    delete process.env.DATAJUD_API_KEY;
++    delete process.env.TRANSPARENCIA_API_KEY;
++    delete process.env.TAVILY_API_KEY;
++    delete process.env.PERPLEXITY_API_KEY;
++    resetMetrics();
++    resetCircuitBreakers();
++  });
++
++  afterEach(() => {
++    if (originalDatajud === undefined) delete process.env.DATAJUD_API_KEY;
++    else process.env.DATAJUD_API_KEY = originalDatajud;
++
++    if (originalTransparencia === undefined) delete process.env.TRANSPARENCIA_API_KEY;
++    else process.env.TRANSPARENCIA_API_KEY = originalTransparencia;
++
++    if (originalTavily === undefined) delete process.env.TAVILY_API_KEY;
++    else process.env.TAVILY_API_KEY = originalTavily;
++
++    if (originalPerplexity === undefined) delete process.env.PERPLEXITY_API_KEY;
++    else process.env.PERPLEXITY_API_KEY = originalPerplexity;
++
++    resetMetrics();
++    resetCircuitBreakers();
++    vi.restoreAllMocks();
++    vi.useRealTimers();
++  });
++
++  describe("lib/core/tools.ts & lib/tools/core.ts", () => {
++    it("tracks requests, errors, thrown exceptions, and logs periodic metrics every 100 calls to stderr", async () => {
++      const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
++
++      const okRes = await executeTool("cpf_validate", { cpf: "52998224725" }, apiConfig);
++      expect(okRes.ok).toBe(true);
++      expect(getMetrics()).toMatchObject({ requests: 1, errors: 0 });
++
++      const failRes = await executeTool("cpf_validate", { cpf: "123" }, apiConfig);
++      expect(failRes.ok).toBe(false);
++      expect(getMetrics()).toMatchObject({ requests: 2, errors: 1 });
++
++      const failingCache = {
++        get: vi.fn().mockRejectedValue(new Error("cache broken")),
++        set: vi.fn().mockResolvedValue(undefined),
++      };
++      await expect(
++        executeTool("cnpj_lookup", { cnpj: "11222333000181" }, apiConfig, failingCache)
++      ).rejects.toThrow("cache broken");
++      expect(getMetrics()).toMatchObject({ requests: 3, errors: 2 });
++
++      for (let i = 0; i < 97; i++) {
++        await executeTool("cpf_validate", { cpf: "52998224725" }, apiConfig);
++      }
++      expect(getMetrics().requests).toBe(100);
++      expect(errSpy).toHaveBeenCalledWith(expect.stringMatching(/^\[metrics\] requests=100 /));
++
++      resetMetrics();
++      expect(getMetrics()).toMatchObject({ requests: 0, errors: 0, cacheHits: 0, totalTime: 0 });
++    });
++
++    it("clears stale timeout when overwriting timestamp-expired entry in deduplicate and handles lookup 404/cache", async () => {
++      vi.useFakeTimers();
++      vi.setSystemTime(new Date("2026-11-20T12:00:00Z"));
++      const clearTimeoutSpy = vi.spyOn(globalThis, "clearTimeout");
++
++      let resolveStale!: (v: string) => void;
++      const stalePromise = deduplicate(
++        "stale-key",
++        () =>
++          new Promise<string>((resolve) => {
++            resolveStale = resolve;
++          })
++      );
++
++      // Advance system clock past DEDUP_TIMEOUT_MS without running timer callback yet
++      vi.setSystemTime(new Date("2026-11-20T12:00:35Z"));
++
++      const freshPromise = deduplicate("stale-key", async () => "fresh");
++      // Existing stale timeout must be cleared synchronously before the fresh promise settles
++      expect(clearTimeoutSpy).toHaveBeenCalledTimes(1);
++      const freshValue = await freshPromise;
++      expect(freshValue).toBe("fresh");
++      expect(clearTimeoutSpy).toHaveBeenCalledTimes(2);
++
++      resolveStale("stale");
++      expect(await stalePromise).toBe("stale");
++      expect(getPendingRequestCount()).toBe(0);
++
++      // lookup cache miss + cache hit + 404 message
++      const cache = new MemoryCache(10, 60000);
++      const fetchSpy = vi
++        .spyOn(globalThis, "fetch")
++        .mockResolvedValueOnce(jsonResponse({ cep: "01310100", logradouro: "Av Paulista" }))
++        .mockResolvedValueOnce(jsonResponse({ message: "not found" }, 404));
++
++      const cepOk = await lookup("cep", "01310100", apiConfig, cache);
++      expect(cepOk.ok).toBe(true);
++      const cepCached = await lookup("cep", "01310100", apiConfig, cache);
++      expect(cepCached.ok).toBe(true);
++      expect(fetchSpy).toHaveBeenCalledTimes(1);
++
++      const cepNotFound = await lookup("cep", "99999999", apiConfig, cache);
++      expect(cepNotFound).toEqual({ ok: false, error: "CEP not found" });
++    });
++  });
++
++  describe("lib/tools/company.ts", () => {
++    it("cpf_validate validates mod-11 checksums across fiscal regions and rejects invalid/repeated CPFs", async () => {
++      const validSp = await executeTool("cpf_validate", { cpf: "52998224725" }, apiConfig);
++      expect(validSp.ok).toBe(true);
++      expect(validSp.data).toMatchObject({ cpf: "529.982.247-25", valid: true, region: "ES/RJ" });
++
++      // Exercises remainder < 2 -> check digit 0 branches
++      const validZeroFirst = await executeTool("cpf_validate", { cpf: "123.456.783-05" }, apiConfig);
++      expect(validZeroFirst.ok).toBe(true);
++      expect(validZeroFirst.data).toMatchObject({ valid: true, region: "CE/MA/PI" });
++
++      const validZeroBoth = await executeTool("cpf_validate", { cpf: "11111111200" }, apiConfig);
++      expect(validZeroBoth.ok).toBe(true);
++      expect(validZeroBoth.data).toMatchObject({ valid: true, region: "AC/AM/AP/PA/RO/RR" });
++
++      const repeated = await executeTool("cpf_validate", { cpf: "111.111.111-11" }, apiConfig);
++      expect(repeated.ok).toBe(true);
++      expect(repeated.data).toMatchObject({ valid: false, region: undefined });
++
++      const badCheck2 = await executeTool("cpf_validate", { cpf: "52998224726" }, apiConfig);
++      expect(badCheck2.ok).toBe(true);
++      expect(badCheck2.data).toMatchObject({ valid: false });
++
++      const shortCpf = await executeTool("cpf_validate", { cpf: "12345" }, apiConfig);
++      expect(shortCpf).toEqual({ ok: false, error: "CPF must have exactly 11 digits" });
++    });
++
++    it("domain_whois queries Registro.br RDAP, falls back to IANA, and reports errors cleanly", async () => {
++      const fetchSpy = vi
++        .spyOn(globalThis, "fetch")
++        .mockResolvedValueOnce(jsonResponse({ ldhName: "nubank.com.br" }))
++        .mockResolvedValueOnce(jsonResponse({}, 404))
++        .mockResolvedValueOnce(jsonResponse({ ldhName: "example.com" }))
++        .mockResolvedValueOnce(jsonResponse({}, 404))
++        .mockResolvedValueOnce(jsonResponse({}, 404));
++
++      const brOk = await executeTool(
++        "domain_whois",
++        { domain: "https://nubank.com.br/contato" },
++        apiConfig
++      );
++      expect(brOk.ok).toBe(true);
++      expect(brOk.data).toMatchObject({ domain: "nubank.com.br", source: "RDAP — Registro.br" });
++      expect(fetchSpy.mock.calls[0][0]).toContain("rdap.registro.br/domain/nubank.com.br");
++
++      const ianaOk = await executeTool("domain_whois", { domain: "example.com" }, apiConfig);
++      expect(ianaOk.ok).toBe(true);
++      expect(ianaOk.data).toMatchObject({ domain: "example.com", source: "RDAP — IANA Bootstrap" });
++
++      const notFound = await executeTool("domain_whois", { domain: "missing.invalid" }, apiConfig);
++      expect(notFound).toEqual({ ok: false, error: "Domain not found in RDAP: missing.invalid" });
++    });
++
++    it("consumidor_reclamacoes returns API results on 200 and structured portal fallback on error", async () => {
++      vi.spyOn(globalThis, "fetch")
++        .mockResolvedValueOnce(jsonResponse({ empresas: [{ nome: "ACME" }] }))
++        .mockResolvedValueOnce(jsonResponse({}, 404));
++
++      const apiOk = await executeTool("consumidor_reclamacoes", { empresa: "ACME" }, apiConfig);
++      expect(apiOk.ok).toBe(true);
++      expect(apiOk.data).toMatchObject({ source: "Consumidor.gov.br — SENACON" });
++
++      const fallback = await executeTool("consumidor_reclamacoes", { empresa: "ACME" }, apiConfig);
++      expect(fallback.ok).toBe(true);
++      expect(fallback.data).toMatchObject({
++        source: "Consumidor.gov.br",
++        open_data: expect.stringContaining("dados.gov.br"),
++      });
++    });
++
++    it("company_deep_profile orchestrates full profile (with keys + domain) and partial failure recovery", async () => {
++      process.env.TRANSPARENCIA_API_KEY = "transp-key";
++      process.env.DATAJUD_API_KEY = "datajud-key";
++      process.env.PERPLEXITY_API_KEY = "pplx-key";
++
++      vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
++        const url = String(input);
++        if (url.includes("api.opencnpj.org")) return jsonResponse({ cnpj: "11222333000181", uf: "SP" });
++        if (url.includes("portaldatransparencia.gov.br/api-de-dados")) return jsonResponse([{ id: 1 }]);
++        if (url.includes("api-publica.datajud.cnj.jus.br")) return jsonResponse({ hits: { total: 2 } });
++        if (url.includes("rdap.registro.br")) return jsonResponse({ ldhName: "acme.com.br" });
++        if (url.includes("portaldatransparencia.gov.br/sancoes")) return jsonResponse({ itens: [] });
++        if (url.includes("perplexity.ai")) {
++          return jsonResponse({ choices: [{ message: { content: "news item" } }] });
++        }
++        return jsonResponse({}, 404);
++      });
++
++      const fullProfile = await executeTool(
++        "company_deep_profile",
++        {
++          cnpj: "11.222.333/0001-81",
++          include_government: true,
++          include_legal: true,
++          include_news: true,
++          domain: "acme.com.br",
++        },
++        apiConfig
++      );
++      expect(fullProfile.ok).toBe(true);
++      expect(fullProfile.data).toMatchObject({
++        cnpj: "11222333000181",
++        errors_encountered: undefined,
++      });
++      const sources = (fullProfile.data as { sources_queried: string[] }).sources_queried;
++      expect(sources).toEqual(
++        expect.arrayContaining([
++          "cnpj_data",
++          "government_contracts",
++          "court_records",
++          "domain_whois",
++          "lista_suja",
++          "news_results",
++        ])
++      );
++
++      // Partial failures: CNPJ upstream 404 + flags false -> recovers cleanly & records errors_encountered
++      delete process.env.TRANSPARENCIA_API_KEY;
++      delete process.env.DATAJUD_API_KEY;
++      vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
++        jsonResponse({ error: "not found" }, 404)
++      );
++
++      const partialProfile = await executeTool(
++        "company_deep_profile",
++        {
++          cnpj: "11222333000181",
++          include_government: false,
++          include_legal: false,
++          include_news: false,
++        },
++        apiConfig
++      );
++      expect(partialProfile.ok).toBe(true);
++      const partialData = partialProfile.data as {
++        errors_encountered?: string[];
++        sources_unavailable: string[];
++      };
++      expect(partialData.errors_encountered?.length).toBeGreaterThan(0);
++      expect(partialData.sources_unavailable).toContain("cnpj_data");
++    });
++  });
++
++  describe("lib/tools/health.ts & lib/tools/osint.ts", () => {
++    it("cnes_saude covers estabelecimento, profissional, optional filters, and DataSUS fallback", async () => {
++      const fetchSpy = vi
++        .spyOn(globalThis, "fetch")
++        .mockResolvedValueOnce(jsonResponse({ estabelecimentos: [{ codigo_cnes: "2077485" }] }))
++        .mockResolvedValueOnce(jsonResponse({ profissionais: [{ nome: "Dra Maria" }] }))
++        .mockResolvedValueOnce(jsonResponse({}, 404));
++
++      const est = await executeTool(
++        "cnes_saude",
++        {
++          tipo: "estabelecimento",
++          codigo_cnes: "2077485",
++          nome: "HOSPITAL",
++          uf: "35",
++          municipio: "3550308",
++        },
++        apiConfig
++      );
++      expect(est.ok).toBe(true);
++      expect(est.data).toMatchObject({ source: "CNES — DataSUS" });
++      expect(fetchSpy.mock.calls[0][0]).toContain("/estabelecimentos");
++
++      const prof = await executeTool(
++        "cnes_saude",
++        { tipo: "profissional", nome: "Maria" },
++        apiConfig
++      );
++      expect(prof.ok).toBe(true);
++      expect(fetchSpy.mock.calls[1][0]).toContain("/profissionais");
++
++      const fallback = await executeTool(
++        "cnes_saude",
++        { tipo: "estabelecimento", uf: "35" },
++        apiConfig
++      );
++      expect(fallback.ok).toBe(true);
++      expect(fallback.data).toMatchObject({
++        source: "CNES (DataSUS)",
++        search_url: "http://cnes.datasus.gov.br/",
++      });
++    });
++
++    it("strategic_osint_prompt renders all 5 templates cleanly with and without optional placeholders", async () => {
++      const templates = [
++        "due_diligence",
++        "competitor_analysis",
++        "fraud_detection",
++        "esg_compliance",
++        "investment_screening",
++      ] as const;
++
++      for (const template of templates) {
++        const res = await executeTool(
++          "strategic_osint_prompt",
++          {
++            template,
++            company_name: "ACME Brasil S/A",
++            cnpj: "11.222.333/0001-81",
++            context: "Foco em contratos federais",
++          },
++          apiConfig
++        );
++        expect(res.ok).toBe(true);
++        const data = res.data as { template: string; prompt: string };
++        expect(data.template).toBe(template);
++        expect(data.prompt).toContain("ACME Brasil S/A");
++        expect(data.prompt).toContain("11.222.333/0001-81");
++        expect(data.prompt).toContain("Foco em contratos federais");
++        expect(data.prompt).not.toMatch(/\{(company|cnpj|context)\}/);
++      }
++
++      const defaultsRes = await executeTool(
++        "strategic_osint_prompt",
++        { template: "due_diligence" },
++        apiConfig
++      );
++      expect(defaultsRes.ok).toBe(true);
++      const defaultPrompt = (defaultsRes.data as { prompt: string }).prompt;
++      expect(defaultPrompt).toContain("the target company");
++      expect(defaultPrompt).toContain("[CNPJ not provided]");
++    });
++  });
++
++  describe("lib/tools/legal.ts", () => {
++    it("datajud_processos covers missing key, HTTP 200, HTTP 500, and network error", async () => {
++      const noKey = await executeTool("datajud_processos", { query: "11222333000181" }, apiConfig);
++      expect(noKey.ok).toBe(false);
++      expect(noKey.error).toContain("DATAJUD_API_KEY");
++
++      process.env.DATAJUD_API_KEY = "cnj-key";
++      vi.spyOn(globalThis, "fetch")
++        .mockResolvedValueOnce(jsonResponse({ hits: { total: { value: 1 } } }))
++        .mockResolvedValueOnce(jsonResponse({}, 500))
++        .mockRejectedValueOnce(new Error("socket hangup"));
++
++      const okRes = await executeTool(
++        "datajud_processos",
++        { query: "11222333000181", tribunal: "TJDF", tamanho: 5 },
++        apiConfig
++      );
++      expect(okRes.ok).toBe(true);
++      expect(okRes.data).toMatchObject({ source: "Datajud — CNJ (TJDF)" });
++
++      const errHttp = await executeTool("datajud_processos", { query: "abc" }, apiConfig);
++      expect(errHttp).toEqual({ ok: false, error: "Datajud API error: HTTP 500" });
++
++      const errNet = await executeTool("datajud_processos", { query: "abc" }, apiConfig);
++      expect(errNet).toEqual({ ok: false, error: "Datajud error: socket hangup" });
++    });
++
++    it("oab_advogado, bnmp_mandados, lista_suja_lookup and procurados_lookup cover happy paths and fallbacks", async () => {
++      vi.spyOn(globalThis, "fetch")
++        // OAB ok + fallback
++        .mockResolvedValueOnce(jsonResponse({ Data: [{ Nome: "Dr Fulano", UF: "SP" }] }))
++        .mockResolvedValueOnce(jsonResponse({}, 403))
++        // BNMP ok + non-timeout 403 fallback
++        .mockResolvedValueOnce(jsonResponse({ content: [] }))
++        .mockResolvedValueOnce(jsonResponse({ message: "captcha" }, 403))
++        // Lista Suja ok + fallback
++        .mockResolvedValueOnce(jsonResponse({ data: [] }))
++        .mockResolvedValueOnce(jsonResponse({}, 403));
++
++      const oabOk = await executeTool(
++        "oab_advogado",
++        { nome: "Fulano", inscricao: "123456", uf: "SP" },
++        apiConfig
++      );
++      expect(oabOk.ok).toBe(true);
++      expect(oabOk.data).toMatchObject({ source: "Cadastro Nacional dos Advogados (CNA) — OAB" });
++
++      const oabFallback = await executeTool("oab_advogado", { inscricao: "123456" }, apiConfig);
++      expect(oabFallback.ok).toBe(true);
++      expect(oabFallback.data).toMatchObject({ source: "OAB — CNA" });
++
++      const bnmpOk = await executeTool(
++        "bnmp_mandados",
++        { nome: "Joao Silva", orgaoJulgador: "TJSP" },
++        apiConfig
++      );
++      expect(bnmpOk.ok).toBe(true);
++      expect(bnmpOk.data).toMatchObject({
++        source: "BNMP — Banco Nacional de Mandados de Prisão (CNJ)",
++      });
++
++      const bnmpCaptcha = await executeTool("bnmp_mandados", { nome: "Joao Silva" }, apiConfig);
++      expect(bnmpCaptcha.ok).toBe(true);
++      expect((bnmpCaptcha.data as { timed_out?: boolean }).timed_out).toBeUndefined();
++
++      const listaOk = await executeTool("lista_suja_lookup", { query: "ACME" }, apiConfig);
++      expect(listaOk.ok).toBe(true);
++      expect(listaOk.data).toMatchObject({ source: "Portal da Transparência — Lista Suja" });
++
++      const listaFallback = await executeTool("lista_suja_lookup", { query: "ACME" }, apiConfig);
++      expect(listaFallback.ok).toBe(true);
++      expect(listaFallback.data).toMatchObject({ source: "Portal da Transparência / dados.gov.br" });
++
++      // Procurados FOUND + NOT_FOUND (13 paginated pages each)
++      vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
++        const url = String(input);
++        if (!url.includes("b_start:int=")) {
++          return textResponse(
++            '<a href="https://www.gov.br/mj/pt-br/assuntos/sua-seguranca/seguranca-publica/operacoes-integradas/projeto-captura/lista-de-procurados/joao-silva/view">\nJoão da Silva - SP\n20/11/2026</a>'
++          );
++        }
++        return textResponse("<html><body>Sem registros</body></html>");
++      });
++
++      const procFound = await executeTool("procurados_lookup", { nome: "Joao Silva" }, apiConfig);
++      expect(procFound.ok).toBe(true);
++      expect(procFound.data).toMatchObject({
++        status: "FOUND",
++        total_matches: 1,
++        matches: [expect.objectContaining({ name: "João da Silva", state: "SP", date: "20/11/2026" })],
++      });
++
++      const procNotFound = await executeTool(
++        "procurados_lookup",
++        { nome: "Nome Inexistente" },
++        apiConfig
++      );
++      expect(procNotFound.ok).toBe(true);
++      expect(procNotFound.data).toMatchObject({
++        status: "NOT_FOUND",
++        total_matches: 0,
++        pages_checked: 13,
++      });
++    });
++  });
++
++  describe("lib/tools/government.ts happy/error coverage", () => {
++    it("covers ibge_localidades, transparencia_lookup, ceis_cnep_lookup, and querido_diario via executeTool", async () => {
++      process.env.TRANSPARENCIA_API_KEY = "transp-key";
++
++      vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
++        const url = String(input);
++        if (url.includes("servicodados.ibge.gov.br")) {
++          return jsonResponse([{ id: 35, sigla: "SP", nome: "São Paulo" }]);
++        }
++        if (url.includes("api.portaldatransparencia.gov.br/api-de-dados/servidores")) {
++          return jsonResponse([{ nome: "SERVIDOR EXEMPLO" }]);
++        }
++        if (url.includes("api.portaldatransparencia.gov.br/api-de-dados/cnep")) {
++          return jsonResponse([{ sancao: "MULTA" }]);
++        }
++        if (url.includes("api.queridodiario.org.br")) {
++          return jsonResponse({ total_gazettes: 1, gazettes: [] });
++        }
++        return jsonResponse({}, 404);
++      });
++
++      const ibgeEstados = await executeTool("ibge_localidades", { tipo: "estados" }, apiConfig);
++      expect(ibgeEstados.ok).toBe(true);
++
++      const ibgeMunUf = await executeTool(
++        "ibge_localidades",
++        { tipo: "municipios_por_uf", uf: "SP" },
++        apiConfig
++      );
++      expect(ibgeMunUf.ok).toBe(true);
++
++      const transpServ = await executeTool(
++        "transparencia_lookup",
++        { cnpj: "12345678909", tipo: "servidores", pagina: 1 },
++        apiConfig
++      );
++      expect(transpServ.ok).toBe(true);
++
++      const ceisCnep = await executeTool(
++        "ceis_cnep_lookup",
++        { query: "ACME LTDA", tipo: "cnep", pagina: 1 },
++        apiConfig
++      );
++      expect(ceisCnep.ok).toBe(true);
++      expect(ceisCnep.data).toMatchObject({ databases_checked: ["cnep"] });
++
++      const qdOk = await executeTool(
++        "querido_diario",
++        { query: "", territory_id: "3550308", since: "2026-01-01", until: "2026-01-31" },
++        apiConfig
++      );
++      expect(qdOk.ok).toBe(true);
++      expect(qdOk.data).toMatchObject({ source: "Querido Diário — Open Knowledge Brasil" });
++    });
++  });
++});
+diff --git a/test/unit/worker-rest-cloudflare.test.ts b/test/unit/worker-rest-cloudflare.test.ts
+new file mode 100644
+index 0000000..36e8fcb
+--- /dev/null
++++ b/test/unit/worker-rest-cloudflare.test.ts
+@@ -0,0 +1,495 @@
++import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
++import {
++  handleHealthCheck,
++  handleMCPEndpoint,
++  handleMCPRequest,
++  type Env,
++} from "../../lib/adapters/cloudflare.js";
++import {
++  handleIntelligenceEndpoint,
++  handleLookupEndpoint,
++  handleSearchEndpoint,
++  handleThinkingEndpoint,
++} from "../../lib/workers/rest.js";
++import { generateSecureToken } from "../../lib/workers/tokens.js";
++import worker from "../../lib/workers/worker.js";
++import { TOOL_DEFINITIONS } from "../../lib/core/tools.js";
++import { resetCircuitBreakers } from "../../lib/core/http-client.js";
++
++function createMemoryKv(initial: Record<string, string> = {}): KVNamespace & {
++  store: Map<string, { value: string; options?: unknown }>;
++} {
++  const store = new Map<string, { value: string; options?: unknown }>(
++    Object.entries(initial).map(([k, v]) => [k, { value: v }])
++  );
++  return {
++    store,
++    async get(key: string): Promise<string | null> {
++      return store.get(key)?.value ?? null;
++    },
++    async put(
++      key: string,
++      value: string,
++      options?: { expiration?: number; expirationTtl?: number; metadata?: unknown }
++    ): Promise<void> {
++      store.set(key, { value, options });
++    },
++    async delete(key: string): Promise<void> {
++      store.delete(key);
++    },
++  };
++}
++
++function jsonResponse(body: unknown, status = 200): Response {
++  return new Response(JSON.stringify(body), {
++    status,
++    headers: { "Content-Type": "application/json" },
++  });
++}
++
++function createExecutionContext(): ExecutionContext {
++  return {
++    waitUntil: vi.fn(),
++    passThroughOnException: vi.fn(),
++  } as unknown as ExecutionContext;
++}
++
++describe("Workers REST API, Tokens, Worker Router & Cloudflare Adapter", () => {
++  const originalTavily = process.env.TAVILY_API_KEY;
++  const originalPerplexity = process.env.PERPLEXITY_API_KEY;
++
++  beforeEach(() => {
++    delete process.env.TAVILY_API_KEY;
++    delete process.env.PERPLEXITY_API_KEY;
++    resetCircuitBreakers();
++  });
++
++  afterEach(() => {
++    if (originalTavily === undefined) delete process.env.TAVILY_API_KEY;
++    else process.env.TAVILY_API_KEY = originalTavily;
++
++    if (originalPerplexity === undefined) delete process.env.PERPLEXITY_API_KEY;
++    else process.env.PERPLEXITY_API_KEY = originalPerplexity;
++
++    resetCircuitBreakers();
++    vi.restoreAllMocks();
++    vi.useRealTimers();
++  });
++
++  describe("lib/workers/tokens.ts", () => {
++    it("generates cryptographically random 64-hex-char tokens with default and custom prefixes", () => {
++      const defaultToken = generateSecureToken();
++      const secondToken = generateSecureToken();
++      const oauthToken = generateSecureToken("oauth");
++
++      expect(defaultToken).toMatch(/^mcp_[0-9a-f]{64}$/);
++      expect(oauthToken).toMatch(/^oauth_[0-9a-f]{64}$/);
++      expect(secondToken).not.toBe(defaultToken);
++    });
++  });
++
++  describe("lib/workers/rest.ts", () => {
++    it("handleLookupEndpoint serves valid CNPJ, serves cache hits on KV, and handles invalid/not-found/500", async () => {
++      const cacheKv = createMemoryKv();
++      const env: Env = { MCP_CACHE: cacheKv };
++
++      const fetchSpy = vi
++        .spyOn(globalThis, "fetch")
++        .mockResolvedValue(
++          jsonResponse({ cnpj: "11222333000181", razao_social: "EMPRESA TESTE LTDA" })
++        );
++
++      const okResp = await handleLookupEndpoint("cnpj", "11.222.333/0001-81", env);
++      expect(okResp.status).toBe(200);
++      const okPayload = (await okResp.json()) as { content: Array<{ text: string }> };
++      const parsed = JSON.parse(okPayload.content[0].text) as Record<string, unknown>;
++      expect(parsed.razao_social).toBe("EMPRESA TESTE LTDA");
++      expect(fetchSpy).toHaveBeenCalledTimes(1);
++
++      // Subsequent lookup should hit KVCache without calling fetch again
++      const cachedResp = await handleLookupEndpoint("cnpj", "11222333000181", env);
++      expect(cachedResp.status).toBe(200);
++      expect(fetchSpy).toHaveBeenCalledTimes(1);
++
++      // Invalid input -> 400 with tool validation error (-32603)
++      const invalidResp = await handleLookupEndpoint("cep", "invalid-cep", {});
++      expect(invalidResp.status).toBe(400);
++      const invalidBody = (await invalidResp.json()) as { error: string; code: number };
++      expect(invalidBody.code).toBe(-32603);
++
++      // Upstream 404 on valid checksum CNPJ -> tool returns "CNPJ not found" -> REST endpoint maps to 400
++      vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(jsonResponse({ message: "not found" }, 404));
++      const notFoundResp = await handleLookupEndpoint("cnpj", "33000167000101", {});
++      expect(notFoundResp.status).toBe(400);
++      const nfBody = (await notFoundResp.json()) as { data?: string };
++      expect(nfBody.data).toMatch(/not found/i);
++
++      // Trigger outer try/catch -> 500 when env triggers TypeError in handleMCPRequest
++      const errResp = await handleLookupEndpoint("cnpj", "11222333000181", null as unknown as Env);
++      expect(errResp.status).toBe(500);
++      const errBody = (await errResp.json()) as { error: string };
++      expect(errBody.error).toBe("Internal server error");
++    });
++
++    it("handleSearchEndpoint validates query, returns 200 on provider hit, 400 on provider error, and 500 on malformed JSON", async () => {
++      const missingResp = await handleSearchEndpoint(
++        new Request("https://worker.example/search", {
++          method: "POST",
++          body: JSON.stringify({ max_results: 3 }),
++        }),
++        {}
++      );
++      expect(missingResp.status).toBe(400);
++      expect(await missingResp.json()).toEqual({ error: "Missing query parameter" });
++
++      // No search API keys configured -> tool execution fails -> 400
++      const noKeyResp = await handleSearchEndpoint(
++        new Request("https://worker.example/search", {
++          method: "POST",
++          body: JSON.stringify({ query: "Empresa Teste", max_results: 2 }),
++        }),
++        {}
++      );
++      expect(noKeyResp.status).toBe(400);
++
++      // Configure Perplexity API key & mock fetch -> 200
++      process.env.PERPLEXITY_API_KEY = "pplx-test-key";
++      vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
++        jsonResponse({
++          choices: [{ message: { content: "Empresa Teste S/A summary" } }],
++          citations: ["https://dados.gov.br/empresa"],
++        })
++      );
++
++      const okResp = await handleSearchEndpoint(
++        new Request("https://worker.example/search", {
++          method: "POST",
++          body: JSON.stringify({ query: "Empresa Teste", max_results: 2 }),
++        }),
++        {}
++      );
++      expect(okResp.status).toBe(200);
++      const okData = (await okResp.json()) as { content: Array<{ text: string }> };
++      expect(okData.content[0].text).toContain("Empresa Teste S/A summary");
++
++      // Invalid JSON triggers 500
++      const malformedResp = await handleSearchEndpoint(
++        new Request("https://worker.example/search", {
++          method: "POST",
++          body: "{not-json",
++        }),
++        {}
++      );
++      expect(malformedResp.status).toBe(500);
++    });
++
++    it("handleIntelligenceEndpoint validates cnpj, handles 200 with mocked fetch, 400 on bad cnpj, and 500 on malformed JSON", async () => {
++      const missingResp = await handleIntelligenceEndpoint(
++        new Request("https://worker.example/intelligence", {
++          method: "POST",
++          body: JSON.stringify({ categories: ["government"] }),
++        }),
++        {}
++      );
++      expect(missingResp.status).toBe(400);
++      expect(await missingResp.json()).toEqual({ error: "Missing cnpj parameter" });
++
++      const invalidResp = await handleIntelligenceEndpoint(
++        new Request("https://worker.example/intelligence", {
++          method: "POST",
++          body: JSON.stringify({ cnpj: "123" }),
++        }),
++        {}
++      );
++      expect(invalidResp.status).toBe(400);
++
++      process.env.PERPLEXITY_API_KEY = "pplx-test-key";
++      vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
++        const url = String(input);
++        if (url.includes("perplexity.ai")) {
++          return jsonResponse({
++            choices: [{ message: { content: "Contrato federal para 11222333000181" } }],
++            citations: ["https://portaldatransparencia.gov.br/contratos/1"],
++          });
++        }
++        return jsonResponse({
++          cnpj: "11222333000181",
++          razao_social: "EMPRESA INTEL LTDA",
++          nome_fantasia: "INTEL",
++          municipio: "SAO PAULO",
++          uf: "SP",
++        });
++      });
++
++      const okResp = await handleIntelligenceEndpoint(
++        new Request("https://worker.example/intelligence", {
++          method: "POST",
++          body: JSON.stringify({
++            cnpj: "11222333000181",
++            categories: ["government"],
++            max_queries: 1,
++            max_results_per_query: 2,
++          }),
++        }),
++        {}
++      );
++      expect(okResp.status).toBe(200);
++      const okPayload = (await okResp.json()) as { content: Array<{ text: string }> };
++      expect(okPayload.content[0].text).toContain("EMPRESA INTEL LTDA");
++
++      const malformedResp = await handleIntelligenceEndpoint(
++        new Request("https://worker.example/intelligence", {
++          method: "POST",
++          body: "bad-json",
++        }),
++        {}
++      );
++      expect(malformedResp.status).toBe(500);
++    });
++
++    it("handleThinkingEndpoint supports valid thoughts (200), schema failure (400), and invalid JSON (500)", async () => {
++      const okResp = await handleThinkingEndpoint(
++        new Request("https://worker.example/thinking", {
++          method: "POST",
++          body: JSON.stringify({
++            thought: "Verificar quadro societário",
++            thoughtNumber: 1,
++            totalThoughts: 1,
++            nextThoughtNeeded: false,
++          }),
++        }),
++        {}
++      );
++      expect(okResp.status).toBe(200);
++      const payload = (await okResp.json()) as { content: Array<{ text: string }> };
++      expect(payload.content[0].text).toContain("thoughtNumber");
++
++      const badParamsResp = await handleThinkingEndpoint(
++        new Request("https://worker.example/thinking", {
++          method: "POST",
++          body: JSON.stringify({ thought: "invalid", thoughtNumber: 0 }),
++        }),
++        {}
++      );
++      expect(badParamsResp.status).toBe(400);
++
++      const badJsonResp = await handleThinkingEndpoint(
++        new Request("https://worker.example/thinking", {
++          method: "POST",
++          body: "{bad",
++        }),
++        {}
++      );
++      expect(badJsonResp.status).toBe(500);
++    });
++  });
++
++  describe("lib/adapters/cloudflare.ts", () => {
++    it("handles tools/list, tools/call (ok, failure, throw), unknown method, and env propagation", async () => {
++      const listResp = await handleMCPRequest({ jsonrpc: "2.0", id: 1, method: "tools/list" }, {});
++      expect(listResp.error).toBeUndefined();
++      expect((listResp.result as { tools: unknown[] }).tools).toHaveLength(TOOL_DEFINITIONS.length);
++
++      const kv = createMemoryKv();
++      const callOk = await handleMCPRequest(
++        {
++          jsonrpc: "2.0",
++          id: 2,
++          method: "tools/call",
++          params: { name: "cpf_validate", arguments: { cpf: "52998224725" } },
++        },
++        { MCP_CACHE: kv, TAVILY_API_KEY: "tvly-propagated" }
++      );
++      expect(process.env.TAVILY_API_KEY).toBe("tvly-propagated");
++      expect(callOk.error).toBeUndefined();
++      const okText = ((callOk.result as { content: Array<{ text: string }> }).content[0]).text;
++      expect(JSON.parse(okText)).toMatchObject({ valid: true, region: "ES/RJ" });
++
++      // Tool returns ok:false (-32603)
++      vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(jsonResponse({ error: "not found" }, 404));
++      const callFail = await handleMCPRequest(
++        {
++          jsonrpc: "2.0",
++          id: 3,
++          method: "tools/call",
++          params: { name: "cnpj_lookup", arguments: { cnpj: "11222333000181" } },
++        },
++        {}
++      );
++      expect(callFail.error).toMatchObject({ code: -32603, message: "Tool execution failed" });
++
++      // Inner catch (-32602) when KVCache rejects during executeTool
++      const throwingKv: KVNamespace = {
++        get: vi.fn().mockRejectedValue(new Error("kv outage")),
++        put: vi.fn().mockResolvedValue(undefined),
++        delete: vi.fn().mockResolvedValue(undefined),
++      };
++      const callThrow = await handleMCPRequest(
++        {
++          jsonrpc: "2.0",
++          id: 4,
++          method: "tools/call",
++          params: { name: "cnpj_lookup", arguments: { cnpj: "11222333000181" } },
++        },
++        { MCP_CACHE: throwingKv }
++      );
++      expect(callThrow.error).toMatchObject({
++        code: -32602,
++        message: "Invalid parameters",
++        data: "kv outage",
++      });
++
++      // Outer catch (-32603) when params is null
++      const nullParams = await handleMCPRequest(
++        { jsonrpc: "2.0", id: 5, method: "tools/call", params: null },
++        {}
++      );
++      expect(nullParams.error).toMatchObject({ code: -32603, message: "Internal error" });
++
++      // Unknown method (-32601)
++      const unknownMethod = await handleMCPRequest(
++        { jsonrpc: "2.0", id: 6, method: "resources/unknown" },
++        {}
++      );
++      expect(unknownMethod.error).toMatchObject({ code: -32601, message: "Method not found" });
++    });
++
++    it("handleMCPEndpoint handles valid requests, invalid JSON (-32700), request read errors (500), and health check", async () => {
++      const okResp = await handleMCPEndpoint(
++        new Request("https://worker.example/mcp", {
++          method: "POST",
++          body: JSON.stringify({ jsonrpc: "2.0", id: 10, method: "tools/list" }),
++        }),
++        { TAVILY_API_KEY: "tvly-endpoint" }
++      );
++      expect(okResp.status).toBe(200);
++      expect(process.env.TAVILY_API_KEY).toBe("tvly-endpoint");
++
++      const parseErrResp = await handleMCPEndpoint(
++        new Request("https://worker.example/mcp", { method: "POST", body: "{invalid" }),
++        {}
++      );
++      expect(parseErrResp.status).toBe(400);
++      const parseErrBody = (await parseErrResp.json()) as { error: { code: number } };
++      expect(parseErrBody.error.code).toBe(-32700);
++
++      const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
++      const badRequest = {
++        text: vi.fn().mockRejectedValue(new Error("stream aborted")),
++      } as unknown as Request;
++      const internalErrResp = await handleMCPEndpoint(badRequest, {});
++      expect(internalErrResp.status).toBe(500);
++      const internalBody = (await internalErrResp.json()) as { error: { code: number; data: string } };
++      expect(internalBody.error).toMatchObject({ code: -32603, data: "stream aborted" });
++      expect(errSpy).toHaveBeenCalled();
++
++      const healthResp = handleHealthCheck();
++      expect(healthResp.status).toBe(200);
++      expect(await healthResp.json()).toMatchObject({
++        status: "healthy",
++        service: "mcp-dadosbr",
++        runtime: "cloudflare-workers",
++      });
++    });
++  });
++
++  describe("lib/workers/worker.ts", () => {
++    it("routes /, /mcp 405, /sse 405, REST endpoints, unknown 404, env propagation, and 429 rate limits", async () => {
++      const ctx = createExecutionContext();
++      const baseEnv: Env = { MCP_DISABLE_RATE_LIMIT: "true" };
++
++      // Root /
++      const rootResp = await worker.fetch(new Request("https://worker.example/"), baseEnv, ctx);
++      expect(rootResp.status).toBe(200);
++      const rootJson = (await rootResp.json()) as { service: string; endpoints: Record<string, string> };
++      expect(rootJson.service).toBe("MCP DadosBR");
++      expect(rootJson.endpoints.mcp).toBe("/mcp (HTTP JSON-RPC)");
++
++      // 405 Method Not Allowed on GET /mcp & DELETE /sse
++      const mcpGet = await worker.fetch(new Request("https://worker.example/mcp"), baseEnv, ctx);
++      expect(mcpGet.status).toBe(405);
++
++      const sseDel = await worker.fetch(
++        new Request("https://worker.example/sse", { method: "DELETE" }),
++        baseEnv,
++        ctx
++      );
++      expect(sseDel.status).toBe(405);
++
++      // 404 Unknown route
++      const notFound = await worker.fetch(
++        new Request("https://worker.example/unknown/route"),
++        baseEnv,
++        ctx
++      );
++      expect(notFound.status).toBe(404);
++
++      // GET /cnpj/:cnpj and /cep/:cep with mocked fetch + env.TAVILY_API_KEY propagation
++      vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
++        jsonResponse({ cnpj: "11222333000181", cep: "01310100", ok: true })
++      );
++      const cnpjResp = await worker.fetch(
++        new Request("https://worker.example/cnpj/11222333000181"),
++        { ...baseEnv, TAVILY_API_KEY: "tvly-worker" },
++        ctx
++      );
++      expect(cnpjResp.status).toBe(200);
++      expect(process.env.TAVILY_API_KEY).toBe("tvly-worker");
++
++      const cepResp = await worker.fetch(
++        new Request("https://worker.example/cep/01310100"),
++        baseEnv,
++        ctx
++      );
++      expect(cepResp.status).toBe(200);
++
++      // POST /search, /intelligence, /thinking via worker router
++      const searchResp = await worker.fetch(
++        new Request("https://worker.example/search", { method: "POST", body: "{}" }),
++        baseEnv,
++        ctx
++      );
++      expect(searchResp.status).toBe(400);
++
++      const intelResp = await worker.fetch(
++        new Request("https://worker.example/intelligence", { method: "POST", body: "{}" }),
++        baseEnv,
++        ctx
++      );
++      expect(intelResp.status).toBe(400);
++
++      const thinkResp = await worker.fetch(
++        new Request("https://worker.example/thinking", {
++          method: "POST",
++          body: JSON.stringify({
++            thought: "step",
++            thoughtNumber: 1,
++            totalThoughts: 1,
++            nextThoughtNeeded: false,
++          }),
++        }),
++        baseEnv,
++        ctx
++      );
++      expect(thinkResp.status).toBe(200);
++
++      // Rate limit 429 enforcement via MCP_KV
++      vi.useFakeTimers();
++      vi.setSystemTime(new Date("2026-11-20T12:00:00Z"));
++      const bucket = Math.floor(Date.now() / 60000);
++      const rateKv = createMemoryKv({
++        [`rate_limit:198.51.100.10:${bucket}`]: JSON.stringify({ count: 30 }),
++      });
++
++      const limitedResp = await worker.fetch(
++        new Request("https://worker.example/cep/01310100", {
++          headers: { "CF-Connecting-IP": "198.51.100.10", Origin: "https://app.example" },
++        }),
++        { MCP_KV: rateKv },
++        ctx
++      );
++      expect(limitedResp.status).toBe(429);
++      expect(limitedResp.headers.get("Access-Control-Allow-Origin")).toBe("*");
++    });
++  });
++});
+diff --git a/vitest.config.ts b/vitest.config.ts
+index 6e7ff03..e932f33 100644
+--- a/vitest.config.ts
++++ b/vitest.config.ts
+@@ -14,18 +14,24 @@ export default defineConfig({
+         coverage: {
+             provider: 'v8',
+             reporter: ['text', 'json', 'html', 'lcov'],
++            include: ['lib/**/*.ts'],
+             exclude: [
+                 'node_modules/',
+                 'build/',
+                 'test/',
+                 '**/*.test.ts',
+                 '**/*.spec.ts',
+-                'lib/workers/', // Cloudflare Workers specific
+-                'lib/adapters/cloudflare.ts',
+                 'lib/bin/',
++                'lib/index.ts',
++                'lib/types/',
++                'lib/workers/types.ts',
++                'lib/adapters/cli.ts',
+                 'scripts/',
+                 'examples/',
++                'apps/',
+             ],
++            // Baseline measured in TCK-0029 across lib/**/*.ts (incl. workers/ & cloudflare.ts):
++            // 87.91% stmts, 80.27% branches, 86.89% funcs, 88.64% lines (FND-0014 target met; TCK-0025 will cover logger.ts/tracing.ts).
+             thresholds: {
+                 lines: 80,
+                 functions: 80,

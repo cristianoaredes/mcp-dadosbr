@@ -5,8 +5,8 @@ title: "Cobrir modulos criticos (auth, oauth, http-client, workers, tools), cone
 source: audit
 created_at: 2026-11-20T15:16:23Z
 created_by: ops
-updated_at: 2026-11-20T19:21:49Z
-status: raw
+updated_at: 2026-11-20T20:08:42Z
+status: done
 severity: high
 category: test-coverage
 effort: L
@@ -15,9 +15,17 @@ ceremony: full
 business_impact: ""
 linked_findings:
   - FND-0014
-linked_designs: []
-linked_runs: []
-linked_verifications: []
+linked_designs:
+  - DES-0023
+  - DES-0024
+  - DES-0025
+linked_runs:
+  - RUN-20261120-200529-tck-0026
+  - RUN-20261120-192307-tck-0027
+  - RUN-20261120-193311-tck-0028
+  - RUN-20261120-195035-tck-0029
+linked_verifications:
+  - VER-20261120-200759-tck-0026
 linked_docs:
   - .archagents/08-conventions.md
 external_refs: []
@@ -33,6 +41,12 @@ acceptance:
     expect: COVERAGE_AND_TESTS_OK
   - check: "npx tsc --noEmit && npx tsc -p tsconfig.worker.json --noEmit && echo TYPECHECK_OK"
     expect: TYPECHECK_OK
+depth_decision:
+  workflow: "completo + decompose"
+  design: completo
+  verify: completo
+  source: routing-classifier
+  classified_at: 2026-11-20T20:03:08Z
 ---
 # TCK-0026 - Cobrir modulos criticos (auth, oauth, http-client, workers, tools), conectar testes unitarios ao codigo real, corrigir test:coverage e fake timers
 
@@ -67,3 +81,8 @@ Evidências pré-fix de **FND-0014** observadas antes da decomposição (`ef0dad
 - 2026-11-20T15:16:23Z - **raw** - criado via scripts/ops/ticket/create.py.
 - 2026-11-20T19:21:32Z - **noted** - body:falsifier (append): Registrar falsificador FND-0014 e decomposicao em //
 - 2026-11-20T19:21:49Z - **linked** - links updated
+- 2026-11-20T20:03:08Z - **triaged** - Falsificador FND-0014 e decomposicao TCK-0027..0029 concluidos [depth_decision do routing-classifier: workflow completo + decompose, design completo, verify completo]
+- 2026-11-20T20:03:08Z - **designed** - Designs das 3 fatias (TCK-0027/0028/0029) aprovados e entregues
+- 2026-11-20T20:05:30Z - **executing** - Consolidacao final das 3 fatias concluidas de FND-0014 (RUN-20261120-200529-tck-0026)
+- 2026-11-20T20:05:55Z - **verifying** - Todas as 3 fatias (TCK-0027, TCK-0028, TCK-0029) concluidas e consolidadas em RUN-20261120-200529-tck-0026
+- 2026-11-20T20:08:42Z - **done** - FND-0014 fechado por agregacao das fatias TCK-0027, TCK-0028 e TCK-0029 com VER independente
