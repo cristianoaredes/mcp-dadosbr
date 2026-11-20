@@ -1,5 +1,6 @@
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 import express from "express";
+import type http from "node:http";
 import { createMCPServer } from "../core/mcp-server.js";
 import { RateLimiter } from "../infrastructure/rate-limiter.js";
 import { ApiConfig, Cache } from "../types/index.js";
@@ -208,7 +209,6 @@ export function createCliHttpApp(options: CliHttpOptions): CliHttpContext {
 
   const app = express();
   app.disable("x-powered-by");
-  app.use(express.json({ limit: "1mb" }));
 
   // Defensive security headers across all responses (including 4xx/5xx)
   app.use((_req, res, next) => {
@@ -262,6 +262,34 @@ export function createCliHttpApp(options: CliHttpOptions): CliHttpContext {
     next();
   });
 
+  // Parse JSON payloads only after security headers, Host, and Origin checks pass
+  app.use(express.json({ limit: "1mb" }));
+  app.use(
+    (
+      err: unknown,
+      _req: express.Request,
+      res: express.Response,
+      next: express.NextFunction,
+    ) => {
+      const errorObj = err as { type?: string } | undefined;
+      if (errorObj?.type === "entity.too.large") {
+        res.status(413).json({
+          error: "Payload Too Large",
+          message: "Request body exceeds 1MB limit",
+        });
+        return;
+      }
+      if (err instanceof SyntaxError || errorObj?.type === "entity.parse.failed") {
+        res.status(400).json({
+          error: "Bad Request",
+          message: "Invalid JSON payload",
+        });
+        return;
+      }
+      next(err);
+    },
+  );
+
   const rateLimiter = new RateLimiter({
     windowMs: options.rateLimitWindowMs ?? 60 * 1000,
     maxRequests: options.rateLimitMaxRequests ?? 30,
@@ -313,11 +341,20 @@ export function createCliHttpApp(options: CliHttpOptions): CliHttpContext {
   }, TIMEOUTS.PING_INTERVAL_MS);
   connectionMonitor.unref?.();
 
+  let closed = false;
   const closeAll = () => {
+    if (closed) {
+      return;
+    }
+    closed = true;
     clearInterval(connectionMonitor);
-    rateLimiter.destroy();
+    rateLimiter.dispose();
     for (const session of transports.values()) {
-      session.transport.close?.();
+      try {
+        session.transport.close?.();
+      } catch {
+        // Ignore individual session close errors during drain
+      }
     }
     transports.clear();
   };
@@ -399,5 +436,107 @@ export function createCliHttpApp(options: CliHttpOptions): CliHttpContext {
     transports,
     rateLimiter,
     closeAll,
+  };
+}
+
+export interface GracefulShutdownOptions {
+  server?: Pick<http.Server, "listening" | "close"> & {
+    closeIdleConnections?: () => void;
+  };
+  httpContext?: Pick<CliHttpContext, "closeAll">;
+  mcpServer?: { close?: () => Promise<void> | void };
+  cache?: { clear?: () => Promise<void> | void };
+  timeoutMs?: number;
+  logger?: (...args: unknown[]) => void;
+  onExit?: (code: number) => void;
+}
+
+/**
+ * Create an idempotent graceful shutdown coordinator that drains SSE sessions,
+ * closes the HTTP server, shuts down the MCP server, and clears caches within a bounded timeout.
+ */
+export function createGracefulShutdown(
+  options: GracefulShutdownOptions,
+): (signal?: string) => Promise<void> {
+  const timeoutMs =
+    options.timeoutMs !== undefined && Number.isFinite(options.timeoutMs) && options.timeoutMs > 0
+      ? options.timeoutMs
+      : 5000;
+  const logger = options.logger ?? (() => {});
+
+  let shutdownPromise: Promise<void> | undefined;
+  let exited = false;
+
+  const finishExit = (code: number) => {
+    if (exited) {
+      return;
+    }
+    exited = true;
+    options.onExit?.(code);
+  };
+
+  return (signal?: string) => {
+    if (shutdownPromise) {
+      return shutdownPromise;
+    }
+
+    shutdownPromise = (async () => {
+      logger(`Shutting down gracefully${signal ? ` (${signal})` : ""}...`);
+
+      let forceTimer: ReturnType<typeof setTimeout> | undefined;
+      let timedOut = false;
+
+      const drainPromise = (async () => {
+        try {
+          options.httpContext?.closeAll();
+        } catch {
+          // Best-effort SSE session cleanup
+        }
+
+        if (options.server?.listening) {
+          await new Promise<void>((resolve) => {
+            try {
+              options.server!.close(() => resolve());
+              options.server!.closeIdleConnections?.();
+            } catch {
+              resolve();
+            }
+          });
+        }
+
+        try {
+          await options.mcpServer?.close?.();
+        } catch {
+          // Best-effort MCP server close
+        }
+
+        try {
+          await options.cache?.clear?.();
+        } catch {
+          // Best-effort cache clear
+        }
+      })();
+
+      const timeoutPromise = new Promise<void>((resolve) => {
+        forceTimer = setTimeout(() => {
+          timedOut = true;
+          resolve();
+        }, timeoutMs);
+        forceTimer.unref?.();
+      });
+
+      try {
+        await Promise.race([drainPromise, timeoutPromise]);
+      } finally {
+        if (forceTimer !== undefined) {
+          clearTimeout(forceTimer);
+          forceTimer = undefined;
+        }
+      }
+
+      finishExit(timedOut ? 1 : 0);
+    })();
+
+    return shutdownPromise;
   };
 }
