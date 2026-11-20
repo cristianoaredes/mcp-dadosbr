@@ -271,12 +271,12 @@
   },
   "metrics": {
     "total_tickets": 29,
-    "done_tickets": 28,
+    "done_tickets": 29,
     "archived_tickets": 0,
-    "avg_cycle_time": 1.62,
+    "avg_cycle_time": 1.77,
     "avg_cycle_time_coverage": {
-      "measured": 28,
-      "total": 28,
+      "measured": 29,
+      "total": 29,
       "ratio": 1.0
     },
     "success_rate": 0.0,
@@ -288,8 +288,7 @@
       "source": "learning_log + taxonomia TCK-0820"
     },
     "status_breakdown": {
-      "done": 28,
-      "raw": 1
+      "done": 29
     }
   },
   "active_runs": [],
@@ -297,17 +296,17 @@
   "noncanonical_runs": [],
   "zombie_runs": [],
   "zombie_runs_coverage": "ok",
-  "health_score": 58.62,
+  "health_score": 60.0,
   "health_score_coverage": {
     "formula": "ad-hoc: 0.4*backlog + 0.4*recent_success + 0.2*drift - zombie_debt_penalty (cap 20, ver TCK-2693)",
     "approved_alternative": "lib/health_rubric (SPC-0086) — zero chamadores; trocar exige ADR",
     "components": {
       "backlog_health": {
-        "value": 96.55,
+        "value": 100.0,
         "weight": 0.4,
-        "measured": 28,
+        "measured": 29,
         "total": 29,
-        "ratio": 0.9655
+        "ratio": 1.0
       },
       "recent_success": {
         "value": 0.0,
@@ -334,7 +333,7 @@
       "source": "zombie-run-scan.py (TCK-1447/TCK-2477) via .archagents/.zombie-runs-baseline.json"
     }
   },
-  "last_updated": "2026-11-20T21:04:17.301652Z",
+  "last_updated": "2026-11-20T21:17:59.786289Z",
   "learning_log": [
     {
       "run": "RUN-20261117-224844-querido-diario",

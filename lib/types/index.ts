@@ -50,6 +50,15 @@ export interface Metrics {
   startTime: number;
 }
 
+export interface ToolMetrics {
+  requests: number;
+  errors: number;
+  cacheHits: number;
+  totalTimeMs: number;
+  avgTimeMs: number;
+  maxTimeMs: number;
+}
+
 // Cache interfaces
 export interface CacheEntry {
   data: unknown;

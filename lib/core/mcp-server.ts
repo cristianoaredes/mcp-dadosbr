@@ -10,9 +10,13 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import { SERVER_NAME, SERVER_VERSION } from "../config/index.js";
 import { TIMEOUTS } from "../config/timeouts.js";
-import { TOOL_DEFINITIONS, executeTool, resetMetrics } from "./tools.js";
+import { TOOL_DEFINITIONS, executeTool } from "./tools.js";
 import { SequentialThinkingProcessor } from "./sequential-thinking.js";
 import { RateLimiter } from "../infrastructure/rate-limiter.js";
+import { createLogger } from "../infrastructure/logger.js";
+import { RequestContext } from "../infrastructure/tracing.js";
+
+const mcpLogger = createLogger("mcp-server");
 import { Cache, ApiConfig } from "../types/index.js";
 import { formatErrorResponse, RateLimitError } from "../shared/errors.js";
 import { readCnpjProfile } from "../shared/cnpj-profile.js";
@@ -84,9 +88,6 @@ export interface MCPServerOptions {
 export function createMCPServer(options: MCPServerOptions): Server {
   const { apiConfig, cache, rateLimit } = options;
 
-  // Reset metrics on server creation
-  resetMetrics();
-
   // Session-local sequential thinking state (isolated per server/connection)
   const thinkingProcessor = new SequentialThinkingProcessor();
 
@@ -140,11 +141,18 @@ export function createMCPServer(options: MCPServerOptions): Server {
   // Register call tool handler
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const { name, arguments: args } = request.params;
+    const requestContext = new RequestContext();
+    requestContext.addMetadata("tool", name);
 
     if (toolRateLimiter && !toolRateLimiter.checkLimit("mcp-session")) {
       const retryAfter = Math.max(
         1,
         Math.ceil(toolRateLimiter.getResetTime("mcp-session") / 1000)
+      );
+      mcpLogger.warn(
+        "mcp.rate_limited",
+        { tool: name, retryAfter },
+        requestContext.requestId,
       );
       const errorDetails = formatErrorResponse(new RateLimitError(retryAfter));
       return {
@@ -169,6 +177,8 @@ export function createMCPServer(options: MCPServerOptions): Server {
     try {
       const result = await executeTool(name, args, apiConfig, cache, {
         thinkingProcessor,
+        requestId: requestContext.requestId,
+        requestContext,
       });
 
       if (result.ok) {

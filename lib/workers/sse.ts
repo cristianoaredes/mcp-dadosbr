@@ -7,7 +7,12 @@ import { Env, handleMCPRequest, corsHeaders } from "../adapters/cloudflare.js";
 import { SERVER_VERSION } from "../config/index.js";
 import { MCPRequest } from "../types/index.js";
 import { TIMEOUTS } from "../config/timeouts.js";
+import { createLogger } from "../infrastructure/logger.js";
+import type { RequestContext } from "../infrastructure/tracing.js";
+import { maskSensitiveText } from "../shared/log-redaction.js";
 import "./types.js";
+
+const sseLogger = createLogger("worker-sse");
 
 type SSECloseReason = "timeout" | "abort" | "closed" | "error";
 
@@ -20,7 +25,8 @@ const SSE_STREAM_HIGH_WATER_MARK = 16;
 export async function handleSSEEndpoint(
   request: Request,
   env: Env,
-  ctx?: ExecutionContext
+  ctx?: ExecutionContext,
+  requestContext?: RequestContext
 ): Promise<Response> {
   // Check if client accepts SSE (relaxed for MCP connectors)
   const acceptHeader = request.headers.get("Accept");
@@ -122,7 +128,11 @@ export async function handleSSEEndpoint(
       streamController.enqueue(encoder.encode(message));
       return true;
     } catch (error) {
-      console.error("SSE write error:", error);
+      sseLogger.error(
+        "sse.write_error",
+        { error: maskSensitiveText(error instanceof Error ? error.message : String(error)) },
+        requestContext?.requestId
+      );
       cleanup("error");
       return false;
     }
@@ -144,7 +154,11 @@ export async function handleSSEEndpoint(
 
         // Arm connection timeout cleanly so stalled clients always close & settle waitUntil
         timeoutHandle = setTimeout(() => {
-          console.log("SSE connection timeout reached, closing gracefully");
+          sseLogger.info(
+            "sse.connection_timeout",
+            { reason: "timeout" },
+            requestContext?.requestId
+          );
           cleanup("timeout");
         }, TIMEOUTS.SSE_CONNECTION_MS);
         (timeoutHandle as { unref?: () => void }).unref?.();
@@ -214,7 +228,7 @@ export async function handleSSEEndpoint(
               const body = await request.text();
               if (body && !closed) {
                 const mcpRequest: MCPRequest = JSON.parse(body);
-                const response = await handleMCPRequest(mcpRequest, env);
+                const response = await handleMCPRequest(mcpRequest, env, requestContext);
                 if (!closed) {
                   sendSSEMessage(
                     response,
@@ -224,7 +238,11 @@ export async function handleSSEEndpoint(
                 }
               }
             } catch (error) {
-              console.error("SSE request processing error:", error);
+              sseLogger.error(
+                "sse.request_error",
+                { error: maskSensitiveText(error instanceof Error ? error.message : String(error)) },
+                requestContext?.requestId
+              );
               if (!closed) {
                 sendSSEMessage(
                   {

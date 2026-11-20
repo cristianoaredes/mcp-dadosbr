@@ -1,0 +1,34 @@
+{
+  "id": "RUN-20261120-210540-tck-0025",
+  "design": "DES-0028",
+  "ticket": "TCK-0025",
+  "started_at": "2026-11-20T21:05:40Z",
+  "started_by": "ops",
+  "environment": "dev",
+  "mode": "live",
+  "status": "completed",
+  "current_step": 5,
+  "total_steps": 5,
+  "ended_at": "2026-11-20T21:13:00Z",
+  "result": "59/59 targeted (5 files), 442/442 Vitest (31 files), V8 91.32/83.57/93.25/92.09 >= 85/80/85/85, tsc + tsc.worker + build + build:worker + test:transport PASS, criteria-check 4/4",
+  "loop_iterations": 0,
+  "attempt_count": 0,
+  "lessons_consulted": [
+    "Precisou de 2 iterações (re-execução)"
+  ],
+  "loop_cost_usd": null,
+  "cost_source": "unknown",
+  "loop_strategy": "default",
+  "context_peak": 0,
+  "final_judge_delta": 35,
+  "warmup": false,
+  "final_judge_delta_source": "judge",
+  "lesson_utility": {
+    "utility": 0.7,
+    "n_lessons": 1,
+    "lessons_consulted": [
+      "Precisou de 2 iterações (re-execução)"
+    ],
+    "signal": "computed"
+  }
+}
