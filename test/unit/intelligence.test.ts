@@ -1,41 +1,12 @@
 import { describe, it, expect } from 'vitest';
+import {
+  normalizeCnpj,
+  containsCnpj,
+  filterResultsByCnpj,
+} from '../../lib/core/intelligence.js';
+import type { SearchResult } from '../../lib/core/search-providers.js';
 
-/**
- * Test the CNPJ filtering logic
- * This is a white-box test of the internal containsCnpj function
- */
-
-// Replicate the functions from intelligence.ts for testing
-function normalizeCnpj(cnpj: string): string {
-  return cnpj.replace(/\D/g, '');
-}
-
-function containsCnpj(text: string, cnpj: string): boolean {
-  const normalizedCnpj = normalizeCnpj(cnpj);
-
-  // Build formatted CNPJ pattern: 12.345.678/0001-90
-  const formatted = normalizedCnpj.replace(
-    /^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/,
-    '$1.$2.$3/$4-$5'
-  );
-
-  // Escape special regex characters in formatted version
-  const escapedFormatted = formatted.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-
-  // Create patterns with word boundaries
-  // \b doesn't work well with non-word chars, so use lookahead/lookbehind
-  const patterns = [
-    // Unformatted: 12345678000190 (with word boundaries)
-    new RegExp(`(?<!\\d)${normalizedCnpj}(?!\\d)`, 'i'),
-    // Formatted: 12.345.678/0001-90
-    new RegExp(escapedFormatted, 'i')
-  ];
-
-  // Check if any pattern matches
-  return patterns.some(pattern => pattern.test(text));
-}
-
-describe('Intelligence - CNPJ Filtering', () => {
+describe('Intelligence - CNPJ Filtering (lib/core/intelligence)', () => {
   const testCnpj = '12345678000190';
   const formattedCnpj = '12.345.678/0001-90';
 
@@ -118,7 +89,6 @@ describe('Intelligence - CNPJ Filtering', () => {
     });
 
     it('should NOT match CNPJ with different formatting style', () => {
-      // This is a tricky case - wrong separator characters
       const text = 'Wrong format: 12-345-678-0001-90';
       expect(containsCnpj(text, testCnpj)).toBe(false);
     });
@@ -152,8 +122,7 @@ describe('Intelligence - CNPJ Filtering', () => {
 
     it('should normalize input CNPJ before matching', () => {
       const text = 'CNPJ 12345678000190';
-      const inputWithFormatting = '12.345.678/0001-90';
-      expect(containsCnpj(text, inputWithFormatting)).toBe(true);
+      expect(containsCnpj(text, formattedCnpj)).toBe(true);
     });
   });
 
@@ -172,6 +141,41 @@ describe('Intelligence - CNPJ Filtering', () => {
 
     it('should handle empty string', () => {
       expect(normalizeCnpj('')).toBe('');
+    });
+  });
+
+  describe('filterResultsByCnpj', () => {
+    it('filters search results by title, URL, or snippet containing target CNPJ', () => {
+      const results: SearchResult[] = [
+        {
+          title: 'Ficha 12.345.678/0001-90',
+          url: 'https://example.com/a',
+          snippet: 'Empresa cadastrada',
+        },
+        {
+          title: 'Processo',
+          url: 'https://example.com/empresa/12345678000190',
+          snippet: 'Diario oficial',
+        },
+        {
+          title: 'Edital',
+          url: 'https://example.com/b',
+          snippet: 'Contrato CNPJ: 12345678000190 homologado',
+        },
+        {
+          title: 'Outra empresa',
+          url: 'https://example.com/c',
+          snippet: 'CNPJ: 98.765.432/0001-00 e numero 123456780001909',
+        },
+      ];
+
+      const filtered = filterResultsByCnpj(results, formattedCnpj);
+      expect(filtered).toHaveLength(3);
+      expect(filtered.map((r) => r.url)).toEqual([
+        'https://example.com/a',
+        'https://example.com/empresa/12345678000190',
+        'https://example.com/b',
+      ]);
     });
   });
 

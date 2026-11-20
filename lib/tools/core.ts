@@ -14,19 +14,47 @@ import {
 } from "../core/tool-schemas.js";
 import { Cache, LookupResult, ApiConfig } from "../types/index.js";
 import { SEARCH_TOOL, executeSearch } from "../core/search.js";
+import { TIMEOUTS } from "../config/timeouts.js";
 
 // ─── Shared lookup with caching and deduplication ───────────────────────────
 
-interface PendingRequest { promise: Promise<LookupResult>; timestamp: number; timeoutId: NodeJS.Timeout; }
+interface PendingRequest {
+    promise: Promise<LookupResult>;
+    timestamp: number;
+    timeoutId: ReturnType<typeof setTimeout>;
+}
 const pendingRequests = new Map<string, PendingRequest>();
 
-async function deduplicate<T>(key: string, fn: () => Promise<T>): Promise<T> {
+export function getPendingRequestCount(): number {
+    return pendingRequests.size;
+}
+
+export async function deduplicate<T>(key: string, fn: () => Promise<T>): Promise<T> {
+    const timeoutMs = TIMEOUTS.DEDUP_TIMEOUT_MS;
     const existing = pendingRequests.get(key);
-    if (existing && Date.now() - existing.timestamp < 30000) return existing.promise as Promise<T>;
+    if (existing && Date.now() - existing.timestamp < timeoutMs) {
+        return existing.promise as Promise<T>;
+    }
     const promise = fn();
-    const timeoutId = setTimeout(() => pendingRequests.delete(key), 30000);
-    pendingRequests.set(key, { promise: promise as Promise<LookupResult>, timestamp: Date.now(), timeoutId });
-    try { return await promise; } finally { clearTimeout(timeoutId); pendingRequests.delete(key); }
+    const timeoutId = setTimeout(() => {
+        if (pendingRequests.get(key)?.promise === promise) {
+            pendingRequests.delete(key);
+        }
+    }, timeoutMs);
+    (timeoutId as { unref?: () => void }).unref?.();
+    pendingRequests.set(key, {
+        promise: promise as Promise<LookupResult>,
+        timestamp: Date.now(),
+        timeoutId,
+    });
+    try {
+        return await promise;
+    } finally {
+        clearTimeout(timeoutId);
+        if (pendingRequests.get(key)?.promise === promise) {
+            pendingRequests.delete(key);
+        }
+    }
 }
 
 async function lookup(type: "cnpj" | "cep", input: string, apiConfig: ApiConfig, cache?: Cache): Promise<LookupResult> {

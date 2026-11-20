@@ -196,5 +196,14 @@
     "tree": "3280847500b5728ff68e8bdba0b3cc36f24e5f34",
     "updated_at": "2026-11-20T19:25:16Z",
     "updated_by": "criteria-check"
+  },
+  "TCK-0028": {
+    "content_digest": "sha256:bbc27ff0cdb509294df5caba36e30c6b1c9e38d0d8783f2eccdc1e5f86fd19d0",
+    "criteria_digest": "sha256:8b2705b0ac121133444aeec350a8d26a63491c8fe771d0111701bc78e4ea2dee",
+    "head": "e2d76c0b6379eb9abce2713433da272a32f74588",
+    "passes": true,
+    "tree": "513031d0c0ea4f289cb6c88c62349734e83e1ee5",
+    "updated_at": "2026-11-20T19:37:50Z",
+    "updated_by": "criteria-check"
   }
 }

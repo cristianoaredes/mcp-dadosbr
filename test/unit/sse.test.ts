@@ -1,345 +1,249 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { TIMEOUTS } from '../../lib/config/timeouts.js';
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { TIMEOUTS } from "../../lib/config/timeouts.js";
+import { handleSSEEndpoint } from "../../lib/workers/sse.js";
+import { createCliHttpApp, type CliHttpContext } from "../../lib/adapters/cli-http.js";
+import { MemoryCache } from "../../lib/core/cache.js";
+import { resolveApiConfig } from "../../lib/config/index.js";
 
-/**
- * SSE Connection Management Tests
- * Tests for robustness improvements inspired by mcp-camara
- */
+describe("SSE Connection Management (lib/workers/sse & lib/adapters/cli-http)", () => {
+  const originalEnv = { ...process.env };
+  const activeContexts: CliHttpContext[] = [];
 
-describe('SSE Connection Management', () => {
-  describe('TIMEOUTS Configuration', () => {
-    it('should have reasonable SSE connection timeout', () => {
+  describe("TIMEOUTS Configuration", () => {
+    it("should have reasonable SSE connection timeout", () => {
       const timeout = TIMEOUTS.SSE_CONNECTION_MS;
 
-      // Should be 50 seconds or less (Workers CPU limit)
       expect(timeout).toBeLessThanOrEqual(50000);
       expect(timeout).toBeGreaterThan(0);
     });
 
-    it('should have reasonable ping interval', () => {
+    it("should have reasonable ping interval", () => {
       const interval = TIMEOUTS.PING_INTERVAL_MS;
 
-      // Should be 30 seconds (standard heartbeat)
       expect(interval).toBe(30000);
       expect(interval).toBeGreaterThan(0);
-
-      // Ping interval should be less than connection timeout
       expect(interval).toBeLessThan(TIMEOUTS.SSE_CONNECTION_MS);
     });
 
-    it('should allow at least 1 ping before timeout', () => {
+    it("should allow at least 1 ping before timeout", () => {
       const pingsBeforeTimeout = Math.floor(
-        TIMEOUTS.SSE_CONNECTION_MS / TIMEOUTS.PING_INTERVAL_MS
+        TIMEOUTS.SSE_CONNECTION_MS / TIMEOUTS.PING_INTERVAL_MS,
       );
 
-      // Should allow at least 1 ping
       expect(pingsBeforeTimeout).toBeGreaterThanOrEqual(1);
     });
   });
 
-  describe('Connection Lifecycle Simulation', () => {
+  describe("Worker SSE Connection Lifecycle (real handleSSEEndpoint)", () => {
     beforeEach(() => {
       vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-11-20T18:00:00.000Z"));
     });
 
     afterEach(() => {
+      while (activeContexts.length > 0) {
+        activeContexts.pop()!.closeAll();
+      }
       vi.restoreAllMocks();
+      vi.useRealTimers();
+      process.env = { ...originalEnv };
     });
 
-    it('should send periodic pings', async () => {
-      const pingSpy = vi.fn();
+    it("rejects incompatible Accept header with 400", async () => {
+      const res = await handleSSEEndpoint(
+        new Request("https://worker.example/sse", {
+          method: "GET",
+          headers: { Accept: "application/json" },
+        }),
+        {},
+      );
 
-      // Simulate heartbeat mechanism
-      const pingInterval = setInterval(() => {
-        pingSpy({
-          type: 'ping',
-          timestamp: new Date().toISOString()
-        });
-      }, TIMEOUTS.PING_INTERVAL_MS);
-
-      // Advance time by 90 seconds (should trigger 3 pings at 30s interval)
-      vi.advanceTimersByTime(90000);
-
-      expect(pingSpy).toHaveBeenCalledTimes(3);
-
-      clearInterval(pingInterval);
+      expect(res.status).toBe(400);
+      expect(await res.text()).toContain("text/event-stream");
     });
 
-    it('should timeout connection after configured period', async () => {
-      const closeSpy = vi.fn();
+    it("sends initial connection/init events, emits periodic pings, and closes at SSE_CONNECTION_MS", async () => {
+      const decoder = new TextDecoder();
+      const waitUntilPromises: Array<Promise<unknown>> = [];
+      const ctx = {
+        waitUntil: vi.fn((p: Promise<unknown>) => waitUntilPromises.push(p)),
+        passThroughOnException: vi.fn(),
+      } as unknown as ExecutionContext;
 
-      // Simulate timeout mechanism
-      const timeoutHandle = setTimeout(() => {
-        closeSpy();
-      }, TIMEOUTS.SSE_CONNECTION_MS);
+      const res = await handleSSEEndpoint(
+        new Request("https://worker.example/sse", {
+          method: "GET",
+          headers: { Accept: "text/event-stream" },
+        }),
+        {},
+        ctx,
+      );
 
-      // Advance time to just before timeout
-      vi.advanceTimersByTime(TIMEOUTS.SSE_CONNECTION_MS - 1000);
-      expect(closeSpy).not.toHaveBeenCalled();
+      expect(res.status).toBe(200);
+      const reader = res.body!.getReader();
 
-      // Advance to timeout
-      vi.advanceTimersByTime(1000);
-      expect(closeSpy).toHaveBeenCalledTimes(1);
+      const first = await reader.read();
+      const second = await reader.read();
+      expect(decoder.decode(first.value)).toContain("event: connection");
+      expect(decoder.decode(second.value)).toContain('"id":"init"');
 
-      clearTimeout(timeoutHandle);
+      // Advance to first PING_INTERVAL_MS (30s) -> heartbeat emitted
+      await vi.advanceTimersByTimeAsync(TIMEOUTS.PING_INTERVAL_MS);
+      const pingChunk = await reader.read();
+      expect(decoder.decode(pingChunk.value)).toContain("event: ping");
+
+      // Advance remaining time up to SSE_CONNECTION_MS (50s) -> closed cleanly
+      await vi.advanceTimersByTimeAsync(
+        TIMEOUTS.SSE_CONNECTION_MS - TIMEOUTS.PING_INTERVAL_MS,
+      );
+      const eof = await reader.read();
+      expect(eof.done).toBe(true);
+      await waitUntilPromises[0];
+      expect(vi.getTimerCount()).toBe(0);
     });
 
-    it('should clean up resources on shutdown', () => {
-      const cleanupSpy = vi.fn();
-      let pingInterval: NodeJS.Timeout | undefined;
-      let timeoutHandle: NodeJS.Timeout | undefined;
+    it("cleans up all resources on AbortController abort and consumer cancel", async () => {
+      const ac = new AbortController();
+      const waitUntilAbort: Array<Promise<unknown>> = [];
+      const ctxAbort = {
+        waitUntil: vi.fn((p: Promise<unknown>) => waitUntilAbort.push(p)),
+        passThroughOnException: vi.fn(),
+      } as unknown as ExecutionContext;
 
-      // Simulate SSE connection lifecycle
-      const initConnection = () => {
-        pingInterval = setInterval(() => {
-          // ping logic
-        }, TIMEOUTS.PING_INTERVAL_MS);
+      const res1 = await handleSSEEndpoint(
+        new Request("https://worker.example/sse", {
+          method: "GET",
+          headers: { Accept: "text/event-stream" },
+          signal: ac.signal,
+        }),
+        {},
+        ctxAbort,
+      );
+      const reader1 = res1.body!.getReader();
+      await reader1.read();
+      ac.abort();
+      await waitUntilAbort[0];
+      expect(vi.getTimerCount()).toBe(0);
+      await expect(reader1.read()).rejects.toThrow("SSE client disconnected");
 
-        timeoutHandle = setTimeout(() => {
-          // timeout logic
-        }, TIMEOUTS.SSE_CONNECTION_MS);
-      };
+      const waitUntilCancel: Array<Promise<unknown>> = [];
+      const ctxCancel = {
+        waitUntil: vi.fn((p: Promise<unknown>) => waitUntilCancel.push(p)),
+        passThroughOnException: vi.fn(),
+      } as unknown as ExecutionContext;
 
-      const cleanup = () => {
-        if (pingInterval) clearInterval(pingInterval);
-        if (timeoutHandle) clearTimeout(timeoutHandle);
-        cleanupSpy();
-      };
+      const res2 = await handleSSEEndpoint(
+        new Request("https://worker.example/sse", {
+          method: "GET",
+          headers: { Accept: "text/event-stream" },
+        }),
+        {},
+        ctxCancel,
+      );
+      const reader2 = res2.body!.getReader();
+      await reader2.cancel("client disconnect");
+      await waitUntilCancel[0];
+      expect(vi.getTimerCount()).toBe(0);
+    });
 
-      // Initialize connection
-      initConnection();
-      expect(pingInterval).toBeDefined();
-      expect(timeoutHandle).toBeDefined();
+    it("handles malformed JSON on POST /sse with -32700 error event", async () => {
+      const res = await handleSSEEndpoint(
+        new Request("https://worker.example/sse", {
+          method: "POST",
+          headers: {
+            Accept: "text/event-stream",
+            "Content-Type": "application/json",
+          },
+          body: "{broken-json",
+        }),
+        {},
+      );
+      const reader = res.body!.getReader();
+      const decoder = new TextDecoder();
+      await vi.advanceTimersByTimeAsync(0);
 
-      // Cleanup
-      cleanup();
-      expect(cleanupSpy).toHaveBeenCalledTimes(1);
+      let output = "";
+      for (let i = 0; i < 3; i++) {
+        const chunk = await reader.read();
+        if (chunk.value) output += decoder.decode(chunk.value);
+      }
 
-      // Verify intervals/timeouts are cleared (they won't fire)
-      const pingCount = vi.fn();
-      pingInterval = setInterval(pingCount, TIMEOUTS.PING_INTERVAL_MS);
-      clearInterval(pingInterval);
-
-      vi.advanceTimersByTime(TIMEOUTS.PING_INTERVAL_MS * 2);
-      expect(pingCount).not.toHaveBeenCalled();
+      expect(output).toContain("event: error");
+      expect(output).toContain("-32700");
+      await reader.cancel();
     });
   });
 
-  describe('Session Tracking', () => {
-    interface TransportSession {
-      createdAt: Date;
-      lastActivity: Date;
-    }
-
-    it('should track session creation time', () => {
-      const now = new Date();
-      const session: TransportSession = {
-        createdAt: now,
-        lastActivity: now
-      };
-
-      expect(session.createdAt).toEqual(now);
-      expect(session.lastActivity).toEqual(now);
-    });
-
-    it('should update last activity on message', () => {
-      const createdAt = new Date('2025-01-01T00:00:00Z');
-      const session: TransportSession = {
-        createdAt,
-        lastActivity: createdAt
-      };
-
-      // Simulate message received 30 seconds later
-      const messageTime = new Date('2025-01-01T00:00:30Z');
-      session.lastActivity = messageTime;
-
-      expect(session.lastActivity).toEqual(messageTime);
-      expect(session.lastActivity.getTime()).toBeGreaterThan(session.createdAt.getTime());
-    });
-
-    it('should identify stale sessions', () => {
-      vi.useFakeTimers();
-      const createdAt = new Date();
-
-      const session: TransportSession = {
-        createdAt,
-        lastActivity: createdAt
-      };
-
-      // Advance time beyond timeout
-      vi.advanceTimersByTime(TIMEOUTS.SSE_CONNECTION_MS + 1000);
-      const now = new Date();
-
-      const age = now.getTime() - session.lastActivity.getTime();
-      const isStale = age > TIMEOUTS.SSE_CONNECTION_MS;
-
-      expect(isStale).toBe(true);
-      expect(age).toBeGreaterThan(TIMEOUTS.SSE_CONNECTION_MS);
-
-      vi.restoreAllMocks();
-    });
-
-    it('should keep active sessions alive', () => {
-      vi.useFakeTimers();
-      const createdAt = new Date();
-
-      const session: TransportSession = {
-        createdAt,
-        lastActivity: createdAt
-      };
-
-      // Advance time by half the timeout
-      vi.advanceTimersByTime(TIMEOUTS.SSE_CONNECTION_MS / 2);
-
-      // Update activity (simulate message)
-      session.lastActivity = new Date();
-
-      // Advance time by another half timeout
-      vi.advanceTimersByTime(TIMEOUTS.SSE_CONNECTION_MS / 2);
-      const now = new Date();
-
-      const age = now.getTime() - session.lastActivity.getTime();
-      const isStale = age > TIMEOUTS.SSE_CONNECTION_MS;
-
-      // Should NOT be stale because we updated lastActivity halfway
-      expect(isStale).toBe(false);
-      expect(age).toBeLessThan(TIMEOUTS.SSE_CONNECTION_MS);
-
-      vi.restoreAllMocks();
-    });
-  });
-
-  describe('Connection Monitoring', () => {
+  describe("CLI Session Tracking & Connection Monitoring (real createCliHttpApp)", () => {
     beforeEach(() => {
       vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-11-20T18:00:00.000Z"));
     });
 
     afterEach(() => {
-      vi.restoreAllMocks();
-    });
-
-    it('should periodically check for stale connections', () => {
-      const monitorSpy = vi.fn();
-
-      // Simulate connection monitoring interval
-      const monitor = setInterval(() => {
-        monitorSpy();
-      }, TIMEOUTS.PING_INTERVAL_MS);
-
-      // Advance time by 2 monitoring cycles
-      vi.advanceTimersByTime(TIMEOUTS.PING_INTERVAL_MS * 2);
-
-      expect(monitorSpy).toHaveBeenCalledTimes(2);
-
-      clearInterval(monitor);
-    });
-
-    it('should clean up stale sessions during monitoring', () => {
-      vi.useFakeTimers();
-
-      interface Session {
-        id: string;
-        lastActivity: Date;
+      while (activeContexts.length > 0) {
+        activeContexts.pop()!.closeAll();
       }
-
-      const sessions: Record<string, Session> = {
-        active1: { id: 'active1', lastActivity: new Date() },
-        stale1: { id: 'stale1', lastActivity: new Date(Date.now() - TIMEOUTS.SSE_CONNECTION_MS - 5000) }
-      };
-
-      const removedSessions: string[] = [];
-
-      // Simulate monitoring logic
-      const monitor = () => {
-        const now = new Date();
-        for (const [sessionId, session] of Object.entries(sessions)) {
-          const age = now.getTime() - session.lastActivity.getTime();
-          if (age > TIMEOUTS.SSE_CONNECTION_MS) {
-            delete sessions[sessionId];
-            removedSessions.push(sessionId);
-          }
-        }
-      };
-
-      // Run monitor
-      monitor();
-
-      // Should have removed stale session only
-      expect(removedSessions).toContain('stale1');
-      expect(removedSessions).not.toContain('active1');
-      expect(sessions).toHaveProperty('active1');
-      expect(sessions).not.toHaveProperty('stale1');
-
       vi.restoreAllMocks();
+      vi.useRealTimers();
+      process.env = { ...originalEnv };
+    });
+
+    it("evicts only stale SSE sessions during periodic connectionMonitor ticks while keeping active ones", async () => {
+      const ctx = createCliHttpApp({
+        apiConfig: resolveApiConfig(),
+        cache: new MemoryCache(10, 60_000),
+        host: "127.0.0.1",
+      });
+      activeContexts.push(ctx);
+
+      const activeClose = vi.fn();
+      const staleClose = vi.fn();
+
+      ctx.transports.set("active-1", {
+        transport: { close: activeClose } as never,
+        createdAt: new Date(Date.now() - TIMEOUTS.SSE_CONNECTION_MS / 2),
+        lastActivity: new Date(Date.now() - TIMEOUTS.SSE_CONNECTION_MS / 2),
+      });
+      ctx.transports.set("stale-1", {
+        transport: { close: staleClose } as never,
+        createdAt: new Date(Date.now() - TIMEOUTS.SSE_CONNECTION_MS - 5000),
+        lastActivity: new Date(Date.now() - TIMEOUTS.SSE_CONNECTION_MS - 5000),
+      });
+
+      // Keep active-1 fresh halfway through the monitoring window
+      await vi.advanceTimersByTimeAsync(TIMEOUTS.PING_INTERVAL_MS / 2);
+      ctx.transports.get("active-1")!.lastActivity = new Date();
+
+      await vi.advanceTimersByTimeAsync(TIMEOUTS.PING_INTERVAL_MS / 2);
+
+      expect(staleClose).toHaveBeenCalledTimes(1);
+      expect(activeClose).not.toHaveBeenCalled();
+      expect(ctx.transports.has("stale-1")).toBe(false);
+      expect(ctx.transports.has("active-1")).toBe(true);
+
+      // Closing everything clears active transports and stops monitor/rateLimiter timers
+      ctx.closeAll();
+      expect(activeClose).toHaveBeenCalledTimes(1);
+      expect(ctx.transports.size).toBe(0);
     });
   });
 
-  describe('Error Handling', () => {
-    it('should handle ping errors gracefully', async () => {
-      const errorSpy = vi.fn();
-
-      const sendPing = async () => {
-        throw new Error('Network error');
-      };
-
-      // Simulate error handling directly (without setInterval timing issues)
-      try {
-        await sendPing();
-      } catch (error) {
-        errorSpy(error);
-      }
-
-      expect(errorSpy).toHaveBeenCalled();
-      expect(errorSpy).toHaveBeenCalledWith(
-        expect.objectContaining({
-          message: 'Network error'
-        })
-      );
-    });
-
-    it('should handle write errors in SSE stream', async () => {
-      const errorSpy = vi.fn();
-
-      const sendSSEMessage = async (data: unknown) => {
-        try {
-          // Simulate write error
-          throw new Error('Stream closed');
-        } catch (error) {
-          errorSpy(error);
-        }
-      };
-
-      await sendSSEMessage({ type: 'test' });
-
-      expect(errorSpy).toHaveBeenCalled();
-      expect(errorSpy).toHaveBeenCalledWith(
-        expect.objectContaining({
-          message: 'Stream closed'
-        })
-      );
-    });
-  });
-
-  describe('Integration with Workers CPU Limit', () => {
-    it('should respect Workers 50 second CPU limit', () => {
+  describe("Integration with Workers CPU Limit", () => {
+    it("should respect Workers 50 second CPU limit", () => {
       const timeout = TIMEOUTS.SSE_CONNECTION_MS;
 
-      // Workers have ~50 second CPU time limit
-      // SSE timeout should be at or below this limit
       expect(timeout).toBeLessThanOrEqual(50000);
     });
 
-    it('should allow multiple pings within timeout window', () => {
+    it("should allow multiple pings within timeout window", () => {
       const timeout = TIMEOUTS.SSE_CONNECTION_MS;
       const pingInterval = TIMEOUTS.PING_INTERVAL_MS;
 
       const possiblePings = Math.floor(timeout / pingInterval);
 
-      // Should allow at least 1 ping within timeout window
       expect(possiblePings).toBeGreaterThanOrEqual(1);
 
-      // With 50s timeout and 30s ping, should allow 1 ping
-      // (50000 / 30000 = 1.66 → floor = 1)
       if (timeout === 50000 && pingInterval === 30000) {
         expect(possiblePings).toBe(1);
       }

@@ -18,7 +18,7 @@ import { maskCnpj, maskSensitiveText, summarizeQueryForLog } from '../shared/log
  * @param limit - Maximum number of concurrent tasks (default: 3)
  * @returns Array of settled results
  */
-async function executeWithConcurrencyLimit<T>(
+export async function executeWithConcurrencyLimit<T>(
   tasks: (() => Promise<T>)[],
   limit: number = 3,
   signal?: AbortSignal
@@ -92,7 +92,7 @@ export interface SearchResultWithMeta extends SearchResult {
 /**
  * Normalize CNPJ to digits only for comparison
  */
-function normalizeCnpj(cnpj: string): string {
+export function normalizeCnpj(cnpj: string): string {
   return cnpj.replace(/\D/g, '');
 }
 
@@ -140,7 +140,7 @@ function getCnpjPatterns(cnpj: string): RegExp[] {
  * Check if a text contains the CNPJ (with or without formatting)
  * Uses word boundaries to avoid false positives
  */
-function containsCnpj(text: string, cnpj: string): boolean {
+export function containsCnpj(text: string, cnpj: string): boolean {
   const patterns = getCnpjPatterns(cnpj);
   return patterns.some(pattern => pattern.test(text));
 }
@@ -148,7 +148,7 @@ function containsCnpj(text: string, cnpj: string): boolean {
 /**
  * Filter search results to only include those that mention the CNPJ
  */
-function filterResultsByCnpj(results: SearchResult[], cnpj: string): SearchResult[] {
+export function filterResultsByCnpj(results: SearchResult[], cnpj: string): SearchResult[] {
   return results.filter(result => {
     // Check title, URL, and snippet for CNPJ
     const searchText = `${result.title} ${result.url} ${result.snippet}`.toLowerCase();
