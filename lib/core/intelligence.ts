@@ -20,12 +20,17 @@ import { maskCnpj, maskSensitiveText, summarizeQueryForLog } from '../shared/log
  */
 async function executeWithConcurrencyLimit<T>(
   tasks: (() => Promise<T>)[],
-  limit: number = 3
+  limit: number = 3,
+  signal?: AbortSignal
 ): Promise<PromiseSettledResult<T>[]> {
   const results: PromiseSettledResult<T>[] = new Array(tasks.length);
   const executing: Set<Promise<void>> = new Set();
 
   for (let i = 0; i < tasks.length; i++) {
+    if (signal?.aborted) {
+      break;
+    }
+
     const task = tasks[i];
 
     // Create a promise that stores result and removes itself when done
@@ -48,10 +53,16 @@ async function executeWithConcurrencyLimit<T>(
     if (executing.size >= limit) {
       await Promise.race(executing);
     }
+
+    if (signal?.aborted) {
+      break;
+    }
   }
 
-  // Wait for all remaining promises
-  await Promise.all(executing);
+  // Wait for remaining tasks unless aborted by parent deadline
+  if (!signal?.aborted && executing.size > 0) {
+    await Promise.all(executing);
+  }
 
   return results;
 }
@@ -151,10 +162,14 @@ export async function executeIntelligence(
   cache?: Cache
 ): Promise<LookupResult> {
   const TOTAL_TIMEOUT_MS = TIMEOUTS.INTELLIGENCE_TOTAL_MS;
+  const controller = new AbortController();
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
 
-  // Create timeout promise
+  // Create timeout promise that aborts in-flight searches on expiration
   const timeoutPromise = new Promise<never>((_, reject) => {
-    setTimeout(() => {
+    timeoutId = setTimeout(() => {
+      timeoutId = undefined;
+      controller.abort();
       reject(new TimeoutError(
         'Intelligence search timed out',
         TOTAL_TIMEOUT_MS
@@ -162,17 +177,43 @@ export async function executeIntelligence(
     }, TOTAL_TIMEOUT_MS);
   });
 
-  // Create main execution promise
-  const executionPromise = executeIntelligenceInternal(options, apiConfig, cache);
+  // Create main execution promise linked to controller.signal
+  const executionPromise = executeIntelligenceInternal(
+    options,
+    apiConfig,
+    cache,
+    controller.signal
+  );
+  // Prevent unhandled rejection if execution rejects after timeout wins Promise.race
+  executionPromise.catch(() => {});
 
-  // Race between timeout and execution
-  return Promise.race([executionPromise, timeoutPromise]);
+  try {
+    return await Promise.race([executionPromise, timeoutPromise]);
+  } catch (error: unknown) {
+    if (error instanceof TimeoutError) {
+      const maskedCnpj = maskCnpj(options.cnpj);
+      console.error(
+        `[intelligence] [${maskedCnpj}] Timeout reached (limit: ${error.timeoutMs}ms)`
+      );
+      return {
+        ok: false,
+        error: `Intelligence search timed out after ${error.timeoutMs}ms. Try reducing max_queries or using a faster provider.`
+      };
+    }
+    throw error;
+  } finally {
+    if (timeoutId !== undefined) {
+      clearTimeout(timeoutId);
+      timeoutId = undefined;
+    }
+  }
 }
 
 async function executeIntelligenceInternal(
   options: IntelligenceOptions,
   apiConfig: ApiConfig,
-  cache?: Cache
+  cache: Cache | undefined,
+  signal: AbortSignal
 ): Promise<LookupResult> {
   const startTime = Date.now();
   const maskedCnpj = maskCnpj(options.cnpj);
@@ -209,6 +250,11 @@ async function executeIntelligenceInternal(
         companyData = cnpjResult.data as CNPJData;
       }
     }
+
+    if (signal.aborted) {
+      throw new TimeoutError('Intelligence search timed out', TIMEOUTS.INTELLIGENCE_TOTAL_MS);
+    }
+
     const company = companyData as { razao_social?: string };
     console.error(`[intelligence] [${maskedCnpj}] Company resolved (has_name=${Boolean(company.razao_social)})`);
 
@@ -221,6 +267,10 @@ async function executeIntelligenceInternal(
 
     // Step 3: Resolve provider (requires Tavily API key from server config)
     const provider: SearchProvider = await getAvailableProvider(options.provider);
+
+    if (signal.aborted) {
+      throw new TimeoutError('Intelligence search timed out', TIMEOUTS.INTELLIGENCE_TOTAL_MS);
+    }
 
     console.error(
       `[intelligence] [${maskedCnpj}] Using provider: ${provider.name}`
@@ -244,7 +294,8 @@ async function executeIntelligenceInternal(
     const maxResultsPerQuery = options.maxResultsPerQuery || SEARCH.DEFAULT_MAX_RESULTS;
 
     // Get concurrency limit from environment or use default
-    const concurrencyLimit = parseInt(process.env.MCP_INTELLIGENCE_CONCURRENCY || '3', 10);
+    const rawConcurrency = Number.parseInt(process.env.MCP_INTELLIGENCE_CONCURRENCY || '3', 10);
+    const concurrencyLimit = Number.isFinite(rawConcurrency) && rawConcurrency > 0 ? rawConcurrency : 3;
 
     console.error(
       `[intelligence] [${maskedCnpj}] Executing ${selectedDorks.length} queries ` +
@@ -254,11 +305,20 @@ async function executeIntelligenceInternal(
     // Create tasks for concurrent execution
     const searchTasks = selectedDorks.map(dork => {
       return async () => {
+        if (signal.aborted) {
+          return {
+            category: dork.category,
+            results: [],
+            success: false
+          };
+        }
+
         try {
           console.error(`[intelligence] [${dork.category}] Searching (${summarizeQueryForLog(dork.query)})`);
           const searchResult = await provider.search(
             dork.query,
-            maxResultsPerQuery
+            maxResultsPerQuery,
+            { signal }
           );
 
           if (searchResult.ok) {
@@ -302,13 +362,21 @@ async function executeIntelligenceInternal(
       };
     });
 
-    // Execute all searches with concurrency limit
-    const searchTaskResults = await executeWithConcurrencyLimit(searchTasks, concurrencyLimit);
+    // Execute all searches with concurrency limit and abort propagation
+    const searchTaskResults = await executeWithConcurrencyLimit(
+      searchTasks,
+      concurrencyLimit,
+      signal
+    );
+
+    if (signal.aborted) {
+      throw new TimeoutError('Intelligence search timed out', TIMEOUTS.INTELLIGENCE_TOTAL_MS);
+    }
 
     // Aggregate results
     let queriesExecuted = 0;
     for (const result of searchTaskResults) {
-      if (result.status === 'fulfilled') {
+      if (result && result.status === 'fulfilled') {
         const { category, results, success } = result.value;
         searchResults[category].push(...results);
         if (success) {

@@ -1,0 +1,30 @@
+{
+  "id": "RUN-20261120-174045-tck-0019",
+  "design": "DES-0018",
+  "ticket": "TCK-0019",
+  "started_at": "2026-11-20T17:40:45Z",
+  "started_by": "ops",
+  "environment": "dev",
+  "mode": "live",
+  "status": "completed",
+  "current_step": 5,
+  "total_steps": 5,
+  "ended_at": "2026-11-20T17:44:36Z",
+  "result": "14/14 novos testes (legal-timeouts-intelligence.test.ts), 85/85 (legal-timeouts + search + intelligence), 371/371 Vitest (23 arquivos), tsc + tsc.worker TYPECHECK_OK, build + build:worker BUILD_OK, npm run test:transport PASS (101 stdio calls + HTTP/SSE), criteria-check 3/3 pass",
+  "loop_iterations": 1,
+  "attempt_count": 0,
+  "lessons_consulted": [],
+  "loop_cost_usd": null,
+  "cost_source": "unknown",
+  "loop_strategy": "default",
+  "context_peak": 0,
+  "final_judge_delta": 31,
+  "warmup": false,
+  "final_judge_delta_source": "judge",
+  "lesson_utility": {
+    "utility": 0.0,
+    "n_lessons": 0,
+    "lessons_consulted": [],
+    "signal": "no-lessons"
+  }
+}
