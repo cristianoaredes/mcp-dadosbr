@@ -11,7 +11,7 @@ import {
     QueridoDiarioSchema,
     TransparenciaSchema,
 } from "../core/tool-schemas.js";
-import { LookupResult } from "../types/index.js";
+import { Cache, LookupResult } from "../types/index.js";
 import { PNCP_ORIGIN, pncpCnpj, pncpDate, positiveInteger } from "../shared/pncp.js";
 
 // ─── IBGE Localidades ───────────────────────────────────────────────────────
@@ -22,9 +22,41 @@ interface IBGEArgs {
     tipo: "estados" | "municipios" | "municipios_por_uf" | "regioes";
     uf?: string;
     id?: number;
+    nome?: string;
+    page?: number;
+    limit?: number;
 }
 
-async function executeIBGE(args: IBGEArgs): Promise<LookupResult> {
+interface CachedPayload {
+    data: unknown;
+    source: { url: string; fetchedAt: string };
+}
+
+function normalizeSearchText(value: string): string {
+    return value.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+}
+
+function filterIbgeItems(items: unknown[], id?: number, nome?: string): unknown[] {
+    let filtered = items;
+    if (id !== undefined) {
+        filtered = filtered.filter(
+            (item) => typeof item === "object" && item !== null && (item as { id?: unknown }).id === id
+        );
+    }
+    if (nome) {
+        const needle = normalizeSearchText(nome);
+        filtered = filtered.filter((item) => {
+            if (typeof item !== "object" || item === null) return false;
+            const entry = item as { nome?: unknown; sigla?: unknown };
+            const entryName = typeof entry.nome === "string" ? normalizeSearchText(entry.nome) : "";
+            const entrySigla = typeof entry.sigla === "string" ? normalizeSearchText(entry.sigla) : "";
+            return entryName.includes(needle) || entrySigla.includes(needle);
+        });
+    }
+    return filtered;
+}
+
+async function executeIBGE(args: IBGEArgs, cache?: Cache): Promise<LookupResult> {
     let url: string;
     switch (args.tipo) {
         case "estados": url = `${IBGE_BASE}/estados?orderBy=nome`; break;
@@ -35,13 +67,59 @@ async function executeIBGE(args: IBGEArgs): Promise<LookupResult> {
         case "regioes": url = `${IBGE_BASE}/regioes`; break;
         default: return { ok: false, error: `Unknown tipo: ${args.tipo}` };
     }
-    const result = await httpJson(url);
-    if (!result.ok) return { ok: false, error: result.error || "IBGE API error" };
-    return {
-        ok: true,
-        data: result.data,
-        source: { url, fetchedAt: new Date().toISOString() },
-    };
+
+    const cacheKey = `ibge:${url.toLowerCase()}`;
+    let rawData: unknown;
+    let source: { url: string; fetchedAt: string };
+
+    const cached = cache ? await cache.get<CachedPayload>(cacheKey) : null;
+    if (cached && typeof cached === "object" && "data" in cached && cached.source) {
+        rawData = cached.data;
+        source = cached.source;
+    } else {
+        const result = await httpJson(url);
+        if (!result.ok) return { ok: false, error: result.error || "IBGE API error" };
+        rawData = result.data;
+        source = { url, fetchedAt: new Date().toISOString() };
+        if (cache) await cache.set(cacheKey, { data: rawData, source });
+    }
+
+    if (!Array.isArray(rawData)) {
+        return { ok: true, data: rawData, source };
+    }
+
+    const filtered = filterIbgeItems(rawData, args.id, args.nome);
+    if (args.page !== undefined || args.limit !== undefined) {
+        const page = args.page ?? 1;
+        const limit = args.limit ?? 50;
+        const total = filtered.length;
+        const start = (page - 1) * limit;
+        const items = filtered.slice(start, start + limit);
+        return {
+            ok: true,
+            data: {
+                items,
+                pagination: {
+                    page,
+                    limit,
+                    total,
+                    total_pages: Math.ceil(total / limit),
+                    has_more: start + items.length < total,
+                },
+                ...(args.nome || args.id !== undefined
+                    ? {
+                        filter: {
+                            ...(args.nome ? { nome: args.nome } : {}),
+                            ...(args.id !== undefined ? { id: args.id } : {}),
+                        },
+                    }
+                    : {}),
+            },
+            source,
+        };
+    }
+
+    return { ok: true, data: filtered, source };
 }
 
 registerTool({
@@ -50,7 +128,7 @@ registerTool({
 
 Available queries:
 - estados: List all 27 Brazilian states
-- municipios: List all ~5,570 municipalities
+- municipios: List all ~5,570 municipalities (supports optional nome/id filtering and page/limit pagination)
 - municipios_por_uf: List municipalities by state (requires UF code)
 - regioes: List the 5 macro-regions
 
@@ -61,11 +139,14 @@ No API key required.`,
             tipo: { type: "string", enum: ["estados", "municipios", "municipios_por_uf", "regioes"], description: "Query type" },
             uf: { type: "string", description: "State code (required for municipios_por_uf, e.g. 'SP')" },
             id: { type: "number", description: "Specific entity ID (optional)" },
+            nome: { type: "string", description: "Optional case/accent-insensitive name or sigla filter" },
+            page: { type: "number", description: "Optional 1-indexed page number (defaults to 1 when limit is set)", minimum: 1, maximum: 10000 },
+            limit: { type: "number", description: "Optional page size (defaults to 50 when page is set)", minimum: 1, maximum: 1000 },
         },
         required: ["tipo"],
     },
     zodSchema: IbgeSchema,
-    execute: async (args) => executeIBGE(args as IBGEArgs),
+    execute: async (args, _apiConfig, cache) => executeIBGE(args as IBGEArgs, cache),
 });
 
 // ─── Transparência ──────────────────────────────────────────────────────────
@@ -80,7 +161,7 @@ interface TransparenciaArgs {
     pagina?: number;
 }
 
-async function executeTransparencia(args: TransparenciaArgs): Promise<LookupResult> {
+async function executeTransparencia(args: TransparenciaArgs, cache?: Cache): Promise<LookupResult> {
     const apiKey = process.env.TRANSPARENCIA_API_KEY;
     if (!apiKey) {
         return { ok: false, error: "TRANSPARENCIA_API_KEY not configured. Register at portaldatransparencia.gov.br/api-de-dados/cadastrar-email to get a free API key." };
@@ -112,8 +193,16 @@ async function executeTransparencia(args: TransparenciaArgs): Promise<LookupResu
         default:
             return { ok: false, error: `Unknown tipo: ${tipo}. Valid: contratos, licitacoes, convenios, servidores, sancoes` };
     }
+
+    const cacheKey = `transparencia:${url}`;
+    if (cache) {
+        const cached = await cache.get(cacheKey);
+        if (cached) return { ok: true, data: cached };
+    }
+
     const result = await httpJson(url, { "chave-api-dados": apiKey });
     if (!result.ok) return { ok: false, error: `Portal da Transparência API error: ${result.error}` };
+    if (cache) await cache.set(cacheKey, result.data);
     return { ok: true, data: result.data };
 }
 
@@ -135,7 +224,7 @@ Requires a free API key from portaldatransparencia.gov.br.`,
         required: ["cnpj", "tipo"],
     },
     zodSchema: TransparenciaSchema,
-    execute: async (args) => executeTransparencia(args as TransparenciaArgs),
+    execute: async (args, _apiConfig, cache) => executeTransparencia(args as TransparenciaArgs, cache),
 });
 
 // ─── CEIS / CNEP / CEPIM ────────────────────────────────────────────────────
@@ -148,7 +237,7 @@ type SanctionType = "ceis" | "cnep" | "cepim" | "all";
 
 interface CeisCnepArgs { query: string; tipo?: SanctionType; pagina?: number; }
 
-async function executeCeisCnep(args: CeisCnepArgs): Promise<LookupResult> {
+async function executeCeisCnep(args: CeisCnepArgs, cache?: Cache): Promise<LookupResult> {
     const apiKey = process.env.TRANSPARENCIA_API_KEY;
     if (!apiKey) {
         return {
@@ -167,6 +256,12 @@ async function executeCeisCnep(args: CeisCnepArgs): Promise<LookupResult> {
     const headers = { "chave-api-dados": apiKey };
     const tipo = args.tipo || "all";
     const pagina = args.pagina || 1;
+    const cacheKey = `ceis_cnep:${tipo}:${pagina}:${args.query.trim().toLowerCase()}`;
+    if (cache) {
+        const cached = await cache.get(cacheKey);
+        if (cached) return { ok: true, data: cached };
+    }
+
     const results: Record<string, unknown> = {};
     const errors: string[] = [];
 
@@ -187,17 +282,20 @@ async function executeCeisCnep(args: CeisCnepArgs): Promise<LookupResult> {
     if (tipo === "cepim" || tipo === "all") tasks.push(fetchSanctions(CEPIM_API_URL, "cepim"));
     await Promise.allSettled(tasks);
 
-    return {
-        ok: true, data: {
-            query: args.query, sanctions: results, databases_checked: Object.keys(results),
-            errors: errors.length > 0 ? errors : undefined,
-            legend: {
-                ceis: "Cadastro de Empresas Inidôneas e Suspensas — barred from public contracts",
-                cnep: "Cadastro Nacional de Empresas Punidas — punished under Anti-Corruption Law (Lei 12.846)",
-                cepim: "Cadastro de Entidades Sem Fins Lucrativos Impedidas — NGOs barred from federal agreements",
-            },
+    const payload = {
+        query: args.query, sanctions: results, databases_checked: Object.keys(results),
+        errors: errors.length > 0 ? errors : undefined,
+        legend: {
+            ceis: "Cadastro de Empresas Inidôneas e Suspensas — barred from public contracts",
+            cnep: "Cadastro Nacional de Empresas Punidas — punished under Anti-Corruption Law (Lei 12.846)",
+            cepim: "Cadastro de Entidades Sem Fins Lucrativos Impedidas — NGOs barred from federal agreements",
         },
     };
+    if (cache && errors.length === 0) {
+        await cache.set(cacheKey, payload);
+    }
+
+    return { ok: true, data: payload };
 }
 
 registerTool({
@@ -215,7 +313,7 @@ Requires TRANSPARENCIA_API_KEY — falls back to manual check URLs without it.`,
         required: ["query"],
     },
     zodSchema: CeisCnepSchema,
-    execute: async (args) => executeCeisCnep(args as CeisCnepArgs),
+    execute: async (args, _apiConfig, cache) => executeCeisCnep(args as CeisCnepArgs, cache),
 });
 
 // ─── PNCP ───────────────────────────────────────────────────────────────────
@@ -232,7 +330,7 @@ interface PncpArgs {
     pagina?: number;
 }
 
-async function executePncpPublication(args: PncpArgs): Promise<LookupResult> {
+async function executePncpPublication(args: PncpArgs, cache?: Cache): Promise<LookupResult> {
     const { query = "", modalidade_id, pagina = 1 } = args;
     if (query !== "") return { ok: false, error: "Use query vazia para consultar publicações por filtros." };
     const from = pncpDate(args.data_inicial);
@@ -255,26 +353,47 @@ async function executePncpPublication(args: PncpArgs): Promise<LookupResult> {
     });
     if (cnpj) params.set("cnpj", cnpj);
     const url = `${PNCP_PUBLICACOES}?${params}`;
+    const cacheKey = `pncp:pub:${url}`;
+    if (cache) {
+        const cached = await cache.get<CachedPayload>(cacheKey);
+        if (cached && typeof cached === "object" && "data" in cached && cached.source) {
+            return { ok: true, data: cached.data, source: cached.source };
+        }
+    }
+
     const emptyPage = { data: [], totalRegistros: 0, totalPaginas: 0, numeroPagina: pagina, paginasRestantes: 0, empty: true };
     const result = await httpJson(url, undefined, undefined, { noContent: emptyPage });
     if (!result.ok) return { ok: false, error: `Falha na consulta ao PNCP: ${result.error}` };
+    const payload = { query, results: result.data, source: PNCP_SOURCE, legal_basis: "Lei 14.133/2021" };
+    const source = { url, fetchedAt: new Date().toISOString() };
+    if (cache) await cache.set(cacheKey, { data: payload, source });
     return {
         ok: true,
-        data: { query, results: result.data, source: PNCP_SOURCE, legal_basis: "Lei 14.133/2021" },
-        source: { url, fetchedAt: new Date().toISOString() },
+        data: payload,
+        source,
     };
 }
 
-async function executePncp(args: PncpArgs): Promise<LookupResult> {
-    if (args.modalidade_id !== undefined) return executePncpPublication(args);
+async function executePncp(args: PncpArgs, cache?: Cache): Promise<LookupResult> {
+    if (args.modalidade_id !== undefined) return executePncpPublication(args, cache);
     const { query, cnpj_orgao, data_inicial, data_final, pagina = 1 } = args;
     const params = new URLSearchParams({ q: query, pagina: String(pagina), tamanhoPagina: "10" });
     if (cnpj_orgao) params.set("cnpjOrgao", cnpj_orgao);
     if (data_inicial) params.set("dataInicial", data_inicial);
     if (data_final) params.set("dataFinal", data_final);
+    const url = `${PNCP_PUBLICACOES}?${params.toString()}`;
+    const cacheKey = `pncp:legacy:${url}`;
     try {
-        const result = await httpJson(`${PNCP_PUBLICACOES}?${params.toString()}`);
-        if (result.ok) return { ok: true, data: { query, results: result.data, source: PNCP_SOURCE, legal_basis: "Lei 14.133/2021" } };
+        if (cache) {
+            const cached = await cache.get(cacheKey);
+            if (cached) return { ok: true, data: cached };
+        }
+        const result = await httpJson(url);
+        if (result.ok) {
+            const payload = { query, results: result.data, source: PNCP_SOURCE, legal_basis: "Lei 14.133/2021" };
+            if (cache) await cache.set(cacheKey, payload);
+            return { ok: true, data: payload };
+        }
         return { ok: true, data: { query, note: "PNCP API may be temporarily unavailable.", search_url: `https://pncp.gov.br/app/editais?q=${encodeURIComponent(query)}` } };
     } catch {
         return { ok: true, data: { query, note: "PNCP API connection failed.", search_url: `https://pncp.gov.br/app/editais?q=${encodeURIComponent(query)}` } };
@@ -299,7 +418,7 @@ For the legacy portal keyword search, provide query without modalidade_id. No AP
         required: ["query"],
     },
     zodSchema: PncpSchema,
-    execute: async (args) => executePncp(args as PncpArgs),
+    execute: async (args, _apiConfig, cache) => executePncp(args as PncpArgs, cache),
 });
 
 // ─── Querido Diário ─────────────────────────────────────────────────────────
@@ -308,21 +427,33 @@ const QUERIDO_DIARIO_API = "https://api.queridodiario.org.br";
 
 interface QueridoDiarioArgs { query: string; territory_id?: string; since?: string; until?: string; page?: number; size?: number; }
 
-async function executeQueridoDiario(args: QueridoDiarioArgs): Promise<LookupResult> {
+async function executeQueridoDiario(args: QueridoDiarioArgs, cache?: Cache): Promise<LookupResult> {
     const { query, territory_id, since, until, page = 0, size = 10 } = args;
     const params = new URLSearchParams({ querystring: query, offset: String(page * size), size: String(size) });
     if (territory_id) params.set("territory_ids", territory_id);
     if (since) params.set("published_since", since);
     if (until) params.set("published_until", until);
     if (!query?.trim()) params.set("sort_by", "descending_date");
+    const url = `${QUERIDO_DIARIO_API}/gazettes?${params.toString()}`;
+    const cacheKey = `querido_diario:${url}`;
     try {
-        const url = `${QUERIDO_DIARIO_API}/gazettes?${params.toString()}`;
+        if (cache) {
+            const cached = await cache.get<CachedPayload>(cacheKey);
+            if (cached && typeof cached === "object" && "data" in cached && cached.source) {
+                return { ok: true, data: cached.data, source: cached.source };
+            }
+        }
         const result = await httpJson(url);
-        if (result.ok) return {
-            ok: true,
-            data: { query, results: result.data, source: "Querido Diário — Open Knowledge Brasil", note: "Municipal official gazettes. Territory IDs follow IBGE codes." },
-            source: { url, fetchedAt: new Date().toISOString() },
-        };
+        if (result.ok) {
+            const payload = { query, results: result.data, source: "Querido Diário — Open Knowledge Brasil", note: "Municipal official gazettes. Territory IDs follow IBGE codes." };
+            const source = { url, fetchedAt: new Date().toISOString() };
+            if (cache) await cache.set(cacheKey, { data: payload, source });
+            return {
+                ok: true,
+                data: payload,
+                source,
+            };
+        }
         return { ok: false, error: result.error || "Querido Diário API request failed" };
     } catch (err) {
         return { ok: false, error: `Querido Diário error: ${err instanceof Error ? err.message : String(err)}` };
@@ -347,7 +478,7 @@ OSINT value: Find company mentions in government publications, contracts, sancti
         required: ["query"],
     },
     zodSchema: QueridoDiarioSchema,
-    execute: async (args) => executeQueridoDiario(args as QueridoDiarioArgs),
+    execute: async (args, _apiConfig, cache) => executeQueridoDiario(args as QueridoDiarioArgs, cache),
 });
 
 // Export execute functions needed by deep_profile orchestrator

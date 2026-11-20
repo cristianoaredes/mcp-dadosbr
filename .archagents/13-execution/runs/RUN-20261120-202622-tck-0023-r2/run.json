@@ -1,0 +1,34 @@
+{
+  "id": "RUN-20261120-202622-tck-0023-r2",
+  "design": "DES-0026",
+  "ticket": "TCK-0023",
+  "started_at": "2026-11-20T20:26:22Z",
+  "started_by": "ops",
+  "environment": "dev",
+  "mode": "live",
+  "status": "completed",
+  "current_step": 3,
+  "total_steps": 3,
+  "ended_at": "2026-11-20T20:32:00Z",
+  "result": "R2 async-abort fix verified: 27/27 targeted (3 files), 429/429 Vitest (29 files), V8 coverage 88.87/81.96/87.23/89.58 >= 80/75/80/80, tsc + tsc.worker + build + test:transport PASS, criteria-check 4/4",
+  "loop_iterations": 2,
+  "attempt_count": 0,
+  "lessons_consulted": [
+    "Precisou de 2 iterações (re-execução)"
+  ],
+  "loop_cost_usd": null,
+  "cost_source": "unknown",
+  "loop_strategy": "default",
+  "context_peak": 0,
+  "final_judge_delta": 30,
+  "warmup": false,
+  "final_judge_delta_source": "judge",
+  "lesson_utility": {
+    "utility": 0.5,
+    "n_lessons": 1,
+    "lessons_consulted": [
+      "Precisou de 2 iterações (re-execução)"
+    ],
+    "signal": "computed"
+  }
+}

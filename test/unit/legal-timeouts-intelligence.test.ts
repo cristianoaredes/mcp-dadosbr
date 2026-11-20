@@ -342,8 +342,9 @@ describe("FND-0007 / TCK-0019: Fetch timeouts, procurados fail-closed & intellig
       await vi.advanceTimersByTimeAsync(10000);
       const res = await pending;
 
-      // 4000ms + 4000ms + 2000ms = 10000ms -> 3 fetches attempted, remaining 10 skipped at deadline
-      expect(hangFetch).toHaveBeenCalledTimes(3);
+      // Concurrency=4 with 4000ms page timeout and 10000ms total deadline:
+      // 3 concurrent waves of 4 (t=0, t=4000, t=8000->10000) = 12 fetches attempted, 13th page skipped at deadline
+      expect(hangFetch).toHaveBeenCalledTimes(12);
       expect(res.ok).toBe(false);
       if (!res.ok) {
         expect(res.error).toContain("13/13 pages failed");

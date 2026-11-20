@@ -182,8 +182,17 @@ export function createMCPServer(options: MCPServerOptions): Server {
           if (profile) structuredContent = { profile };
         }
         if (result.source && Array.isArray(appMimeTypes) && appMimeTypes.includes(appMimeType)) {
-          if (name === "ibge_localidades" && Array.isArray(result.data)) {
-            structuredContent = { items: result.data, source: result.source };
+          if (name === "ibge_localidades") {
+            if (Array.isArray(result.data)) {
+              structuredContent = { items: result.data, source: result.source };
+            } else if (
+              result.data &&
+              typeof result.data === "object" &&
+              "items" in result.data &&
+              Array.isArray((result.data as { items?: unknown }).items)
+            ) {
+              structuredContent = { ...(result.data as Record<string, unknown>), source: result.source };
+            }
           }
           if ((name === "querido_diario" || name === "bacen_taxas" || name === "pncp_licitacoes")
             && result.data && typeof result.data === "object" && !Array.isArray(result.data)) {

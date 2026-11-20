@@ -38,3 +38,5 @@
 {"ts": "2026-11-20T19:54:44Z", "ticket": "TCK-0029", "verdict": "pass", "passed": 4, "total": 4}
 {"ts": "2026-11-20T20:01:33Z", "ticket": "TCK-0029", "verdict": "pass", "passed": 4, "total": 4}
 {"ts": "2026-11-20T20:06:08Z", "ticket": "TCK-0026", "verdict": "pass", "passed": 2, "total": 2}
+{"ts": "2026-11-20T20:17:07Z", "ticket": "TCK-0023", "verdict": "pass", "passed": 4, "total": 4}
+{"ts": "2026-11-20T20:31:18Z", "ticket": "TCK-0023", "verdict": "pass", "passed": 4, "total": 4}
