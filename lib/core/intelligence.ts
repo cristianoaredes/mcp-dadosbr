@@ -61,7 +61,6 @@ export interface IntelligenceOptions {
   provider?: ProviderType;
   maxResultsPerQuery?: number;
   maxQueries?: number;
-  apiKey?: string;
   cachedCompanyData?: CNPJData; // Reuse company data if already fetched
 }
 
@@ -414,14 +413,25 @@ Note: You must set TAVILY_API_KEY to enable web search queries.`,
         type: "array",
         items: {
           type: "string",
-          enum: ["government", "legal", "news", "documents", "social", "partners"]
+          enum: [
+            "government",
+            "legal",
+            "news",
+            "documents",
+            "social",
+            "partners",
+            "security",
+            "databases",
+            "infrastructure",
+            "social_media"
+          ]
         },
         description: "Search categories to include (default: all)"
       },
       provider: {
         type: "string",
-        enum: ["tavily"],
-        description: "Search provider to use (requires TAVILY_API_KEY)",
+        enum: ["tavily", "perplexity"],
+        description: "Search provider to use (server-configured API key required)",
         default: "tavily"
       },
       max_results_per_query: {
@@ -437,10 +447,6 @@ Note: You must set TAVILY_API_KEY to enable web search queries.`,
         minimum: 1,
         maximum: 20,
         default: 10
-      },
-      api_key: {
-        type: "string",
-        description: "Optional Tavily API key (if not provided, uses server configuration)"
       }
     },
     required: ["cnpj"]

@@ -1,0 +1,270 @@
+{
+  "schema_version": "1.0",
+  "server": "mcp-dadosbr",
+  "updated_at": "2026-11-20T16:50:30Z",
+  "mcp_servers": {
+    "allowed": [
+      {
+        "server": "mcp-dadosbr",
+        "rationale": "First-party read-only Brazilian public data & OSINT MCP server with Zod runtime input validation and host-allowlisted upstream connectors",
+        "approved_by": "audit-remediation",
+        "approved_at": "2026-11-20T16:50:30Z"
+      }
+    ]
+  },
+  "entries": [
+    {
+      "id": "MCP-TOOL-01",
+      "name": "cnpj_lookup",
+      "risk_level": "low",
+      "destructive": false,
+      "requires_approval": false,
+      "description": "Look up Brazilian company registration data by CNPJ.",
+      "rationale": "Read-only lookup validated by CnpjSchema against allowlisted HTTPS CNPJ hosts.",
+      "network_access": "allowlisted-https",
+      "api_key_env": null
+    },
+    {
+      "id": "MCP-TOOL-02",
+      "name": "cep_lookup",
+      "risk_level": "low",
+      "destructive": false,
+      "requires_approval": false,
+      "description": "Look up Brazilian postal address data by CEP.",
+      "rationale": "Read-only lookup validated by CepSchema against allowlisted HTTPS CEP hosts.",
+      "network_access": "allowlisted-https",
+      "api_key_env": null
+    },
+    {
+      "id": "MCP-TOOL-03",
+      "name": "cnpj_search",
+      "risk_level": "medium",
+      "destructive": false,
+      "requires_approval": false,
+      "description": "Web search for companies, CNPJs, and public mentions via configured provider.",
+      "rationale": "Read-only search using server-side provider API key only; query and max_results bounded (1..20).",
+      "network_access": "external-https",
+      "api_key_env": "TAVILY_API_KEY|PERPLEXITY_API_KEY"
+    },
+    {
+      "id": "MCP-TOOL-04",
+      "name": "cnpj_intelligence",
+      "risk_level": "medium",
+      "destructive": false,
+      "requires_approval": false,
+      "description": "Multi-dork OSINT research orchestrated around a validated CNPJ.",
+      "rationale": "Read-only search bounded to 10 queries/10 results per query; api_key input strictly rejected.",
+      "network_access": "external-https",
+      "api_key_env": "TAVILY_API_KEY|PERPLEXITY_API_KEY"
+    },
+    {
+      "id": "MCP-TOOL-05",
+      "name": "sequentialthinking",
+      "risk_level": "low",
+      "destructive": false,
+      "requires_approval": false,
+      "description": "Structured step-by-step reasoning processor.",
+      "rationale": "Pure in-memory computation with strict length and step-count bounds; no network access.",
+      "network_access": "none",
+      "api_key_env": null
+    },
+    {
+      "id": "MCP-TOOL-06",
+      "name": "ibge_localidades",
+      "risk_level": "low",
+      "destructive": false,
+      "requires_approval": false,
+      "description": "Query Brazilian states, municipalities, and regions from IBGE.",
+      "rationale": "Read-only public IBGE API validated by enum and required UF check.",
+      "network_access": "external-https",
+      "api_key_env": null
+    },
+    {
+      "id": "MCP-TOOL-07",
+      "name": "transparencia_lookup",
+      "risk_level": "medium",
+      "destructive": false,
+      "requires_approval": false,
+      "description": "Query Federal Government Transparency Portal (contracts, bids, grants, civil servants, sanctions).",
+      "rationale": "Read-only official API using server-side TRANSPARENCIA_API_KEY and bounded pagina (1..1000).",
+      "network_access": "external-https",
+      "api_key_env": "TRANSPARENCIA_API_KEY"
+    },
+    {
+      "id": "MCP-TOOL-08",
+      "name": "ceis_cnep_lookup",
+      "risk_level": "medium",
+      "destructive": false,
+      "requires_approval": false,
+      "description": "Search Federal sanctions databases (CEIS, CNEP, CEPIM).",
+      "rationale": "Read-only compliance screening with bounded pagina (1..1000) and server-side API key.",
+      "network_access": "external-https",
+      "api_key_env": "TRANSPARENCIA_API_KEY"
+    },
+    {
+      "id": "MCP-TOOL-09",
+      "name": "pncp_licitacoes",
+      "risk_level": "low",
+      "destructive": false,
+      "requires_approval": false,
+      "description": "Search Brazilian public procurement notices (PNCP).",
+      "rationale": "Read-only official procurement API with bounded pagina (1..1000) and modalidade_id (1..100).",
+      "network_access": "external-https",
+      "api_key_env": null
+    },
+    {
+      "id": "MCP-TOOL-10",
+      "name": "querido_diario",
+      "risk_level": "low",
+      "destructive": false,
+      "requires_approval": false,
+      "description": "Search Brazilian municipal official gazettes via Querido Diario.",
+      "rationale": "Read-only open-data API with date/territory validation and bounded page/size (1..100).",
+      "network_access": "external-https",
+      "api_key_env": null
+    },
+    {
+      "id": "MCP-TOOL-11",
+      "name": "datajud_processos",
+      "risk_level": "medium",
+      "destructive": false,
+      "requires_approval": false,
+      "description": "Search court proceedings via CNJ Datajud Public API.",
+      "rationale": "Read-only judicial API restricted to 17 allowlisted tribunals, tamanho (1..100), and server-side DATAJUD_API_KEY.",
+      "network_access": "external-https",
+      "api_key_env": "DATAJUD_API_KEY"
+    },
+    {
+      "id": "MCP-TOOL-12",
+      "name": "oab_advogado",
+      "risk_level": "low",
+      "destructive": false,
+      "requires_approval": false,
+      "description": "Search Brazilian Bar Association (OAB/CNA) lawyer registry.",
+      "rationale": "Read-only lookup requiring nome or inscricao and optional 2-letter UF.",
+      "network_access": "external-https",
+      "api_key_env": null
+    },
+    {
+      "id": "MCP-TOOL-13",
+      "name": "bnmp_mandados",
+      "risk_level": "medium",
+      "destructive": false,
+      "requires_approval": false,
+      "description": "Search CNJ National Arrest Warrant Database (BNMP).",
+      "rationale": "Read-only public judicial database search with bounded nome/orgaoJulgador inputs.",
+      "network_access": "external-https",
+      "api_key_env": null
+    },
+    {
+      "id": "MCP-TOOL-14",
+      "name": "procurados_lookup",
+      "risk_level": "low",
+      "destructive": false,
+      "requires_approval": false,
+      "description": "Search MJSP Projeto Captura federal wanted persons list.",
+      "rationale": "Read-only lookup on fixed gov.br endpoint with bounded nome string.",
+      "network_access": "external-https",
+      "api_key_env": null
+    },
+    {
+      "id": "MCP-TOOL-15",
+      "name": "lista_suja_lookup",
+      "risk_level": "low",
+      "destructive": false,
+      "requires_approval": false,
+      "description": "Check Brazil slave labor blacklist (Lista Suja / Portal da Transparencia).",
+      "rationale": "Read-only compliance check with URL-encoded bounded query.",
+      "network_access": "external-https",
+      "api_key_env": null
+    },
+    {
+      "id": "MCP-TOOL-16",
+      "name": "cpf_validate",
+      "risk_level": "low",
+      "destructive": false,
+      "requires_approval": false,
+      "description": "Validate Brazilian CPF checksum locally.",
+      "rationale": "Pure local computation with bounded input length; no network calls or upstream persistence.",
+      "network_access": "none",
+      "api_key_env": null
+    },
+    {
+      "id": "MCP-TOOL-17",
+      "name": "domain_whois",
+      "risk_level": "low",
+      "destructive": false,
+      "requires_approval": false,
+      "description": "Look up domain registration via Registro.br and IANA RDAP.",
+      "rationale": "Read-only RDAP query with bounded domain length and URI encoding.",
+      "network_access": "external-https",
+      "api_key_env": null
+    },
+    {
+      "id": "MCP-TOOL-18",
+      "name": "consumidor_reclamacoes",
+      "risk_level": "low",
+      "destructive": false,
+      "requires_approval": false,
+      "description": "Search consumer complaints via Consumidor.gov.br (SENACON).",
+      "rationale": "Read-only public consumer data lookup with bounded empresa query.",
+      "network_access": "external-https",
+      "api_key_env": null
+    },
+    {
+      "id": "MCP-TOOL-19",
+      "name": "company_deep_profile",
+      "risk_level": "medium",
+      "destructive": false,
+      "requires_approval": false,
+      "description": "Orchestrate multi-source read-only company OSINT profile from validated CNPJ.",
+      "rationale": "Read-only fan-out across validated sub-tools from checksum-verified CNPJ.",
+      "network_access": "external-https",
+      "api_key_env": "TRANSPARENCIA_API_KEY|DATAJUD_API_KEY|TAVILY_API_KEY|PERPLEXITY_API_KEY"
+    },
+    {
+      "id": "MCP-TOOL-20",
+      "name": "bacen_taxas",
+      "risk_level": "low",
+      "destructive": false,
+      "requires_approval": false,
+      "description": "Fetch Central Bank of Brazil (SGS) financial indicators and FX rates.",
+      "rationale": "Read-only official BCB API restricted to allowed indicator enum and bounded ultimos (1..1000).",
+      "network_access": "external-https",
+      "api_key_env": null
+    },
+    {
+      "id": "MCP-TOOL-21",
+      "name": "fipe_veiculos",
+      "risk_level": "low",
+      "destructive": false,
+      "requires_approval": false,
+      "description": "Look up Brazilian FIPE vehicle reference prices and brands via BrasilAPI.",
+      "rationale": "Read-only BrasilAPI lookup with strict vehicle-type enum and FIPE code regex.",
+      "network_access": "external-https",
+      "api_key_env": null
+    },
+    {
+      "id": "MCP-TOOL-22",
+      "name": "cnes_saude",
+      "risk_level": "low",
+      "destructive": false,
+      "requires_approval": false,
+      "description": "Search Brazilian National Healthcare Facility Registry (CNES - DataSUS).",
+      "rationale": "Read-only DataSUS lookup with enum tipo and bounded string parameters.",
+      "network_access": "external-https",
+      "api_key_env": null
+    },
+    {
+      "id": "MCP-TOOL-23",
+      "name": "strategic_osint_prompt",
+      "risk_level": "low",
+      "destructive": false,
+      "requires_approval": false,
+      "description": "Generate structured OSINT analysis prompt templates.",
+      "rationale": "Pure local template rendering restricted to fixed template enum and bounded strings.",
+      "network_access": "none",
+      "api_key_env": null
+    }
+  ]
+}

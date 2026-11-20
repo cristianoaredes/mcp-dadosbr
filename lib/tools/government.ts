@@ -4,6 +4,13 @@
 
 import { registerTool } from "../core/registry.js";
 import { httpJson } from "../core/http-client.js";
+import {
+    CeisCnepSchema,
+    IbgeSchema,
+    PncpSchema,
+    QueridoDiarioSchema,
+    TransparenciaSchema,
+} from "../core/tool-schemas.js";
 import { LookupResult } from "../types/index.js";
 import { PNCP_ORIGIN, pncpCnpj, pncpDate, positiveInteger } from "../shared/pncp.js";
 
@@ -57,6 +64,7 @@ No API key required.`,
         },
         required: ["tipo"],
     },
+    zodSchema: IbgeSchema,
     execute: async (args) => executeIBGE(args as IBGEArgs),
 });
 
@@ -122,10 +130,11 @@ Requires a free API key from portaldatransparencia.gov.br.`,
             tipo: { type: "string", enum: ["contratos", "licitacoes", "convenios", "servidores", "sancoes"], description: "Query type" },
             dataInicio: { type: "string", description: "Start date (DD/MM/YYYY, optional)" },
             dataFim: { type: "string", description: "End date (DD/MM/YYYY, optional)" },
-            pagina: { type: "number", description: "Page number (default: 1)", default: 1 },
+            pagina: { type: "number", description: "Page number (default: 1)", minimum: 1, maximum: 1000, default: 1 },
         },
         required: ["cnpj", "tipo"],
     },
+    zodSchema: TransparenciaSchema,
     execute: async (args) => executeTransparencia(args as TransparenciaArgs),
 });
 
@@ -201,10 +210,11 @@ Requires TRANSPARENCIA_API_KEY — falls back to manual check URLs without it.`,
         properties: {
             query: { type: "string", description: "CNPJ or company name to search in sanctions databases" },
             tipo: { type: "string", enum: ["ceis", "cnep", "cepim", "all"], description: "Which database (default: 'all')", default: "all" },
-            pagina: { type: "number", description: "Page number (default: 1)", default: 1 },
+            pagina: { type: "number", description: "Page number (default: 1)", minimum: 1, maximum: 1000, default: 1 },
         },
         required: ["query"],
     },
+    zodSchema: CeisCnepSchema,
     execute: async (args) => executeCeisCnep(args as CeisCnepArgs),
 });
 
@@ -283,11 +293,12 @@ For the legacy portal keyword search, provide query without modalidade_id. No AP
             cnpj_orgao: { type: "string", description: "Contracting body's CNPJ (optional)" },
             data_inicial: { type: "string", description: "Publication start date (YYYY-MM-DD, DD/MM/YYYY or YYYYMMDD), required with modalidade_id" },
             data_final: { type: "string", description: "Publication end date (YYYY-MM-DD, DD/MM/YYYY or YYYYMMDD), required with modalidade_id" },
-            modalidade_id: { type: "integer", minimum: 1, description: "PNCP contracting modality ID, e.g. 6 for Pregão Eletrônico" },
-            pagina: { type: "number", description: "Page number (default: 1)", default: 1 },
+            modalidade_id: { type: "integer", minimum: 1, maximum: 100, description: "PNCP contracting modality ID, e.g. 6 for Pregão Eletrônico" },
+            pagina: { type: "number", description: "Page number (default: 1)", minimum: 1, maximum: 1000, default: 1 },
         },
         required: ["query"],
     },
+    zodSchema: PncpSchema,
     execute: async (args) => executePncp(args as PncpArgs),
 });
 
@@ -330,11 +341,12 @@ OSINT value: Find company mentions in government publications, contracts, sancti
             territory_id: { type: "string", description: "IBGE territory code (e.g. '3550308' for São Paulo)" },
             since: { type: "string", description: "Start date (YYYY-MM-DD, optional)" },
             until: { type: "string", description: "End date (YYYY-MM-DD, optional)" },
-            page: { type: "number", description: "Page number (0-indexed, default: 0)", default: 0 },
-            size: { type: "number", description: "Results per page (default: 10, max: 100)", default: 10 },
+            page: { type: "number", description: "Page number (0-indexed, default: 0)", minimum: 0, maximum: 1000, default: 0 },
+            size: { type: "number", description: "Results per page (default: 10, max: 100)", minimum: 1, maximum: 100, default: 10 },
         },
         required: ["query"],
     },
+    zodSchema: QueridoDiarioSchema,
     execute: async (args) => executeQueridoDiario(args as QueridoDiarioArgs),
 });
 

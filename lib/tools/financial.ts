@@ -4,6 +4,7 @@
 
 import { registerTool } from "../core/registry.js";
 import { httpJson } from "../core/http-client.js";
+import { BacenSchema, FipeSchema } from "../core/tool-schemas.js";
 import { LookupResult } from "../types/index.js";
 import { BACEN_PERIODS, BACEN_SERIES, bacenWindow, isBacenIndicator, isBacenPeriod } from "../shared/bacen.js";
 import type { BacenIndicator, BacenPeriod } from "../shared/bacen.js";
@@ -55,11 +56,12 @@ No API key required. Returns time series data.`,
         type: "object",
         properties: {
             indicador: { type: "string", enum: Object.keys(BACEN_SERIES), description: "Financial indicator" },
-            ultimos: { type: "number", description: "Number of recent data points (default: 10)", default: 10 },
+            ultimos: { type: "number", description: "Number of recent data points (default: 10)", minimum: 1, maximum: 1000, default: 10 },
             periodo_dias: { type: "integer", enum: [...BACEN_PERIODS], description: "Calendar-day window through today in São Paulo. Overrides ultimos when supplied." },
         },
         required: ["indicador"],
     },
+    zodSchema: BacenSchema,
     execute: async (args) => executeBacen(args as BacenArgs),
 });
 
@@ -112,5 +114,6 @@ Via BrasilAPI. No API key required.`,
             tipo: { type: "string", enum: ["carros", "motos", "caminhoes"], description: "Vehicle type to list brands" },
         },
     },
+    zodSchema: FipeSchema,
     execute: async (args) => executeFipe(args as FipeArgs),
 });

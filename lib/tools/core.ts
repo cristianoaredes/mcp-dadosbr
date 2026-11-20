@@ -5,6 +5,13 @@
 import { registerTool } from "../core/registry.js";
 import { httpJson } from "../core/http-client.js";
 import { CnpjSchema, CepSchema } from "../core/validation.js";
+import {
+    CnpjIntelligenceSchema,
+    CnpjSearchSchema,
+    DORK_CATEGORIES,
+    SEARCH_PROVIDERS,
+    SequentialThinkingSchema,
+} from "../core/tool-schemas.js";
 import { Cache, LookupResult, ApiConfig } from "../types/index.js";
 import { SEARCH_TOOL, executeSearch } from "../core/search.js";
 
@@ -50,8 +57,9 @@ registerTool({
         properties: { cnpj: { type: "string", description: "Brazilian CNPJ number (with or without formatting)" } },
         required: ["cnpj"],
     },
+    zodSchema: CnpjSchema,
     execute: async (args, apiConfig, cache) => {
-        const parsed = CnpjSchema.parse(args);
+        const parsed = args as { cnpj: string };
         return await lookup("cnpj", parsed.cnpj, apiConfig, cache);
     },
 });
@@ -66,8 +74,9 @@ registerTool({
         properties: { cep: { type: "string", description: "Brazilian CEP postal code (with or without formatting)" } },
         required: ["cep"],
     },
+    zodSchema: CepSchema,
     execute: async (args, apiConfig, cache) => {
-        const parsed = CepSchema.parse(args);
+        const parsed = args as { cep: string };
         return await lookup("cep", parsed.cep, apiConfig, cache);
     },
 });
@@ -76,6 +85,7 @@ registerTool({
 
 registerTool({
     ...SEARCH_TOOL,
+    zodSchema: CnpjSearchSchema,
     execute: async (args, _apiConfig, cache) => {
         const { query, max_results = 5 } = args as { query: string; max_results?: number };
         return await executeSearch(query, max_results, cache);
@@ -91,15 +101,35 @@ registerTool({
         type: "object",
         properties: {
             cnpj: { type: "string", description: "Brazilian CNPJ number (with or without formatting)" },
-            categories: { type: "array", items: { type: "string" }, description: "Categories to search" },
-            max_results: { type: "number", description: "Maximum results per category", default: 10 },
-            api_key: { type: "string", description: "Optional Tavily API key" },
+            categories: { type: "array", items: { type: "string", enum: [...DORK_CATEGORIES] }, description: "Categories to search" },
+            provider: { type: "string", enum: [...SEARCH_PROVIDERS], description: "Search provider to use (server-configured API key required)", default: "tavily" },
+            max_results_per_query: { type: "number", description: "Maximum results per query", minimum: 1, maximum: 10, default: 5 },
+            max_queries: { type: "number", description: "Maximum number of search queries", minimum: 1, maximum: 20, default: 10 },
         },
         required: ["cnpj"],
     },
+    zodSchema: CnpjIntelligenceSchema,
     execute: async (args, apiConfig, cache) => {
+        const parsed = args as {
+            cnpj: string;
+            categories?: typeof DORK_CATEGORIES[number][];
+            provider?: typeof SEARCH_PROVIDERS[number];
+            max_results_per_query?: number;
+            max_results?: number;
+            max_queries?: number;
+        };
         const mod = await import("../core/intelligence.js");
-        return await mod.executeIntelligence(args as unknown as Parameters<typeof mod.executeIntelligence>[0], apiConfig, cache);
+        return await mod.executeIntelligence(
+            {
+                cnpj: parsed.cnpj,
+                categories: parsed.categories,
+                provider: parsed.provider,
+                maxResultsPerQuery: parsed.max_results_per_query ?? parsed.max_results,
+                maxQueries: parsed.max_queries,
+            },
+            apiConfig,
+            cache,
+        );
     },
 });
 
@@ -111,6 +141,7 @@ const thinkingProcessor = new SequentialThinkingProcessor();
 
 registerTool({
     ...SEQUENTIAL_THINKING_TOOL,
+    zodSchema: SequentialThinkingSchema,
     execute: async (args) => thinkingProcessor.processThought(args),
 });
 

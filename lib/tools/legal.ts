@@ -4,6 +4,13 @@
 
 import { registerTool } from "../core/registry.js";
 import { httpJson } from "../core/http-client.js";
+import {
+    BnmpSchema,
+    DatajudSchema,
+    ListaSujaSchema,
+    OabSchema,
+    ProcuradosSchema,
+} from "../core/tool-schemas.js";
 import { LookupResult } from "../types/index.js";
 
 // ─── Datajud / CNJ ──────────────────────────────────────────────────────────
@@ -51,10 +58,11 @@ Requires DATAJUD_API_KEY. Supports 17+ tribunals.`,
         properties: {
             query: { type: "string", description: "Search term (CNPJ, CPF, company name, case number)" },
             tribunal: { type: "string", description: "Court code (default: 'tjsp'). Options: tst, trf1-5, tjsp, tjrj, tjmg, etc." },
-            tamanho: { type: "number", description: "Max results (default: 10)", default: 10 },
+            tamanho: { type: "number", description: "Max results (default: 10)", minimum: 1, maximum: 100, default: 10 },
         },
         required: ["query"],
     },
+    zodSchema: DatajudSchema,
     execute: async (args) => executeDatajud(args as DatajudArgs),
 });
 
@@ -89,6 +97,7 @@ OSINT value: Verify legal representatives, check lawyer standing.`,
             uf: { type: "string", description: "State code (e.g. 'SP', 'MG')" },
         },
     },
+    zodSchema: OabSchema,
     execute: async (args) => executeOab(args as OabArgs),
 });
 
@@ -125,6 +134,7 @@ OSINT value: Critical for background checks and criminal record verification.`,
         },
         required: ["nome"],
     },
+    zodSchema: BnmpSchema,
     execute: async (args) => executeBnmp(args as BnmpArgs),
 });
 
@@ -179,6 +189,7 @@ OSINT value: Critical for background checks, due diligence, and security screeni
         properties: { nome: { type: "string", description: "Person's name to search" } },
         required: ["nome"],
     },
+    zodSchema: ProcuradosSchema,
     execute: async (args) => executeProcurados(args as ProcuradosArgs),
 });
 
@@ -215,6 +226,7 @@ OSINT value: Critical ESG/compliance indicator.`,
         properties: { query: { type: "string", description: "Company name or CNPJ to search" } },
         required: ["query"],
     },
+    zodSchema: ListaSujaSchema,
     execute: async (args) => executeListaSuja(args as ListaSujaArgs),
 });
 
