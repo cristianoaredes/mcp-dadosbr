@@ -35,7 +35,8 @@ import { WorkerExportedHandler } from './types.js';
 async function routeRequest(
   request: Request,
   env: Env,
-  url: URL
+  url: URL,
+  ctx?: ExecutionContext
 ): Promise<Response> {
   switch (url.pathname) {
     case '/health':
@@ -59,7 +60,7 @@ async function routeRequest(
           headers: corsHeaders,
         });
       }
-      return await handleSSEEndpoint(request, env);
+      return await handleSSEEndpoint(request, env, ctx);
 
     case '/.well-known/oauth-authorization-server':
     case '/.well-known/openid_configuration':
@@ -157,7 +158,7 @@ export default {
   async fetch(
     request: Request,
     env: Env,
-    _ctx: ExecutionContext
+    ctx: ExecutionContext
   ): Promise<Response> {
     // Inject Cloudflare Workers environment variables into process.env
     // This allows tools to access secrets like TAVILY_API_KEY
@@ -186,7 +187,7 @@ export default {
       return withCorsHeaders(authResult.error!, request, env, { isPublic });
     }
 
-    const response = await routeRequest(request, env, url);
+    const response = await routeRequest(request, env, url, ctx);
     return withCorsHeaders(response, request, env, { isPublic });
   },
 } satisfies WorkerExportedHandler<Env>;

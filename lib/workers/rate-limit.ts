@@ -1,13 +1,19 @@
 /**
- * Rate limiting middleware for Cloudflare Workers
+ * Rate limiting middleware for Cloudflare Workers.
+ *
+ * NOTE (eventual consistency): Cloudflare Workers KV does not guarantee atomic
+ * read-modify-write/INCR across edge POPs under concurrent bursts. Fixed-window
+ * buckets + mandatory expirationTtl (>= 60s) make KV rate limiting best-effort
+ * and self-cleaning; strict global enforcement requires Cloudflare's native
+ * Rate Limiting binding or Durable Objects.
  */
 
-import { Env } from "../adapters/cloudflare.js";
-import { corsHeaders } from "../adapters/cloudflare.js";
+import { Env, corsHeaders } from "../adapters/cloudflare.js";
+import { MIN_KV_EXPIRATION_TTL_SECONDS } from "../core/cache.js";
 import { TIMEOUTS } from "../config/timeouts.js";
 
-const RATE_LIMIT_WINDOW = TIMEOUTS.RATE_LIMIT_WINDOW_MS;
 const RATE_LIMIT_MAX_REQUESTS = 30; // Max requests per window per IP
+const CLIENT_ID_REGEX = /^[A-Za-z0-9.:_-]{1,64}$/;
 
 export interface RateLimitResult {
   allowed: boolean;
@@ -15,8 +21,30 @@ export interface RateLimitResult {
 }
 
 /**
+ * Extract a trusted client identifier for Worker rate limiting.
+ * Prefers Cloudflare Edge `CF-Connecting-IP`; ignores spoofable `X-Forwarded-For`
+ * unless `env.MCP_TRUST_X_FORWARDED_FOR === "true"`.
+ */
+export function extractClientIdentifier(request: Request, env: Env): string {
+  const cfIp = request.headers.get("CF-Connecting-IP")?.trim();
+  if (cfIp && CLIENT_ID_REGEX.test(cfIp)) {
+    return cfIp;
+  }
+
+  if (env.MCP_TRUST_X_FORWARDED_FOR === "true") {
+    const xff = request.headers.get("X-Forwarded-For");
+    const firstIp = xff?.split(",")[0]?.trim();
+    if (firstIp && CLIENT_ID_REGEX.test(firstIp)) {
+      return firstIp;
+    }
+  }
+
+  return "unknown";
+}
+
+/**
  * Check rate limit for incoming request
- * Uses Cloudflare KV for distributed rate limiting
+ * Uses Cloudflare KV for best-effort distributed rate limiting with fixed-window keys
  */
 export async function checkRateLimit(
   request: Request,
@@ -33,50 +61,58 @@ export async function checkRateLimit(
     return { allowed: true };
   }
 
-  const clientIP =
-    request.headers.get("CF-Connecting-IP") ||
-    request.headers.get("X-Forwarded-For") ||
-    "unknown";
+  const clientIP = extractClientIdentifier(request, env);
 
   // If no KV namespace available, allow request (rate limiting optional)
   if (!env.MCP_KV) {
     return { allowed: true };
   }
 
-  const key = `rate_limit:${clientIP}`;
+  const windowMs = TIMEOUTS.RATE_LIMIT_WINDOW_MS;
   const now = Date.now();
+  const windowBucket = Math.floor(now / windowMs);
+  const windowStart = windowBucket * windowMs;
+  const resetTime = windowStart + windowMs;
+  const key = `rate_limit:${clientIP}:${windowBucket}`;
+  const expirationTtl = Math.max(
+    MIN_KV_EXPIRATION_TTL_SECONDS,
+    Math.ceil(windowMs / 1000) * 2
+  );
 
   try {
     const data = await env.MCP_KV.get(key);
     let requestCount = 0;
-    let windowStart = now;
 
     if (data) {
-      const parsed = JSON.parse(data);
-      requestCount = parsed.count || 0;
-      windowStart = parsed.windowStart || now;
+      try {
+        const parsed = JSON.parse(data) as { count?: unknown } | null;
+        if (
+          parsed &&
+          typeof parsed === "object" &&
+          typeof parsed.count === "number" &&
+          Number.isFinite(parsed.count) &&
+          parsed.count >= 0
+        ) {
+          requestCount = parsed.count;
+        }
+      } catch {
+        // Ignore corrupted JSON in KV bucket and start counter cleanly
+        requestCount = 0;
+      }
     }
 
-    // Check if window has expired
-    if (now - windowStart > RATE_LIMIT_WINDOW) {
-      // Reset window
-      requestCount = 1;
-      windowStart = now;
-    } else {
-      requestCount += 1;
-    }
+    requestCount += 1;
 
     // Check if limit exceeded
     if (requestCount > RATE_LIMIT_MAX_REQUESTS) {
-      const resetTime = windowStart + RATE_LIMIT_WINDOW;
-      const retryAfter = Math.ceil((resetTime - now) / 1000);
+      const retryAfter = Math.max(1, Math.ceil((resetTime - now) / 1000));
 
       return {
         allowed: false,
         error: new Response(
           JSON.stringify({
             error: "Rate Limit Exceeded",
-            message: `Too many requests. Maximum ${RATE_LIMIT_MAX_REQUESTS} requests per ${RATE_LIMIT_WINDOW / 1000} seconds.`,
+            message: `Too many requests. Maximum ${RATE_LIMIT_MAX_REQUESTS} requests per ${windowMs / 1000} seconds.`,
             retryAfter,
           }),
           {
@@ -94,18 +130,19 @@ export async function checkRateLimit(
       };
     }
 
-    // Update rate limit data
+    // Persist bucket counter with mandatory expirationTtl (>= 60s)
     await env.MCP_KV.put(
       key,
       JSON.stringify({
         count: requestCount,
         windowStart,
-      })
+      }),
+      { expirationTtl }
     );
 
     return { allowed: true };
   } catch (error) {
-    // On error, allow request (fail open)
+    // On KV transport error, allow request (fail open)
     console.error("Rate limit check failed:", error);
     return { allowed: true };
   }

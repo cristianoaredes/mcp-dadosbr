@@ -57,7 +57,11 @@ command = "npm run build:worker"
 cwd = "."
 watch_dir = "lib"
 
-# KV namespace for caching (default)
+# NOTE: MCP_CACHE and MCP_KV currently share the same KV namespace ID; entries are isolated by
+# key prefix (`rate_limit:*` for rate limiting vs tool cache keys) and bounded by mandatory
+# expirationTtl >= 60s (`lib/core/cache.ts`, `lib/workers/rate-limit.ts`). Separate namespaces
+# should be provisioned in the Cloudflare Dashboard during infrastructure rotation, and
+# distributed atomic rate limiting requires Cloudflare native Rate Limiting binding or Durable Objects.
 [[kv_namespaces]]
 binding = "MCP_CACHE"
 id = "9e3f2b99610b4c67abb1080b5f927efa"

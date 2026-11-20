@@ -132,4 +132,11 @@ export class RateLimiter {
     }
     this.clients.clear();
   }
+
+  /**
+   * Alias for destroy() to support callers expecting dispose() lifecycle cleanup
+   */
+  dispose(): void {
+    this.destroy();
+  }
 }

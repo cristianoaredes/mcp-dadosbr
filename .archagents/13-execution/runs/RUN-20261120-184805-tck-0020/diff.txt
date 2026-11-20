@@ -1,0 +1,1482 @@
+diff --git a/.archagents/02-architecture.md b/.archagents/02-architecture.md
+index b966eb9..d0ccf07 100644
+--- a/.archagents/02-architecture.md
++++ b/.archagents/02-architecture.md
+@@ -52,3 +52,9 @@ O servidor Node registra `ui://dadosbr/editais-pncp.html` por `pncp_licitacoes`.
+ ### MCP App de ficha por CNPJ
+ 
+ O servidor Node associa `cnpj_lookup` a `ui://dadosbr/ficha-cnpj.html`. A projeção seleciona situação, CNAEs, endereço e proveniência da resposta existente do provedor. O JSON textual e a validação original de CNPJ numérico são preservados. O Worker oferece retorno textual.
++
++## Confiabilidade de Transportes e KV (`TCK-0020` / `FND-0008`)
++
++- **Worker SSE (`lib/workers/sse.ts`, `lib/workers/worker.ts`)**: `handleSSEEndpoint` arma o timeout (`TIMEOUTS.SSE_CONNECTION_MS`) e o heartbeat periódico (`TIMEOUTS.PING_INTERVAL_MS`) sem limpeza prematura em `finally`, coordenando encerramento idempotente via `request.signal` (abort), `writer.closed` (cancelamento do consumidor), erro de escrita ou timeout (usando `writer.abort` quando há escrita pendente sob backpressure), propagando `ctx.waitUntil(donePromise)`. Comportamento em runtime edge de produção no Cloudflare Workers fica *a confirmar*.
++- **KV TTL e Rate Limit (`lib/core/cache.ts`, `lib/workers/rate-limit.ts`, `wrangler.toml`)**: `KVCache.set` e `checkRateLimit` gravam com `expirationTtl` mínimo de `60` segundos (`MIN_KV_EXPIRATION_TTL_SECONDS`, requisito da API Cloudflare KV) e tratamento defensivo de JSON corrompido. `checkRateLimit` lê `TIMEOUTS.RATE_LIMIT_WINDOW_MS` dinamicamente, usa chaves em janela fixa (`rate_limit:<ip>:<bucket>`), prioriza `CF-Connecting-IP` e ignora `X-Forwarded-For` salvo opt-in `MCP_TRUST_X_FORWARDED_FOR="true"`. `wrangler.toml` mantém `MCP_CACHE` e `MCP_KV` no mesmo namespace ID separados por prefixo de chave; como o Cloudflare KV possui consistência eventual e não provê incremento atômico global entre POPs (*a confirmar* em tráfego distribuído), bursts simultâneos são best-effort até eventual adoção de binding nativo de Rate Limiting ou Durable Objects.
++- **Timers e Graceful Shutdown no Node CLI (`lib/infrastructure/rate-limiter.ts`, `lib/adapters/cli-http.ts`, `lib/adapters/cli.ts`)**: `RateLimiter` utiliza `.unref?.()` no timer de limpeza e expõe `destroy()` + alias `dispose()`. O servidor HTTP+SSE do CLI aplica headers defensivos e validação `Host`/`Origin` antes do parser `express.json({ limit: "1mb" })`, captura o `http.Server` retornado por `app.listen` e unifica `SIGINT`/`SIGTERM` em `createGracefulShutdown` (drenando sessões SSE, conexões ociosas do servidor HTTP, `mcpServer.close()` e `cache.clear()` dentro de timeout limitado).
+diff --git a/lib/adapters/cli-http.ts b/lib/adapters/cli-http.ts
+index de26179..b12e6e9 100644
+--- a/lib/adapters/cli-http.ts
++++ b/lib/adapters/cli-http.ts
+@@ -1,5 +1,6 @@
+ import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
+ import express from "express";
++import type http from "node:http";
+ import { createMCPServer } from "../core/mcp-server.js";
+ import { RateLimiter } from "../infrastructure/rate-limiter.js";
+ import { ApiConfig, Cache } from "../types/index.js";
+@@ -208,7 +209,6 @@ export function createCliHttpApp(options: CliHttpOptions): CliHttpContext {
+ 
+   const app = express();
+   app.disable("x-powered-by");
+-  app.use(express.json({ limit: "1mb" }));
+ 
+   // Defensive security headers across all responses (including 4xx/5xx)
+   app.use((_req, res, next) => {
+@@ -262,6 +262,34 @@ export function createCliHttpApp(options: CliHttpOptions): CliHttpContext {
+     next();
+   });
+ 
++  // Parse JSON payloads only after security headers, Host, and Origin checks pass
++  app.use(express.json({ limit: "1mb" }));
++  app.use(
++    (
++      err: unknown,
++      _req: express.Request,
++      res: express.Response,
++      next: express.NextFunction,
++    ) => {
++      const errorObj = err as { type?: string } | undefined;
++      if (errorObj?.type === "entity.too.large") {
++        res.status(413).json({
++          error: "Payload Too Large",
++          message: "Request body exceeds 1MB limit",
++        });
++        return;
++      }
++      if (err instanceof SyntaxError || errorObj?.type === "entity.parse.failed") {
++        res.status(400).json({
++          error: "Bad Request",
++          message: "Invalid JSON payload",
++        });
++        return;
++      }
++      next(err);
++    },
++  );
++
+   const rateLimiter = new RateLimiter({
+     windowMs: options.rateLimitWindowMs ?? 60 * 1000,
+     maxRequests: options.rateLimitMaxRequests ?? 30,
+@@ -313,11 +341,20 @@ export function createCliHttpApp(options: CliHttpOptions): CliHttpContext {
+   }, TIMEOUTS.PING_INTERVAL_MS);
+   connectionMonitor.unref?.();
+ 
++  let closed = false;
+   const closeAll = () => {
++    if (closed) {
++      return;
++    }
++    closed = true;
+     clearInterval(connectionMonitor);
+-    rateLimiter.destroy();
++    rateLimiter.dispose();
+     for (const session of transports.values()) {
+-      session.transport.close?.();
++      try {
++        session.transport.close?.();
++      } catch {
++        // Ignore individual session close errors during drain
++      }
+     }
+     transports.clear();
+   };
+@@ -401,3 +438,105 @@ export function createCliHttpApp(options: CliHttpOptions): CliHttpContext {
+     closeAll,
+   };
+ }
++
++export interface GracefulShutdownOptions {
++  server?: Pick<http.Server, "listening" | "close"> & {
++    closeIdleConnections?: () => void;
++  };
++  httpContext?: Pick<CliHttpContext, "closeAll">;
++  mcpServer?: { close?: () => Promise<void> | void };
++  cache?: { clear?: () => Promise<void> | void };
++  timeoutMs?: number;
++  logger?: (...args: unknown[]) => void;
++  onExit?: (code: number) => void;
++}
++
++/**
++ * Create an idempotent graceful shutdown coordinator that drains SSE sessions,
++ * closes the HTTP server, shuts down the MCP server, and clears caches within a bounded timeout.
++ */
++export function createGracefulShutdown(
++  options: GracefulShutdownOptions,
++): (signal?: string) => Promise<void> {
++  const timeoutMs =
++    options.timeoutMs !== undefined && Number.isFinite(options.timeoutMs) && options.timeoutMs > 0
++      ? options.timeoutMs
++      : 5000;
++  const logger = options.logger ?? (() => {});
++
++  let shutdownPromise: Promise<void> | undefined;
++  let exited = false;
++
++  const finishExit = (code: number) => {
++    if (exited) {
++      return;
++    }
++    exited = true;
++    options.onExit?.(code);
++  };
++
++  return (signal?: string) => {
++    if (shutdownPromise) {
++      return shutdownPromise;
++    }
++
++    shutdownPromise = (async () => {
++      logger(`Shutting down gracefully${signal ? ` (${signal})` : ""}...`);
++
++      let forceTimer: ReturnType<typeof setTimeout> | undefined;
++      let timedOut = false;
++
++      const drainPromise = (async () => {
++        try {
++          options.httpContext?.closeAll();
++        } catch {
++          // Best-effort SSE session cleanup
++        }
++
++        if (options.server?.listening) {
++          await new Promise<void>((resolve) => {
++            try {
++              options.server!.close(() => resolve());
++              options.server!.closeIdleConnections?.();
++            } catch {
++              resolve();
++            }
++          });
++        }
++
++        try {
++          await options.mcpServer?.close?.();
++        } catch {
++          // Best-effort MCP server close
++        }
++
++        try {
++          await options.cache?.clear?.();
++        } catch {
++          // Best-effort cache clear
++        }
++      })();
++
++      const timeoutPromise = new Promise<void>((resolve) => {
++        forceTimer = setTimeout(() => {
++          timedOut = true;
++          resolve();
++        }, timeoutMs);
++        forceTimer.unref?.();
++      });
++
++      try {
++        await Promise.race([drainPromise, timeoutPromise]);
++      } finally {
++        if (forceTimer !== undefined) {
++          clearTimeout(forceTimer);
++          forceTimer = undefined;
++        }
++      }
++
++      finishExit(timedOut ? 1 : 0);
++    })();
++
++    return shutdownPromise;
++  };
++}
+diff --git a/lib/adapters/cli.ts b/lib/adapters/cli.ts
+index 8972950..6855be3 100644
+--- a/lib/adapters/cli.ts
++++ b/lib/adapters/cli.ts
+@@ -1,5 +1,6 @@
+ #!/usr/bin/env node
+ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
++import type http from "node:http";
+ import { createMCPServer } from "../core/mcp-server.js";
+ import { MemoryCache } from "../core/cache.js";
+ import {
+@@ -10,6 +11,8 @@ import {
+ } from "../config/index.js";
+ import {
+   createCliHttpApp,
++  createGracefulShutdown,
++  type CliHttpContext,
+   DEFAULT_CLI_HTTP_HOST,
+   DEFAULT_MAX_SSE_SESSIONS,
+   parseCommaSeparatedList,
+@@ -23,6 +26,31 @@ function debug(...args: unknown[]) {
+   }
+ }
+ 
++const runtimeState: {
++  httpServer?: http.Server;
++  httpContext?: CliHttpContext;
++  mcpServer?: ReturnType<typeof createMCPServer>;
++  cache?: MemoryCache;
++} = {};
++
++let shutdownRunner: ((signal?: string) => Promise<void>) | undefined;
++const handleShutdownSignal = (signal: string) => {
++  if (!shutdownRunner) {
++    shutdownRunner = createGracefulShutdown({
++      server: runtimeState.httpServer,
++      httpContext: runtimeState.httpContext,
++      mcpServer: runtimeState.mcpServer,
++      cache: runtimeState.cache,
++      logger: debug,
++      onExit: (code) => process.exit(code),
++    });
++  }
++  void shutdownRunner(signal);
++};
++
++process.on("SIGINT", () => handleShutdownSignal("SIGINT"));
++process.on("SIGTERM", () => handleShutdownSignal("SIGTERM"));
++
+ async function main() {
+   // Handle CLI arguments
+   const args = process.argv.slice(2);
+@@ -78,9 +106,11 @@ For more information, visit: https://github.com/cristianoaredes/mcp-dadosbr`);
+ 
+   // Create cache
+   const cache = new MemoryCache(serverConfig.cacheSize, serverConfig.cacheTTL);
++  runtimeState.cache = cache;
+ 
+   // Create MCP server
+   const mcpServer = createMCPServer({ apiConfig, cache });
++  runtimeState.mcpServer = mcpServer;
+ 
+   // Setup transport
+   const transportMode = serverConfig.transport;
+@@ -108,14 +138,10 @@ For more information, visit: https://github.com/cristianoaredes/mcp-dadosbr`);
+       maxSessions,
+       debug,
+     });
+-
+-    process.on("SIGTERM", () => {
+-      debug("SIGTERM received, closing SSE connections...");
+-      httpContext.closeAll();
+-    });
++    runtimeState.httpContext = httpContext;
+ 
+     const port = serverConfig.httpPort;
+-    httpContext.app.listen(port, host, () =>
++    runtimeState.httpServer = httpContext.app.listen(port, host, () =>
+       console.error(
+         `${SERVER_NAME} v${SERVER_VERSION} started on HTTP+SSE transport (port ${port}) [${host}]`
+       )
+@@ -129,13 +155,6 @@ For more information, visit: https://github.com/cristianoaredes/mcp-dadosbr`);
+   }
+ }
+ 
+-const cleanup = async () => {
+-  process.exit(0);
+-};
+-
+-process.on("SIGINT", cleanup);
+-process.on("SIGTERM", cleanup);
+-
+ main().catch((error) => {
+   console.error("Server failed to start:", error);
+   process.exit(1);
+diff --git a/lib/adapters/cloudflare.ts b/lib/adapters/cloudflare.ts
+index c043b91..af62d3a 100644
+--- a/lib/adapters/cloudflare.ts
++++ b/lib/adapters/cloudflare.ts
+@@ -10,7 +10,11 @@ import { CACHE } from "../shared/utils/constants.js";
+ declare global {
+   interface KVNamespace {
+     get(key: string): Promise<string | null>;
+-    put(key: string, value: string): Promise<void>;
++    put(
++      key: string,
++      value: string,
++      options?: { expiration?: number; expirationTtl?: number; metadata?: unknown }
++    ): Promise<void>;
+     delete(key: string): Promise<void>;
+   }
+ }
+@@ -25,6 +29,7 @@ export interface Env {
+   MCP_API_KEY?: string;
+   MCP_ALLOWED_ORIGINS?: string;
+   MCP_DISABLE_RATE_LIMIT?: string;
++  MCP_TRUST_X_FORWARDED_FOR?: string;
+   MCP_KV?: KVNamespace;
+   TAVILY_API_KEY?: string; // Tavily search API key (secret)
+ }
+diff --git a/lib/core/cache.ts b/lib/core/cache.ts
+index 13f4981..4b87387 100644
+--- a/lib/core/cache.ts
++++ b/lib/core/cache.ts
+@@ -1,12 +1,20 @@
+ import { CacheEntry, Cache } from "../types/index.js";
+ import { CACHE } from "../shared/utils/constants.js";
+ 
++export const MIN_KV_EXPIRATION_TTL_SECONDS = 60;
++
++export interface KVPutOptions {
++  expiration?: number;
++  expirationTtl?: number;
++  metadata?: unknown;
++}
++
+ /**
+  * Interface for Cloudflare KV storage
+  */
+ interface KVNamespace {
+   get(key: string): Promise<string | null>;
+-  put(key: string, value: string): Promise<void>;
++  put(key: string, value: string, options?: KVPutOptions): Promise<void>;
+   delete(key: string): Promise<void>;
+ }
+ 
+@@ -127,22 +135,40 @@ export class KVCache implements Cache {
+ 
+   async get<T = unknown>(key: string): Promise<T | null> {
+     const cached = await this.kv.get(key);
+-    if (cached) {
+-      const parsed = JSON.parse(cached);
++    if (!cached) {
++      return null;
++    }
++
++    try {
++      const parsed = JSON.parse(cached) as { expires?: unknown; data?: T } | null;
++      if (!parsed || typeof parsed !== "object" || typeof parsed.expires !== "number") {
++        return null;
++      }
+       if (Date.now() < parsed.expires) {
+-        return parsed.data;
++        return parsed.data ?? null;
+       }
++    } catch {
++      return null;
+     }
++
+     return null;
+   }
+ 
+   async set<T = unknown>(key: string, data: T): Promise<void> {
++    const ttlSeconds =
++      Number.isFinite(this.ttl) && this.ttl > 0
++        ? Math.ceil(this.ttl / 1000)
++        : MIN_KV_EXPIRATION_TTL_SECONDS;
++    // Cloudflare KV rejects expirationTtl values below 60 seconds
++    const expirationTtl = Math.max(MIN_KV_EXPIRATION_TTL_SECONDS, ttlSeconds);
++
+     await this.kv.put(
+       key,
+       JSON.stringify({
+         data,
+         expires: Date.now() + this.ttl,
+-      })
++      }),
++      { expirationTtl }
+     );
+   }
+ 
+diff --git a/lib/infrastructure/rate-limiter.ts b/lib/infrastructure/rate-limiter.ts
+index d4d68ba..5df0199 100644
+--- a/lib/infrastructure/rate-limiter.ts
++++ b/lib/infrastructure/rate-limiter.ts
+@@ -132,4 +132,11 @@ export class RateLimiter {
+     }
+     this.clients.clear();
+   }
++
++  /**
++   * Alias for destroy() to support callers expecting dispose() lifecycle cleanup
++   */
++  dispose(): void {
++    this.destroy();
++  }
+ }
+diff --git a/lib/workers/rate-limit.ts b/lib/workers/rate-limit.ts
+index e6f42b9..87cd957 100644
+--- a/lib/workers/rate-limit.ts
++++ b/lib/workers/rate-limit.ts
+@@ -1,22 +1,50 @@
+ /**
+- * Rate limiting middleware for Cloudflare Workers
++ * Rate limiting middleware for Cloudflare Workers.
++ *
++ * NOTE (eventual consistency): Cloudflare Workers KV does not guarantee atomic
++ * read-modify-write/INCR across edge POPs under concurrent bursts. Fixed-window
++ * buckets + mandatory expirationTtl (>= 60s) make KV rate limiting best-effort
++ * and self-cleaning; strict global enforcement requires Cloudflare's native
++ * Rate Limiting binding or Durable Objects.
+  */
+ 
+-import { Env } from "../adapters/cloudflare.js";
+-import { corsHeaders } from "../adapters/cloudflare.js";
++import { Env, corsHeaders } from "../adapters/cloudflare.js";
++import { MIN_KV_EXPIRATION_TTL_SECONDS } from "../core/cache.js";
+ import { TIMEOUTS } from "../config/timeouts.js";
+ 
+-const RATE_LIMIT_WINDOW = TIMEOUTS.RATE_LIMIT_WINDOW_MS;
+ const RATE_LIMIT_MAX_REQUESTS = 30; // Max requests per window per IP
++const CLIENT_ID_REGEX = /^[A-Za-z0-9.:_-]{1,64}$/;
+ 
+ export interface RateLimitResult {
+   allowed: boolean;
+   error?: Response;
+ }
+ 
++/**
++ * Extract a trusted client identifier for Worker rate limiting.
++ * Prefers Cloudflare Edge `CF-Connecting-IP`; ignores spoofable `X-Forwarded-For`
++ * unless `env.MCP_TRUST_X_FORWARDED_FOR === "true"`.
++ */
++export function extractClientIdentifier(request: Request, env: Env): string {
++  const cfIp = request.headers.get("CF-Connecting-IP")?.trim();
++  if (cfIp && CLIENT_ID_REGEX.test(cfIp)) {
++    return cfIp;
++  }
++
++  if (env.MCP_TRUST_X_FORWARDED_FOR === "true") {
++    const xff = request.headers.get("X-Forwarded-For");
++    const firstIp = xff?.split(",")[0]?.trim();
++    if (firstIp && CLIENT_ID_REGEX.test(firstIp)) {
++      return firstIp;
++    }
++  }
++
++  return "unknown";
++}
++
+ /**
+  * Check rate limit for incoming request
+- * Uses Cloudflare KV for distributed rate limiting
++ * Uses Cloudflare KV for best-effort distributed rate limiting with fixed-window keys
+  */
+ export async function checkRateLimit(
+   request: Request,
+@@ -33,50 +61,58 @@ export async function checkRateLimit(
+     return { allowed: true };
+   }
+ 
+-  const clientIP =
+-    request.headers.get("CF-Connecting-IP") ||
+-    request.headers.get("X-Forwarded-For") ||
+-    "unknown";
++  const clientIP = extractClientIdentifier(request, env);
+ 
+   // If no KV namespace available, allow request (rate limiting optional)
+   if (!env.MCP_KV) {
+     return { allowed: true };
+   }
+ 
+-  const key = `rate_limit:${clientIP}`;
++  const windowMs = TIMEOUTS.RATE_LIMIT_WINDOW_MS;
+   const now = Date.now();
++  const windowBucket = Math.floor(now / windowMs);
++  const windowStart = windowBucket * windowMs;
++  const resetTime = windowStart + windowMs;
++  const key = `rate_limit:${clientIP}:${windowBucket}`;
++  const expirationTtl = Math.max(
++    MIN_KV_EXPIRATION_TTL_SECONDS,
++    Math.ceil(windowMs / 1000) * 2
++  );
+ 
+   try {
+     const data = await env.MCP_KV.get(key);
+     let requestCount = 0;
+-    let windowStart = now;
+ 
+     if (data) {
+-      const parsed = JSON.parse(data);
+-      requestCount = parsed.count || 0;
+-      windowStart = parsed.windowStart || now;
++      try {
++        const parsed = JSON.parse(data) as { count?: unknown } | null;
++        if (
++          parsed &&
++          typeof parsed === "object" &&
++          typeof parsed.count === "number" &&
++          Number.isFinite(parsed.count) &&
++          parsed.count >= 0
++        ) {
++          requestCount = parsed.count;
++        }
++      } catch {
++        // Ignore corrupted JSON in KV bucket and start counter cleanly
++        requestCount = 0;
++      }
+     }
+ 
+-    // Check if window has expired
+-    if (now - windowStart > RATE_LIMIT_WINDOW) {
+-      // Reset window
+-      requestCount = 1;
+-      windowStart = now;
+-    } else {
+-      requestCount += 1;
+-    }
++    requestCount += 1;
+ 
+     // Check if limit exceeded
+     if (requestCount > RATE_LIMIT_MAX_REQUESTS) {
+-      const resetTime = windowStart + RATE_LIMIT_WINDOW;
+-      const retryAfter = Math.ceil((resetTime - now) / 1000);
++      const retryAfter = Math.max(1, Math.ceil((resetTime - now) / 1000));
+ 
+       return {
+         allowed: false,
+         error: new Response(
+           JSON.stringify({
+             error: "Rate Limit Exceeded",
+-            message: `Too many requests. Maximum ${RATE_LIMIT_MAX_REQUESTS} requests per ${RATE_LIMIT_WINDOW / 1000} seconds.`,
++            message: `Too many requests. Maximum ${RATE_LIMIT_MAX_REQUESTS} requests per ${windowMs / 1000} seconds.`,
+             retryAfter,
+           }),
+           {
+@@ -94,18 +130,19 @@ export async function checkRateLimit(
+       };
+     }
+ 
+-    // Update rate limit data
++    // Persist bucket counter with mandatory expirationTtl (>= 60s)
+     await env.MCP_KV.put(
+       key,
+       JSON.stringify({
+         count: requestCount,
+         windowStart,
+-      })
++      }),
++      { expirationTtl }
+     );
+ 
+     return { allowed: true };
+   } catch (error) {
+-    // On error, allow request (fail open)
++    // On KV transport error, allow request (fail open)
+     console.error("Rate limit check failed:", error);
+     return { allowed: true };
+   }
+diff --git a/lib/workers/sse.ts b/lib/workers/sse.ts
+index c31c2cd..eed9799 100644
+--- a/lib/workers/sse.ts
++++ b/lib/workers/sse.ts
+@@ -6,6 +6,9 @@
+ import { Env, handleMCPRequest, corsHeaders } from "../adapters/cloudflare.js";
+ import { MCPRequest } from "../types/index.js";
+ import { TIMEOUTS } from "../config/timeouts.js";
++import "./types.js";
++
++type SSECloseReason = "timeout" | "abort" | "closed" | "error";
+ 
+ /**
+  * Handle SSE endpoint for real-time MCP communication
+@@ -13,7 +16,8 @@ import { TIMEOUTS } from "../config/timeouts.js";
+  */
+ export async function handleSSEEndpoint(
+   request: Request,
+-  env: Env
++  env: Env,
++  ctx?: ExecutionContext
+ ): Promise<Response> {
+   // Check if client accepts SSE (relaxed for MCP connectors)
+   const acceptHeader = request.headers.get("Accept");
+@@ -41,31 +45,116 @@ export async function handleSSEEndpoint(
+     ...corsHeaders,
+   };
+ 
+-  // Send initial connection event
+-  const sendSSEMessage = async (data: unknown, event?: string, id?: string) => {
++  let closed = false;
++  let pendingWrites = 0;
++  let pingInterval: ReturnType<typeof setInterval> | undefined;
++  let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
++  let abortListener: (() => void) | undefined;
++  let resolveDone!: () => void;
++
++  const donePromise = new Promise<void>((resolve) => {
++    resolveDone = resolve;
++  });
++  ctx?.waitUntil(donePromise);
++
++  const cleanup = async (reason: SSECloseReason): Promise<void> => {
++    if (closed) {
++      return;
++    }
++    closed = true;
++
++    if (pingInterval !== undefined) {
++      clearInterval(pingInterval);
++      pingInterval = undefined;
++    }
++    if (timeoutHandle !== undefined) {
++      clearTimeout(timeoutHandle);
++      timeoutHandle = undefined;
++    }
++    if (abortListener && request.signal) {
++      request.signal.removeEventListener("abort", abortListener);
++      abortListener = undefined;
++    }
++
++    if (reason !== "closed") {
++      try {
++        if (reason === "abort" || (reason === "timeout" && pendingWrites > 0)) {
++          await writer.abort(
++            reason === "abort"
++              ? "SSE client disconnected"
++              : "SSE connection timeout"
++          );
++        } else {
++          await writer.close();
++        }
++      } catch {
++        // Ignore close/abort errors when stream is already closed or errored
++      }
++    }
++
++    resolveDone();
++  };
++
++  // Detect consumer cancel / writable close without triggering unhandled rejections
++  void writer.closed.then(
++    () => cleanup("closed"),
++    () => cleanup("closed")
++  );
++
++  if (request.signal) {
++    if (request.signal.aborted) {
++      void cleanup("abort");
++      return new Response(readable, {
++        status: 200,
++        headers: sseHeaders,
++      });
++    }
++    abortListener = () => {
++      void cleanup("abort");
++    };
++    request.signal.addEventListener("abort", abortListener, { once: true });
++  }
++
++  const sendSSEMessage = async (
++    data: unknown,
++    event?: string,
++    id?: string
++  ): Promise<boolean> => {
++    if (closed) {
++      return false;
++    }
++
+     let message = "";
+     if (id) message += `id: ${id}\n`;
+     if (event) message += `event: ${event}\n`;
+     message += `data: ${JSON.stringify(data)}\n\n`;
+ 
++    pendingWrites += 1;
+     try {
+       await writer.write(encoder.encode(message));
++      return true;
+     } catch (error) {
+       console.error("SSE write error:", error);
++      await cleanup("error");
++      return false;
++    } finally {
++      pendingWrites -= 1;
+     }
+   };
+ 
+-  // Handle the SSE connection asynchronously
+-  // Inspired by mcp-camara SSE implementation for robustness
+-  (async () => {
+-    let pingInterval: NodeJS.Timeout | undefined;
+-    let timeoutHandle: NodeJS.Timeout | undefined;
+-
++  // Drive stream events asynchronously while keeping pingInterval and timeoutHandle
++  // alive until timeout, client abort, stream cancel, or write error.
++  void (async () => {
+     try {
++      // Arm connection timeout before writes so stalled clients cannot block cleanup
++      timeoutHandle = setTimeout(() => {
++        console.log("SSE connection timeout reached, closing gracefully");
++        void cleanup("timeout");
++      }, TIMEOUTS.SSE_CONNECTION_MS);
++      (timeoutHandle as { unref?: () => void }).unref?.();
++
+       // 1. IMMEDIATE CONNECTION EVENT
+-      // Send connection established event BEFORE any initialization
+-      // This provides immediate feedback to the client (<100ms typically)
+-      await sendSSEMessage(
++      const connSent = await sendSSEMessage(
+         {
+           type: "connection",
+           status: "connected",
+@@ -75,11 +164,12 @@ export async function handleSSEEndpoint(
+         },
+         "connection"
+       );
++      if (!connSent || closed) {
++        return;
++      }
+ 
+       // 2. EARLY CAPABILITIES RESPONSE
+-      // Send server capabilities immediately to keep stream alive
+-      // This prevents client timeout while server initializes
+-      await sendSSEMessage(
++      const initSent = await sendSSEMessage(
+         {
+           jsonrpc: "2.0",
+           id: "init",
+@@ -96,78 +186,70 @@ export async function handleSSEEndpoint(
+         },
+         "message"
+       );
++      if (!initSent || closed) {
++        return;
++      }
+ 
+       // 3. HEARTBEAT MECHANISM
+-      // Keep connection alive with periodic pings every 30 seconds
+-      // This helps detect disconnections early and prevents timeout on idle connections
+-      pingInterval = setInterval(async () => {
+-        try {
+-          await sendSSEMessage(
+-            {
+-              type: "ping",
+-              timestamp: new Date().toISOString(),
+-            },
+-            "ping"
+-          );
+-        } catch (error) {
+-          console.error("SSE ping error:", error);
+-          if (pingInterval) clearInterval(pingInterval);
++      // Keep connection alive with periodic pings until stream terminates
++      pingInterval = setInterval(() => {
++        if (closed) {
++          return;
+         }
++        void sendSSEMessage(
++          {
++            type: "ping",
++            timestamp: new Date().toISOString(),
++          },
++          "ping"
++        );
+       }, TIMEOUTS.PING_INTERVAL_MS);
++      (pingInterval as { unref?: () => void }).unref?.();
+ 
+       // 4. HANDLE INCOMING REQUESTS
+-      // Process POST requests with MCP commands
+-      if (request.method === "POST") {
++      if (request.method === "POST" && !closed) {
+         try {
+           const body = await request.text();
+-          if (body) {
++          if (body && !closed) {
+             const mcpRequest: MCPRequest = JSON.parse(body);
+-
+             const response = await handleMCPRequest(mcpRequest, env);
+-            await sendSSEMessage(
+-              response,
+-              "message",
+-              mcpRequest.id?.toString()
+-            );
++            if (!closed) {
++              await sendSSEMessage(
++                response,
++                "message",
++                mcpRequest.id?.toString()
++              );
++            }
+           }
+         } catch (error) {
+           console.error("SSE request processing error:", error);
+-          await sendSSEMessage(
+-            {
+-              jsonrpc: "2.0",
+-              id: null,
+-              error: {
+-                code: -32700,
+-                message: "Parse error",
+-                data: error instanceof Error ? error.message : "Invalid JSON",
++          if (!closed) {
++            await sendSSEMessage(
++              {
++                jsonrpc: "2.0",
++                id: null,
++                error: {
++                  code: -32700,
++                  message: "Parse error",
++                  data: error instanceof Error ? error.message : "Invalid JSON",
++                },
+               },
+-            },
+-            "error"
+-          );
++              "error"
++            );
++          }
+         }
+       }
+-
+-      // 5. CONNECTION TIMEOUT
+-      // Close connection after configured timeout to respect Workers CPU time limit
+-      // Default: 50 seconds (configurable via MCP_SSE_TIMEOUT)
+-      // Note: Cloudflare Workers have a CPU time limit of ~50 seconds
+-      timeoutHandle = setTimeout(() => {
+-        console.log("SSE connection timeout reached, closing gracefully");
+-        if (pingInterval) clearInterval(pingInterval);
+-        writer.close();
+-      }, TIMEOUTS.SSE_CONNECTION_MS);
+     } catch (error) {
+-      // 6. ERROR HANDLING
+-      // Log errors and notify client before closing
+-      const errorMessage = error instanceof Error 
+-        ? error.message 
+-        : typeof error === 'string' 
+-        ? error 
+-        : 'Unknown error occurred';
+-      
++      const errorMessage =
++        error instanceof Error
++          ? error.message
++          : typeof error === "string"
++            ? error
++            : "Unknown error occurred";
++
+       console.error("SSE handler error:", errorMessage, error);
+-      
+-      try {
++
++      if (!closed) {
+         await sendSSEMessage(
+           {
+             type: "error",
+@@ -176,24 +258,7 @@ export async function handleSSEEndpoint(
+           },
+           "error"
+         );
+-      } catch (sendError) {
+-        console.error("Failed to send error message:", sendError);
+-      }
+-      
+-      try {
+-        await writer.close();
+-      } catch (closeError) {
+-        console.error("Failed to close writer:", closeError);
+-      }
+-    } finally {
+-      // 7. GRACEFUL SHUTDOWN
+-      // Ensure all resources are cleaned up properly
+-      // This prevents resource leaks in Workers environment
+-      if (pingInterval) {
+-        clearInterval(pingInterval);
+-      }
+-      if (timeoutHandle) {
+-        clearTimeout(timeoutHandle);
++        await cleanup("error");
+       }
+     }
+   })();
+diff --git a/lib/workers/worker.ts b/lib/workers/worker.ts
+index 1e018b1..0c9793f 100644
+--- a/lib/workers/worker.ts
++++ b/lib/workers/worker.ts
+@@ -35,7 +35,8 @@ import { WorkerExportedHandler } from './types.js';
+ async function routeRequest(
+   request: Request,
+   env: Env,
+-  url: URL
++  url: URL,
++  ctx?: ExecutionContext
+ ): Promise<Response> {
+   switch (url.pathname) {
+     case '/health':
+@@ -59,7 +60,7 @@ async function routeRequest(
+           headers: corsHeaders,
+         });
+       }
+-      return await handleSSEEndpoint(request, env);
++      return await handleSSEEndpoint(request, env, ctx);
+ 
+     case '/.well-known/oauth-authorization-server':
+     case '/.well-known/openid_configuration':
+@@ -157,7 +158,7 @@ export default {
+   async fetch(
+     request: Request,
+     env: Env,
+-    _ctx: ExecutionContext
++    ctx: ExecutionContext
+   ): Promise<Response> {
+     // Inject Cloudflare Workers environment variables into process.env
+     // This allows tools to access secrets like TAVILY_API_KEY
+@@ -186,7 +187,7 @@ export default {
+       return withCorsHeaders(authResult.error!, request, env, { isPublic });
+     }
+ 
+-    const response = await routeRequest(request, env, url);
++    const response = await routeRequest(request, env, url, ctx);
+     return withCorsHeaders(response, request, env, { isPublic });
+   },
+ } satisfies WorkerExportedHandler<Env>;
+diff --git a/test/unit/worker-sse-kv-shutdown.test.ts b/test/unit/worker-sse-kv-shutdown.test.ts
+new file mode 100644
+index 0000000..706132d
+--- /dev/null
++++ b/test/unit/worker-sse-kv-shutdown.test.ts
+@@ -0,0 +1,533 @@
++import http from "node:http";
++import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
++import type { Env } from "../../lib/adapters/cloudflare.js";
++import {
++  createCliHttpApp,
++  createGracefulShutdown,
++} from "../../lib/adapters/cli-http.js";
++import { resolveApiConfig } from "../../lib/config/index.js";
++import { KVCache, MemoryCache } from "../../lib/core/cache.js";
++import { RateLimiter } from "../../lib/infrastructure/rate-limiter.js";
++import {
++  checkRateLimit,
++  extractClientIdentifier,
++} from "../../lib/workers/rate-limit.js";
++import { handleSSEEndpoint } from "../../lib/workers/sse.js";
++
++function createMockKV() {
++  const store = new Map<string, { value: string; options?: unknown }>();
++  return {
++    store,
++    kv: {
++      get: vi.fn(async (key: string) => store.get(key)?.value ?? null),
++      put: vi.fn(async (key: string, value: string, options?: unknown) => {
++        store.set(key, { value, options });
++      }),
++      delete: vi.fn(async (key: string) => {
++        store.delete(key);
++      }),
++    },
++  };
++}
++
++function sendRawHttp(
++  port: number,
++  options: {
++    method?: string;
++    path?: string;
++    headers?: Record<string, string>;
++    body?: string;
++  } = {},
++): Promise<{ status: number; headers: http.IncomingHttpHeaders; body: string }> {
++  return new Promise((resolvePromise, reject) => {
++    const req = http.request(
++      {
++        host: "127.0.0.1",
++        port,
++        method: options.method ?? "POST",
++        path: options.path ?? "/messages?sessionId=abc",
++        headers: {
++          Host: `127.0.0.1:${port}`,
++          ...(options.headers ?? {}),
++        },
++      },
++      (res) => {
++        const chunks: Buffer[] = [];
++        res.on("data", (c: Buffer) => chunks.push(c));
++        res.on("end", () => {
++          resolvePromise({
++            status: res.statusCode ?? 0,
++            headers: res.headers,
++            body: Buffer.concat(chunks).toString("utf8"),
++          });
++        });
++      },
++    );
++    req.on("error", reject);
++    if (options.body !== undefined) {
++      req.write(options.body);
++    }
++    req.end();
++  });
++}
++
++describe("TCK-0020 / FND-0008: Worker SSE lifecycle, KV TTL/rate-limit, RateLimiter & CLI graceful shutdown", () => {
++  const originalEnv = { ...process.env };
++
++  afterEach(() => {
++    vi.restoreAllMocks();
++    vi.useRealTimers();
++    process.env = { ...originalEnv };
++  });
++
++  describe("Worker handleSSEEndpoint lifecycle", () => {
++    beforeEach(() => {
++      vi.useFakeTimers();
++      vi.setSystemTime(new Date("2026-11-20T18:00:00.000Z"));
++    });
++
++    it("keeps pingInterval and timeoutHandle alive after setup, emits pings, and closes cleanly on timeout", async () => {
++      process.env.MCP_PING_INTERVAL = "100";
++      process.env.MCP_SSE_TIMEOUT = "350";
++
++      const waitUntilPromises: Array<Promise<unknown>> = [];
++      const ctx = {
++        waitUntil: vi.fn((p: Promise<unknown>) => waitUntilPromises.push(p)),
++        passThroughOnException: vi.fn(),
++      } as unknown as ExecutionContext;
++
++      const res = await handleSSEEndpoint(
++        new Request("https://worker.example/sse", {
++          method: "GET",
++          headers: { Accept: "text/event-stream" },
++        }),
++        {},
++        ctx,
++      );
++
++      expect(res.status).toBe(200);
++      expect(ctx.waitUntil).toHaveBeenCalledTimes(1);
++
++      const reader = res.body!.getReader();
++      const decoder = new TextDecoder();
++
++      // Flush initial async writes (`connection` and `init`) and let pingInterval arm
++      await vi.advanceTimersByTimeAsync(0);
++      const first = await reader.read();
++      const second = await reader.read();
++      await vi.advanceTimersByTimeAsync(0);
++      const initialText =
++        decoder.decode(first.value) + decoder.decode(second.value);
++      expect(initialText).toContain("event: connection");
++      expect(initialText).toContain('"id":"init"');
++      expect(vi.getTimerCount()).toBeGreaterThanOrEqual(2);
++
++      // First ping at 100ms (proves `finally` did NOT clear timers prematurely)
++      await vi.advanceTimersByTimeAsync(100);
++      const ping1 = await reader.read();
++      expect(decoder.decode(ping1.value)).toContain("event: ping");
++
++      // Second ping at 200ms
++      await vi.advanceTimersByTimeAsync(100);
++      const ping2 = await reader.read();
++      expect(decoder.decode(ping2.value)).toContain("event: ping");
++
++      // Third ping at 300ms
++      await vi.advanceTimersByTimeAsync(100);
++      const ping3 = await reader.read();
++      expect(decoder.decode(ping3.value)).toContain("event: ping");
++
++      // Connection timeout at 350ms closes stream cleanly and clears all timers
++      await vi.advanceTimersByTimeAsync(50);
++      const eof = await reader.read();
++      expect(eof.done).toBe(true);
++      await waitUntilPromises[0];
++      expect(vi.getTimerCount()).toBe(0);
++    });
++
++    it("cleans up timers immediately when request.signal aborts", async () => {
++      process.env.MCP_PING_INTERVAL = "100";
++      process.env.MCP_SSE_TIMEOUT = "1000";
++
++      const waitUntilPromises: Array<Promise<unknown>> = [];
++      const ctx = {
++        waitUntil: vi.fn((p: Promise<unknown>) => waitUntilPromises.push(p)),
++        passThroughOnException: vi.fn(),
++      } as unknown as ExecutionContext;
++
++      const controller = new AbortController();
++      const res = await handleSSEEndpoint(
++        new Request("https://worker.example/sse", {
++          method: "GET",
++          headers: { Accept: "text/event-stream" },
++          signal: controller.signal,
++        }),
++        {},
++        ctx,
++      );
++
++      const reader = res.body!.getReader();
++      await vi.advanceTimersByTimeAsync(0);
++      await reader.read();
++      await reader.read();
++      await vi.advanceTimersByTimeAsync(0);
++      expect(vi.getTimerCount()).toBeGreaterThanOrEqual(2);
++
++      controller.abort();
++      await vi.advanceTimersByTimeAsync(0);
++      await waitUntilPromises[0];
++      expect(vi.getTimerCount()).toBe(0);
++
++      await expect(reader.read()).rejects.toBeDefined();
++    });
++
++    it("cleans up timers without unhandled rejection when consumer cancels stream", async () => {
++      process.env.MCP_PING_INTERVAL = "100";
++      process.env.MCP_SSE_TIMEOUT = "1000";
++
++      const waitUntilPromises: Array<Promise<unknown>> = [];
++      const ctx = {
++        waitUntil: vi.fn((p: Promise<unknown>) => waitUntilPromises.push(p)),
++        passThroughOnException: vi.fn(),
++      } as unknown as ExecutionContext;
++
++      const res = await handleSSEEndpoint(
++        new Request("https://worker.example/sse", {
++          method: "GET",
++          headers: { Accept: "text/event-stream" },
++        }),
++        {},
++        ctx,
++      );
++
++      const reader = res.body!.getReader();
++      await vi.advanceTimersByTimeAsync(0);
++      await reader.read();
++      await reader.read();
++
++      await reader.cancel("consumer closed");
++      await vi.advanceTimersByTimeAsync(0);
++      await waitUntilPromises[0];
++      expect(vi.getTimerCount()).toBe(0);
++    });
++
++    it("processes POST /sse JSON-RPC requests and emits -32700 error event on invalid JSON", async () => {
++      process.env.MCP_PING_INTERVAL = "500";
++      process.env.MCP_SSE_TIMEOUT = "1000";
++
++      const resOk = await handleSSEEndpoint(
++        new Request("https://worker.example/sse", {
++          method: "POST",
++          headers: { Accept: "text/event-stream", "Content-Type": "application/json" },
++          body: JSON.stringify({ jsonrpc: "2.0", id: 42, method: "tools/list" }),
++        }),
++        {},
++      );
++      const readerOk = resOk.body!.getReader();
++      const decoder = new TextDecoder();
++      await vi.advanceTimersByTimeAsync(0);
++      let okOutput = "";
++      for (let i = 0; i < 3; i++) {
++        const chunk = await readerOk.read();
++        if (chunk.value) okOutput += decoder.decode(chunk.value);
++      }
++      expect(okOutput).toContain("id: 42");
++      expect(okOutput).toContain("cnpj_lookup");
++      await readerOk.cancel();
++      await vi.advanceTimersByTimeAsync(0);
++      expect(vi.getTimerCount()).toBe(0);
++
++      const resBad = await handleSSEEndpoint(
++        new Request("https://worker.example/sse", {
++          method: "POST",
++          headers: { Accept: "text/event-stream", "Content-Type": "application/json" },
++          body: "{invalid-json",
++        }),
++        {},
++      );
++      const readerBad = resBad.body!.getReader();
++      await vi.advanceTimersByTimeAsync(0);
++      let badOutput = "";
++      for (let i = 0; i < 3; i++) {
++        const chunk = await readerBad.read();
++        if (chunk.value) badOutput += decoder.decode(chunk.value);
++      }
++      expect(badOutput).toContain("event: error");
++      expect(badOutput).toContain("-32700");
++      await readerBad.cancel();
++      await vi.advanceTimersByTimeAsync(0);
++      expect(vi.getTimerCount()).toBe(0);
++    });
++  });
++
++  describe("KVCache TTL & corrupted payload guard", () => {
++    it("enforces Cloudflare KV minimum expirationTtl >= 60s and propagates longer TTLs", async () => {
++      const { kv } = createMockKV();
++
++      const shortCache = new KVCache(kv, 5_000);
++      await shortCache.set("short-key", { ok: true });
++      expect(kv.put).toHaveBeenCalledWith(
++        "short-key",
++        expect.any(String),
++        { expirationTtl: 60 },
++      );
++
++      const longCache = new KVCache(kv, 300_000);
++      await longCache.set("long-key", { ok: true });
++      expect(kv.put).toHaveBeenCalledWith(
++        "long-key",
++        expect.any(String),
++        { expirationTtl: 300 },
++      );
++    });
++
++    it("returns null safely when stored KV value is corrupted JSON", async () => {
++      const { kv, store } = createMockKV();
++      store.set("bad-key", { value: "{corrupted-json" });
++
++      const cache = new KVCache(kv, 60_000);
++      await expect(cache.get("bad-key")).resolves.toBeNull();
++    });
++  });
++
++  describe("Worker checkRateLimit KV TTL, fixed-window buckets & header trust", () => {
++    beforeEach(() => {
++      vi.useFakeTimers();
++      vi.setSystemTime(new Date("2026-11-20T18:00:00.000Z"));
++    });
++
++    it("ignores spoofed X-Forwarded-For by default and uses fixed-window bucket with expirationTtl", async () => {
++      const { kv, store } = createMockKV();
++      const env: Env = { MCP_KV: kv };
++
++      // 30 requests with changing spoofed X-Forwarded-For headers must share "unknown" bucket
++      for (let i = 0; i < 30; i++) {
++        const res = await checkRateLimit(
++          new Request("https://worker.example/mcp", {
++            method: "POST",
++            headers: { "X-Forwarded-For": `198.51.100.${i + 1}` },
++          }),
++          env,
++        );
++        expect(res.allowed).toBe(true);
++      }
++
++      // 31st request with a fresh spoofed X-Forwarded-For must still be blocked
++      const blocked = await checkRateLimit(
++        new Request("https://worker.example/mcp", {
++          method: "POST",
++          headers: { "X-Forwarded-For": "203.0.113.99" },
++        }),
++        env,
++      );
++      expect(blocked.allowed).toBe(false);
++      expect(blocked.error?.status).toBe(429);
++      expect(Number(blocked.error?.headers.get("Retry-After"))).toBeGreaterThanOrEqual(1);
++
++      const bucketKey = Array.from(store.keys())[0];
++      expect(bucketKey).toMatch(/^rate_limit:unknown:\d+$/);
++      expect(store.get(bucketKey)?.options).toEqual({ expirationTtl: 120 });
++    });
++
++    it("prefers CF-Connecting-IP and honors X-Forwarded-For only when MCP_TRUST_X_FORWARDED_FOR is true", () => {
++      const reqBoth = new Request("https://worker.example/mcp", {
++        headers: {
++          "CF-Connecting-IP": "203.0.113.10",
++          "X-Forwarded-For": "198.51.100.20, 10.0.0.1",
++        },
++      });
++      expect(extractClientIdentifier(reqBoth, {})).toBe("203.0.113.10");
++
++      const reqXffOnly = new Request("https://worker.example/mcp", {
++        headers: { "X-Forwarded-For": "198.51.100.20, 10.0.0.1" },
++      });
++      expect(extractClientIdentifier(reqXffOnly, {})).toBe("unknown");
++      expect(
++        extractClientIdentifier(reqXffOnly, { MCP_TRUST_X_FORWARDED_FOR: "true" }),
++      ).toBe("198.51.100.20");
++
++      const reqMalformed = new Request("https://worker.example/mcp", {
++        headers: { "CF-Connecting-IP": "bad ip/value\n" },
++      });
++      expect(extractClientIdentifier(reqMalformed, {})).toBe("unknown");
++    });
++
++    it("reads TIMEOUTS.RATE_LIMIT_WINDOW_MS dynamically and recovers from corrupted KV bucket JSON", async () => {
++      process.env.MCP_RATE_LIMIT_WINDOW = "45000";
++      const { kv, store } = createMockKV();
++      const env: Env = { MCP_KV: kv };
++
++      const bucket0 = Math.floor(Date.now() / 45_000);
++      store.set(`rate_limit:203.0.113.5:${bucket0}`, { value: "{corrupted" });
++
++      const r1 = await checkRateLimit(
++        new Request("https://worker.example/mcp", {
++          headers: { "CF-Connecting-IP": "203.0.113.5" },
++        }),
++        env,
++      );
++      expect(r1.allowed).toBe(true);
++      expect(store.get(`rate_limit:203.0.113.5:${bucket0}`)?.options).toEqual({
++        expirationTtl: 90,
++      });
++
++      // Advancing past 45s rolls over to next fixed window bucket cleanly
++      vi.advanceTimersByTime(45_000);
++      const r2 = await checkRateLimit(
++        new Request("https://worker.example/mcp", {
++          headers: { "CF-Connecting-IP": "203.0.113.5" },
++        }),
++        env,
++      );
++      expect(r2.allowed).toBe(true);
++      const bucket1 = Math.floor(Date.now() / 45_000);
++      expect(bucket1).toBe(bucket0 + 1);
++      expect(store.has(`rate_limit:203.0.113.5:${bucket1}`)).toBe(true);
++    });
++  });
++
++  describe("RateLimiter timer lifecycle", () => {
++    it("unrefs cleanup interval and supports idempotent dispose()/destroy() cleanup", () => {
++      const unrefSpy = vi.fn();
++      const fakeHandle = { unref: unrefSpy } as unknown as ReturnType<typeof setInterval>;
++      const setIntervalSpy = vi
++        .spyOn(globalThis, "setInterval")
++        .mockReturnValue(fakeHandle);
++      const clearIntervalSpy = vi.spyOn(globalThis, "clearInterval");
++
++      const limiter = new RateLimiter({ windowMs: 60_000, maxRequests: 5 });
++      expect(setIntervalSpy).toHaveBeenCalledTimes(1);
++      expect(unrefSpy).toHaveBeenCalledTimes(1);
++
++      limiter.checkLimit("client-a");
++      expect(limiter.getStats().activeClients).toBe(1);
++
++      limiter.dispose();
++      limiter.dispose(); // idempotent second call
++      expect(clearIntervalSpy).toHaveBeenCalledTimes(1);
++      expect(clearIntervalSpy).toHaveBeenCalledWith(fakeHandle);
++      expect(limiter.getStats().activeClients).toBe(0);
++
++      const noTimerLimiter = new RateLimiter({
++        windowMs: 60_000,
++        maxRequests: 5,
++        enableCleanupTimer: false,
++      });
++      expect(setIntervalSpy).toHaveBeenCalledTimes(1);
++      noTimerLimiter.destroy();
++    });
++  });
++
++  describe("CLI graceful shutdown & HTTP security middleware ordering", () => {
++    const activeServers: http.Server[] = [];
++
++    afterEach(async () => {
++      while (activeServers.length > 0) {
++        const srv = activeServers.pop()!;
++        if (srv.listening) {
++          await new Promise<void>((r) => srv.close(() => r()));
++        }
++      }
++    });
++
++    it("drains SSE sessions, closes listening http.Server, MCP server and cache idempotently", async () => {
++      const apiConfig = resolveApiConfig();
++      const cache = new MemoryCache(10, 60_000);
++      const httpContext = createCliHttpApp({
++        apiConfig,
++        cache,
++        host: "127.0.0.1",
++      });
++
++      const sessionClose = vi.fn();
++      httpContext.transports.set("sse-1", {
++        transport: { close: sessionClose } as never,
++        createdAt: new Date(),
++        lastActivity: new Date(),
++      });
++
++      const server = http.createServer(httpContext.app);
++      await new Promise<void>((r) => server.listen(0, "127.0.0.1", () => r()));
++      activeServers.push(server);
++
++      const mcpClose = vi.fn(async () => {});
++      const cacheClear = vi.spyOn(cache, "clear");
++      const onExit = vi.fn();
++
++      const shutdown = createGracefulShutdown({
++        server,
++        httpContext,
++        mcpServer: { close: mcpClose },
++        cache,
++        timeoutMs: 2_000,
++        onExit,
++      });
++
++      await Promise.all([shutdown("SIGTERM"), shutdown("SIGINT")]);
++
++      expect(sessionClose).toHaveBeenCalledTimes(1);
++      expect(httpContext.transports.size).toBe(0);
++      expect(server.listening).toBe(false);
++      expect(mcpClose).toHaveBeenCalledTimes(1);
++      expect(cacheClear).toHaveBeenCalledTimes(1);
++      expect(onExit).toHaveBeenCalledTimes(1);
++      expect(onExit).toHaveBeenCalledWith(0);
++    });
++
++    it("rejects disallowed Host/Origin before JSON parsing and emits defensive headers on 400 invalid JSON", async () => {
++      const apiConfig = resolveApiConfig();
++      const cache = new MemoryCache(10, 60_000);
++      const httpContext = createCliHttpApp({
++        apiConfig,
++        cache,
++        host: "127.0.0.1",
++      });
++      const server = http.createServer(httpContext.app);
++      await new Promise<void>((r) => server.listen(0, "127.0.0.1", () => r()));
++      activeServers.push(server);
++      const addr = server.address();
++      if (!addr || typeof addr === "string") {
++        throw new Error("Unexpected server address");
++      }
++
++      try {
++        // Malformed JSON paired with bad Host must return 403 (Host checked BEFORE JSON parse)
++        const badHostRes = await sendRawHttp(addr.port, {
++          method: "POST",
++          path: "/messages?sessionId=abc",
++          headers: {
++            Host: "evil.com",
++            "Content-Type": "application/json",
++          },
++          body: "{not-json",
++        });
++        expect(badHostRes.status).toBe(403);
++        expect(badHostRes.headers["x-content-type-options"]).toBe("nosniff");
++        expect(badHostRes.headers["x-frame-options"]).toBe("DENY");
++
++        // Malformed JSON paired with valid Host must return 400 JSON with defensive headers
++        const badJsonRes = await sendRawHttp(addr.port, {
++          method: "POST",
++          path: "/messages?sessionId=abc",
++          headers: {
++            Host: `127.0.0.1:${addr.port}`,
++            "Content-Type": "application/json",
++          },
++          body: "{not-json",
++        });
++        expect(badJsonRes.status).toBe(400);
++        expect(badJsonRes.headers["x-content-type-options"]).toBe("nosniff");
++        expect(badJsonRes.headers["x-frame-options"]).toBe("DENY");
++        expect(badJsonRes.headers["content-security-policy"]).toBe(
++          "default-src 'none'; frame-ancestors 'none'",
++        );
++        expect(badJsonRes.headers["referrer-policy"]).toBe("no-referrer");
++        expect(JSON.parse(badJsonRes.body)).toMatchObject({
++          error: "Bad Request",
++        });
++      } finally {
++        httpContext.closeAll();
++      }
++    });
++  });
++});
+diff --git a/wrangler.toml b/wrangler.toml
+index 222ca9c..17ff1a6 100644
+--- a/wrangler.toml
++++ b/wrangler.toml
+@@ -57,7 +57,11 @@ command = "npm run build:worker"
+ cwd = "."
+ watch_dir = "lib"
+ 
+-# KV namespace for caching (default)
++# NOTE: MCP_CACHE and MCP_KV currently share the same KV namespace ID; entries are isolated by
++# key prefix (`rate_limit:*` for rate limiting vs tool cache keys) and bounded by mandatory
++# expirationTtl >= 60s (`lib/core/cache.ts`, `lib/workers/rate-limit.ts`). Separate namespaces
++# should be provisioned in the Cloudflare Dashboard during infrastructure rotation, and
++# distributed atomic rate limiting requires Cloudflare native Rate Limiting binding or Durable Objects.
+ [[kv_namespaces]]
+ binding = "MCP_CACHE"
+ id = "9e3f2b99610b4c67abb1080b5f927efa"

@@ -10,7 +10,11 @@ import { CACHE } from "../shared/utils/constants.js";
 declare global {
   interface KVNamespace {
     get(key: string): Promise<string | null>;
-    put(key: string, value: string): Promise<void>;
+    put(
+      key: string,
+      value: string,
+      options?: { expiration?: number; expirationTtl?: number; metadata?: unknown }
+    ): Promise<void>;
     delete(key: string): Promise<void>;
   }
 }
@@ -25,6 +29,7 @@ export interface Env {
   MCP_API_KEY?: string;
   MCP_ALLOWED_ORIGINS?: string;
   MCP_DISABLE_RATE_LIMIT?: string;
+  MCP_TRUST_X_FORWARDED_FOR?: string;
   MCP_KV?: KVNamespace;
   TAVILY_API_KEY?: string; // Tavily search API key (secret)
 }

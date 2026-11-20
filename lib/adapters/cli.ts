@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import type http from "node:http";
 import { createMCPServer } from "../core/mcp-server.js";
 import { MemoryCache } from "../core/cache.js";
 import {
@@ -10,6 +11,8 @@ import {
 } from "../config/index.js";
 import {
   createCliHttpApp,
+  createGracefulShutdown,
+  type CliHttpContext,
   DEFAULT_CLI_HTTP_HOST,
   DEFAULT_MAX_SSE_SESSIONS,
   parseCommaSeparatedList,
@@ -22,6 +25,31 @@ function debug(...args: unknown[]) {
     console.error("[DEBUG]", ...args);
   }
 }
+
+const runtimeState: {
+  httpServer?: http.Server;
+  httpContext?: CliHttpContext;
+  mcpServer?: ReturnType<typeof createMCPServer>;
+  cache?: MemoryCache;
+} = {};
+
+let shutdownRunner: ((signal?: string) => Promise<void>) | undefined;
+const handleShutdownSignal = (signal: string) => {
+  if (!shutdownRunner) {
+    shutdownRunner = createGracefulShutdown({
+      server: runtimeState.httpServer,
+      httpContext: runtimeState.httpContext,
+      mcpServer: runtimeState.mcpServer,
+      cache: runtimeState.cache,
+      logger: debug,
+      onExit: (code) => process.exit(code),
+    });
+  }
+  void shutdownRunner(signal);
+};
+
+process.on("SIGINT", () => handleShutdownSignal("SIGINT"));
+process.on("SIGTERM", () => handleShutdownSignal("SIGTERM"));
 
 async function main() {
   // Handle CLI arguments
@@ -78,9 +106,11 @@ For more information, visit: https://github.com/cristianoaredes/mcp-dadosbr`);
 
   // Create cache
   const cache = new MemoryCache(serverConfig.cacheSize, serverConfig.cacheTTL);
+  runtimeState.cache = cache;
 
   // Create MCP server
   const mcpServer = createMCPServer({ apiConfig, cache });
+  runtimeState.mcpServer = mcpServer;
 
   // Setup transport
   const transportMode = serverConfig.transport;
@@ -108,14 +138,10 @@ For more information, visit: https://github.com/cristianoaredes/mcp-dadosbr`);
       maxSessions,
       debug,
     });
-
-    process.on("SIGTERM", () => {
-      debug("SIGTERM received, closing SSE connections...");
-      httpContext.closeAll();
-    });
+    runtimeState.httpContext = httpContext;
 
     const port = serverConfig.httpPort;
-    httpContext.app.listen(port, host, () =>
+    runtimeState.httpServer = httpContext.app.listen(port, host, () =>
       console.error(
         `${SERVER_NAME} v${SERVER_VERSION} started on HTTP+SSE transport (port ${port}) [${host}]`
       )
@@ -128,13 +154,6 @@ For more information, visit: https://github.com/cristianoaredes/mcp-dadosbr`);
     );
   }
 }
-
-const cleanup = async () => {
-  process.exit(0);
-};
-
-process.on("SIGINT", cleanup);
-process.on("SIGTERM", cleanup);
 
 main().catch((error) => {
   console.error("Server failed to start:", error);
