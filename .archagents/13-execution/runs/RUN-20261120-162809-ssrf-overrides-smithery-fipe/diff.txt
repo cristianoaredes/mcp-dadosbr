@@ -1,0 +1,619 @@
+diff --git a/.archagents/07-security-compliance.md b/.archagents/07-security-compliance.md
+index 1f6f819..76b20bb 100644
+--- a/.archagents/07-security-compliance.md
++++ b/.archagents/07-security-compliance.md
+@@ -2,16 +2,18 @@
+ 
+ Base revisada: `79aa712` (`v0.5.0`; base inicial: `037dae4c`).
+ 
+-O Worker define rotas públicas explícitas (`PUBLIC_PATHS`: `/health`, `/`, `/openapi.json`, `/.well-known/*`) e exige `MCP_API_KEY` com comparação constant-time em `/mcp`, `/sse` e rotas REST quando configurada, mantendo `/oauth/*` e descoberta OAuth desabilitados em modo fail-closed (`501 oauth_not_supported`) e aplicando CORS restritivo via `MCP_ALLOWED_ORIGINS` (sem `*` em rotas autenticadas). O CLI usa rate limit na entrada HTTP. URLs configuráveis de CNPJ e CEP passam por allowlist de hosts HTTPS (proteção SSRF em `lib/config/index.ts`), `readCnpjProfile` rejeita credenciais embutidas na URL do provedor, e `scripts/build-apps.mjs` bloqueia fechamentos inline `</script`/`</style` ao empacotar os MCP Apps. Exposição efetiva, controles ativos no host e conformidade ficam **a confirmar** por ambiente. Credenciais e evidências de execução ficam fora do Git.
++O Worker define rotas públicas explícitas (`PUBLIC_PATHS`: `/health`, `/`, `/openapi.json`, `/.well-known/*`) e exige `MCP_API_KEY` com comparação constant-time em `/mcp`, `/sse` e rotas REST quando configurada, mantendo `/oauth/*` e descoberta OAuth desabilitados em modo fail-closed (`501 oauth_not_supported`) e aplicando CORS restritivo via `MCP_ALLOWED_ORIGINS` (sem `*` em rotas autenticadas). O CLI usa rate limit na entrada HTTP. URLs configuráveis de CNPJ e CEP passam por allowlist de hosts HTTPS e normalização (`validateAndNormalizeApiConfig`), tanto em `loadApiConfiguration()` quanto em `resolveApiConfig(overrides)` e no adaptador Smithery (`configSchema` / `createServer`), restringindo loopback (`localhost`, `127.0.0.1` exatos via HTTP/HTTPS) exclusivamente a `NODE_ENV` `development`/`test` (fail-closed quando ausente ou `production`), rejeitando credenciais embutidas (`username`/`password`) e sanitizando URLs em logs/erros. A tool `fipe_veiculos` valida `tipo` contra `ALLOWED_FIPE_TYPES` e `codigo_fipe` contra regex estrito antes de chamar `httpJson`. `readCnpjProfile` rejeita credenciais embutidas na URL do provedor, e `scripts/build-apps.mjs` bloqueia fechamentos inline `</script`/`</style` ao empacotar os MCP Apps. Exposição efetiva, controles ativos no host e conformidade ficam **a confirmar** por ambiente. Credenciais e evidências de execução ficam fora do Git.
+ 
+ ## Fontes
+ 
+-- `lib/workers/auth.ts:L12-L86`
+-- `lib/workers/oauth.ts:L1-L48`
+-- `lib/adapters/cloudflare.ts:L19-L116`
+-- `lib/workers/worker.ts:L145-L185`
++- `lib/workers/auth.ts:L12-L89`
++- `lib/workers/oauth.ts:L1-L47`
++- `lib/adapters/cloudflare.ts:L19-L130`
++- `lib/workers/worker.ts:L156-L192`
+ - `lib/adapters/cli.ts:L95-L127`
+ - `lib/adapters/cli.ts:L165-L205`
+-- `lib/config/index.ts:L15-L70`
++- `lib/config/index.ts:L7-L218`
++- `lib/adapters/smithery.ts:L14-L53`
++- `lib/tools/financial.ts:L68-L101`
+ - `lib/shared/cnpj-profile.ts:L92-L100`
+ - `scripts/build-apps.mjs:L30-L35`
+diff --git a/lib/adapters/smithery.ts b/lib/adapters/smithery.ts
+index af9f949..edcd87c 100644
+--- a/lib/adapters/smithery.ts
++++ b/lib/adapters/smithery.ts
+@@ -1,7 +1,13 @@
+ import { z } from "zod";
+ import { createMCPServer } from "../core/mcp-server.js";
+ import { MemoryCache } from "../core/cache.js";
+-import { resolveApiConfig } from "../config/index.js";
++import {
++  DEFAULT_CEP_URL,
++  DEFAULT_CNPJ_URL,
++  isAllowedCepUrl,
++  isAllowedCnpjUrl,
++  resolveApiConfig,
++} from "../config/index.js";
+ import { ApiConfig } from "../types/index.js";
+ import { CACHE } from "../shared/utils/constants.js";
+ 
+@@ -10,15 +16,19 @@ export const configSchema = z
+     cnpjBaseUrl: z
+       .string()
+       .url()
+-      .describe("Custom CNPJ API base URL (default: https://opencnpj.org/api/v1)")
+-      .default("https://opencnpj.org/api/v1")
+-      .optional(),
++      .refine(isAllowedCnpjUrl, {
++        message: "Disallowed CNPJ API URL (must be an allowlisted HTTPS host)",
++      })
++      .describe(`Custom CNPJ API base URL (default: ${DEFAULT_CNPJ_URL})`)
++      .default(DEFAULT_CNPJ_URL),
+     cepBaseUrl: z
+       .string()
+       .url()
+-      .describe("Custom CEP API base URL (default: https://opencep.com/v1)")
+-      .default("https://opencep.com/v1")
+-      .optional(),
++      .refine(isAllowedCepUrl, {
++        message: "Disallowed CEP API URL (must be an allowlisted HTTPS host)",
++      })
++      .describe(`Custom CEP API base URL (default: ${DEFAULT_CEP_URL})`)
++      .default(DEFAULT_CEP_URL),
+     authHeaders: z
+       .record(z.string())
+       .describe("Extra headers for API requests (optional)")
+diff --git a/lib/config/index.ts b/lib/config/index.ts
+index 09841ed..36288c1 100644
+--- a/lib/config/index.ts
++++ b/lib/config/index.ts
+@@ -5,54 +5,95 @@ import { TIMEOUTS } from "./timeouts.js";
+ import { CACHE } from "../shared/utils/constants.js";
+ 
+ // Default API URLs
+-const DEFAULT_CNPJ_URL = "https://api.opencnpj.org/";
+-const DEFAULT_CEP_URL = "https://opencep.com/v1/";
++export const DEFAULT_CNPJ_URL = "https://api.opencnpj.org/";
++export const DEFAULT_CEP_URL = "https://opencep.com/v1/";
+ 
+ // Constants
+ export const SERVER_NAME = "mcp-dadosbr";
+ export const SERVER_VERSION = "1.0.0";
+ 
+ // Allowed API hosts (SSRF protection)
+-// Only these hosts can be used for CNPJ and CEP APIs
+-const ALLOWED_CNPJ_HOSTS = [
++// Only these production hosts can be used for CNPJ and CEP APIs
++export const ALLOWED_CNPJ_HOSTS: readonly string[] = [
+   "api.opencnpj.org",
+   "www.receitaws.com.br",
+   "receitaws.com.br",
+   "brasilapi.com.br",
+   "publica.cnpj.ws",
+   "minhareceita.org",
+-  "localhost", // Allow localhost for development/testing
+-  "127.0.0.1",
+ ];
+ 
+-const ALLOWED_CEP_HOSTS = [
++export const ALLOWED_CEP_HOSTS: readonly string[] = [
+   "opencep.com",
+   "viacep.com.br",
+   "brasilapi.com.br",
+   "cep.awesomeapi.com.br",
+-  "localhost", // Allow localhost for development/testing
+-  "127.0.0.1",
+ ];
+ 
++const DEV_LOCALHOST_HOSTS = new Set(["localhost", "127.0.0.1"]);
++
++function isLocalhostAllowed(): boolean {
++  const nodeEnv = typeof process !== "undefined" ? process.env?.NODE_ENV : undefined;
++  return nodeEnv === "development" || nodeEnv === "test";
++}
++
++function sanitizeUrlForLog(url: string): string {
++  try {
++    const parsed = new URL(url);
++    return `${parsed.protocol}//${parsed.host}${parsed.pathname}`;
++  } catch {
++    return "[invalid-url]";
++  }
++}
++
+ /**
+  * Validates URL for SSRF protection
+  * @param url - URL to validate
+  * @param allowedHosts - List of allowed hostnames
+  * @returns true if URL is valid and host is allowed
+  */
+-function validateUrl(url: string, allowedHosts: string[]): boolean {
++export function validateUrl(url: string, allowedHosts: readonly string[]): boolean {
++  if (typeof url !== "string" || !url.trim()) {
++    console.error("[Security] Rejected empty or non-string URL");
++    return false;
++  }
++
+   try {
+     const parsed = new URL(url);
+ 
+-    // Only HTTPS allowed (except localhost for development)
+-    const isLocalhost = parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1";
+-    if (!isLocalhost && parsed.protocol !== "https:") {
+-      console.error(`[Security] Rejected non-HTTPS URL: ${url}`);
++    // Reject URLs with embedded credentials to avoid credential confusion and secret leakage
++    if (parsed.username || parsed.password) {
++      console.error(
++        `[Security] Rejected URL with embedded credentials: ${parsed.protocol}//${parsed.host}`
++      );
++      return false;
++    }
++
++    // Loopback is only permitted in explicit development/test environments over HTTP(S)
++    if (DEV_LOCALHOST_HOSTS.has(parsed.hostname)) {
++      if (!isLocalhostAllowed()) {
++        console.error(
++          `[Security] Rejected loopback URL outside development/test: ${parsed.hostname}`
++        );
++        return false;
++      }
++      if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
++        console.error(
++          `[Security] Rejected non-HTTP(S) loopback URL: ${parsed.protocol}//${parsed.host}`
++        );
++        return false;
++      }
++      return true;
++    }
++
++    // Only HTTPS allowed for non-loopback hosts
++    if (parsed.protocol !== "https:") {
++      console.error(`[Security] Rejected non-HTTPS URL: ${sanitizeUrlForLog(url)}`);
+       return false;
+     }
+ 
+-    // Check if host is in allowlist
+-    const isAllowed = allowedHosts.some(allowed => {
++    // Check if host is in allowlist (exact match or subdomain of non-loopback host)
++    const isAllowed = allowedHosts.some((allowed) => {
+       return parsed.hostname === allowed || parsed.hostname.endsWith(`.${allowed}`);
+     });
+ 
+@@ -63,19 +104,48 @@ function validateUrl(url: string, allowedHosts: string[]): boolean {
+     }
+ 
+     return true;
+-  } catch (error) {
+-    console.error(`[Security] Invalid URL format: ${url}`);
++  } catch {
++    console.error(`[Security] Invalid URL format: ${sanitizeUrlForLog(url)}`);
+     return false;
+   }
+ }
+ 
++export function isAllowedCnpjUrl(url: string): boolean {
++  return validateUrl(url, ALLOWED_CNPJ_HOSTS);
++}
++
++export function isAllowedCepUrl(url: string): boolean {
++  return validateUrl(url, ALLOWED_CEP_HOSTS);
++}
++
+ function normalizeBaseUrl(url: string): string {
+   return url.endsWith("/") ? url : url + "/";
+ }
+ 
++function validateAndNormalizeApiConfig(config: ApiConfig): ApiConfig {
++  if (!validateUrl(config.cnpjBaseUrl, ALLOWED_CNPJ_HOSTS)) {
++    throw new Error(
++      `Invalid or disallowed CNPJ API URL: ${sanitizeUrlForLog(config.cnpjBaseUrl)}. ` +
++      `Allowed hosts: ${ALLOWED_CNPJ_HOSTS.join(", ")}`
++    );
++  }
++  if (!validateUrl(config.cepBaseUrl, ALLOWED_CEP_HOSTS)) {
++    throw new Error(
++      `Invalid or disallowed CEP API URL: ${sanitizeUrlForLog(config.cepBaseUrl)}. ` +
++      `Allowed hosts: ${ALLOWED_CEP_HOSTS.join(", ")}`
++    );
++  }
++
++  return {
++    ...config,
++    cnpjBaseUrl: normalizeBaseUrl(config.cnpjBaseUrl),
++    cepBaseUrl: normalizeBaseUrl(config.cepBaseUrl),
++  };
++}
++
+ // Configuration loading with hierarchy: env vars > config file > defaults
+ function loadApiConfiguration(): ApiConfig {
+-  let config: ApiConfig = {
++  const config: ApiConfig = {
+     cnpjBaseUrl: DEFAULT_CNPJ_URL,
+     cepBaseUrl: DEFAULT_CEP_URL,
+   };
+@@ -96,7 +166,7 @@ function loadApiConfiguration(): ApiConfig {
+     if (configFile.auth?.headers) {
+       config.authHeaders = configFile.auth.headers;
+     }
+-  } catch (error) {
++  } catch {
+     // Config file doesn't exist or is invalid, continue with defaults
+   }
+ 
+@@ -117,23 +187,7 @@ function loadApiConfiguration(): ApiConfig {
+   }
+ 
+   // Validate and normalize URLs with SSRF protection
+-  if (!validateUrl(config.cnpjBaseUrl, ALLOWED_CNPJ_HOSTS)) {
+-    throw new Error(
+-      `Invalid or disallowed CNPJ API URL: ${config.cnpjBaseUrl}. ` +
+-      `Allowed hosts: ${ALLOWED_CNPJ_HOSTS.join(", ")}`
+-    );
+-  }
+-  if (!validateUrl(config.cepBaseUrl, ALLOWED_CEP_HOSTS)) {
+-    throw new Error(
+-      `Invalid or disallowed CEP API URL: ${config.cepBaseUrl}. ` +
+-      `Allowed hosts: ${ALLOWED_CEP_HOSTS.join(", ")}`
+-    );
+-  }
+-
+-  config.cnpjBaseUrl = normalizeBaseUrl(config.cnpjBaseUrl);
+-  config.cepBaseUrl = normalizeBaseUrl(config.cepBaseUrl);
+-
+-  return config;
++  return validateAndNormalizeApiConfig(config);
+ }
+ 
+ export function loadServerConfiguration(): ServerConfig {
+@@ -151,7 +205,8 @@ export function resolveApiConfig(overrides?: Partial<ApiConfig>): ApiConfig {
+   if (!overrides) return base;
+   const merged: ApiConfig = {
+     ...base,
+-    ...overrides,
++    ...(overrides.cnpjBaseUrl !== undefined ? { cnpjBaseUrl: overrides.cnpjBaseUrl } : {}),
++    ...(overrides.cepBaseUrl !== undefined ? { cepBaseUrl: overrides.cepBaseUrl } : {}),
+   };
+   if (base.authHeaders || overrides.authHeaders) {
+     merged.authHeaders = {
+@@ -159,5 +214,5 @@ export function resolveApiConfig(overrides?: Partial<ApiConfig>): ApiConfig {
+       ...(overrides.authHeaders ?? {}),
+     };
+   }
+-  return merged;
++  return validateAndNormalizeApiConfig(merged);
+ }
+diff --git a/lib/tools/financial.ts b/lib/tools/financial.ts
+index 6e2cc47..6b2a2e0 100644
+--- a/lib/tools/financial.ts
++++ b/lib/tools/financial.ts
+@@ -66,21 +66,33 @@ No API key required. Returns time series data.`,
+ // ─── FIPE ───────────────────────────────────────────────────────────────────
+ 
+ const FIPE_API = "https://brasilapi.com.br/api/fipe";
++const ALLOWED_FIPE_TYPES = new Set<string>(["carros", "motos", "caminhoes"]);
++const FIPE_CODE_REGEX = /^[0-9]+(?:-[0-9]+)?$/;
+ 
+ interface FipeArgs { codigo_fipe?: string; tipo?: "carros" | "motos" | "caminhoes"; }
+ 
+ async function executeFipe(args: FipeArgs): Promise<LookupResult> {
+-    const { codigo_fipe, tipo } = args;
+-    if (codigo_fipe) {
++    const { codigo_fipe, tipo } = args ?? {};
++    if (codigo_fipe !== undefined) {
++        if (typeof codigo_fipe !== "string") {
++            return { ok: false, error: "Invalid codigo_fipe format (expected e.g. '001004-9')." };
++        }
++        const trimmed = codigo_fipe.trim();
++        if (!trimmed || !FIPE_CODE_REGEX.test(trimmed)) {
++            return { ok: false, error: "Invalid codigo_fipe format (expected e.g. '001004-9')." };
++        }
+         try {
+-            const result = await httpJson(`${FIPE_API}/preco/v1/${encodeURIComponent(codigo_fipe)}`);
+-            if (result.ok) return { ok: true, data: { codigo_fipe, results: result.data, source: "Tabela FIPE via BrasilAPI" } };
++            const result = await httpJson(`${FIPE_API}/preco/v1/${encodeURIComponent(trimmed)}`);
++            if (result.ok) return { ok: true, data: { codigo_fipe: trimmed, results: result.data, source: "Tabela FIPE via BrasilAPI" } };
+             return { ok: false, error: result.error || "FIPE lookup failed" };
+         } catch (err) { return { ok: false, error: `FIPE error: ${err instanceof Error ? err.message : String(err)}` }; }
+     }
+-    if (tipo) {
++    if (tipo !== undefined) {
++        if (typeof tipo !== "string" || !ALLOWED_FIPE_TYPES.has(tipo)) {
++            return { ok: false, error: "Invalid FIPE vehicle type. Valid: carros, motos, caminhoes." };
++        }
+         try {
+-            const result = await httpJson(`${FIPE_API}/marcas/v1/${tipo}`);
++            const result = await httpJson(`${FIPE_API}/marcas/v1/${encodeURIComponent(tipo)}`);
+             if (result.ok) return { ok: true, data: { tipo, brands: result.data, source: "Tabela FIPE via BrasilAPI", note: "Use the FIPE code to get prices." } };
+             return { ok: false, error: result.error || "FIPE brands lookup failed" };
+         } catch (err) { return { ok: false, error: `FIPE error: ${err instanceof Error ? err.message : String(err)}` }; }
+diff --git a/test/unit/config.test.ts b/test/unit/config.test.ts
+index 4cab185..8cbec63 100644
+--- a/test/unit/config.test.ts
++++ b/test/unit/config.test.ts
+@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
+ import { resolveApiConfig } from "../../lib/config/index.js";
+ 
+ describe("Config SSRF Protection", () => {
+-  const originalEnv = process.env;
++  const originalEnv = { ...process.env };
+ 
+   afterEach(() => {
+     // Restore original environment after each test
+@@ -111,4 +111,119 @@ describe("Config SSRF Protection", () => {
+       expect(() => resolveApiConfig()).toThrow(/Invalid or disallowed CEP API URL/);
+     });
+   });
++
++  describe("resolveApiConfig Overrides SSRF Protection", () => {
++    it("should reject cloud metadata override even when authHeaders are configured", () => {
++      process.env.API_KEY_HEADER = "X-Secret-Key";
++      process.env.API_KEY_VALUE = "top-secret-token";
++      expect(() =>
++        resolveApiConfig({
++          cnpjBaseUrl: "https://169.254.169.254/latest/meta-data",
++        })
++      ).toThrow(/Invalid or disallowed CNPJ API URL/);
++    });
++
++    it("should reject disallowed CNPJ/CEP hosts and non-HTTPS overrides", () => {
++      expect(() =>
++        resolveApiConfig({ cnpjBaseUrl: "https://evil.com/api/" })
++      ).toThrow(/Invalid or disallowed CNPJ API URL/);
++      expect(() =>
++        resolveApiConfig({ cepBaseUrl: "https://evil.com/cep/" })
++      ).toThrow(/Invalid or disallowed CEP API URL/);
++      expect(() =>
++        resolveApiConfig({ cnpjBaseUrl: "http://api.opencnpj.org/" })
++      ).toThrow(/Invalid or disallowed CNPJ API URL/);
++      expect(() =>
++        resolveApiConfig({ cnpjBaseUrl: "" })
++      ).toThrow(/Invalid or disallowed CNPJ API URL/);
++    });
++
++    it("should normalize trailing slash on valid overrides and preserve defaults for undefined overrides", () => {
++      const normalized = resolveApiConfig({
++        cnpjBaseUrl: "https://api.opencnpj.org",
++        cepBaseUrl: "https://opencep.com/v1",
++      });
++      expect(normalized.cnpjBaseUrl).toBe("https://api.opencnpj.org/");
++      expect(normalized.cepBaseUrl).toBe("https://opencep.com/v1/");
++
++      const defaulted = resolveApiConfig({ cnpjBaseUrl: undefined });
++      expect(defaulted.cnpjBaseUrl).toBe("https://api.opencnpj.org/");
++      expect(defaulted.cepBaseUrl).toBe("https://opencep.com/v1/");
++    });
++  });
++
++  describe("Loopback Environment & Subdomain Restrictions", () => {
++    it("should reject localhost and 127.0.0.1 in production via env or overrides", () => {
++      process.env.NODE_ENV = "production";
++      process.env.CNPJ_API_BASE_URL = "http://localhost:3000/";
++      expect(() => resolveApiConfig()).toThrow(/Invalid or disallowed CNPJ API URL/);
++
++      delete process.env.CNPJ_API_BASE_URL;
++      expect(() =>
++        resolveApiConfig({ cnpjBaseUrl: "http://127.0.0.1:8080/" })
++      ).toThrow(/Invalid or disallowed CNPJ API URL/);
++      expect(() =>
++        resolveApiConfig({ cepBaseUrl: "https://localhost/" })
++      ).toThrow(/Invalid or disallowed CEP API URL/);
++    });
++
++    it("should reject localhost and 127.0.0.1 when NODE_ENV is unset (fail-closed)", () => {
++      delete process.env.NODE_ENV;
++      process.env.CNPJ_API_BASE_URL = "http://localhost:3000/";
++      expect(() => resolveApiConfig()).toThrow(/Invalid or disallowed CNPJ API URL/);
++
++      delete process.env.CNPJ_API_BASE_URL;
++      expect(() =>
++        resolveApiConfig({ cepBaseUrl: "http://127.0.0.1:8080/" })
++      ).toThrow(/Invalid or disallowed CEP API URL/);
++    });
++
++    it("should allow exact loopback in development/test while rejecting subdomains, IPv6 ::1, and non-HTTP schemes", () => {
++      process.env.NODE_ENV = "development";
++      const devCfg = resolveApiConfig({
++        cnpjBaseUrl: "http://localhost:3000",
++        cepBaseUrl: "http://127.0.0.1:8080",
++      });
++      expect(devCfg.cnpjBaseUrl).toBe("http://localhost:3000/");
++      expect(devCfg.cepBaseUrl).toBe("http://127.0.0.1:8080/");
++
++      expect(() =>
++        resolveApiConfig({ cnpjBaseUrl: "http://evil.localhost:3000/" })
++      ).toThrow(/Invalid or disallowed CNPJ API URL/);
++      expect(() =>
++        resolveApiConfig({ cepBaseUrl: "http://foo.127.0.0.1/" })
++      ).toThrow(/Invalid or disallowed CEP API URL/);
++      expect(() =>
++        resolveApiConfig({ cnpjBaseUrl: "file://localhost/etc/passwd" })
++      ).toThrow(/Invalid or disallowed CNPJ API URL/);
++      expect(() =>
++        resolveApiConfig({ cnpjBaseUrl: "http://[::1]:3000/" })
++      ).toThrow(/Invalid or disallowed CNPJ API URL/);
++    });
++  });
++
++  describe("Embedded Credentials Rejection & Log Sanitization", () => {
++    it("should reject URLs with username/password and never leak them in thrown errors", () => {
++      let caughtError = "";
++      try {
++        resolveApiConfig({
++          cnpjBaseUrl: "https://secretUser:secretPass@api.opencnpj.org/v1/",
++        });
++      } catch (err) {
++        caughtError = err instanceof Error ? err.message : String(err);
++      }
++      expect(caughtError).toMatch(/Invalid or disallowed CNPJ API URL/);
++      expect(caughtError).not.toContain("secretUser");
++      expect(caughtError).not.toContain("secretPass");
++
++      expect(() =>
++        resolveApiConfig({ cepBaseUrl: "https://token@opencep.com/v1/" })
++      ).toThrow(/Invalid or disallowed CEP API URL/);
++
++      process.env.NODE_ENV = "development";
++      expect(() =>
++        resolveApiConfig({ cnpjBaseUrl: "http://user:pass@localhost:3000/" })
++      ).toThrow(/Invalid or disallowed CNPJ API URL/);
++    });
++  });
+ });
+diff --git a/test/unit/smithery-fipe-security.test.ts b/test/unit/smithery-fipe-security.test.ts
+new file mode 100644
+index 0000000..85765d6
+--- /dev/null
++++ b/test/unit/smithery-fipe-security.test.ts
+@@ -0,0 +1,143 @@
++import { describe, it, expect, vi, afterEach } from "vitest";
++import createServer, { configSchema } from "../../lib/adapters/smithery.js";
++import { resolveApiConfig } from "../../lib/config/index.js";
++import { executeRegisteredTool } from "../../lib/core/registry.js";
++import "../../lib/tools/financial.js";
++
++describe("Smithery SSRF & ConfigSchema Hardening (TCK-0014)", () => {
++  it("uses allowlisted HTTPS defaults when parsed with empty object", () => {
++    const parsed = configSchema.safeParse({});
++    expect(parsed.success).toBe(true);
++    if (parsed.success) {
++      expect(parsed.data.cnpjBaseUrl).toBe("https://api.opencnpj.org/");
++      expect(parsed.data.cepBaseUrl).toBe("https://opencep.com/v1/");
++    }
++  });
++
++  it("rejects bare opencnpj.org, cloud metadata, external hosts, and embedded credentials in configSchema", () => {
++    expect(
++      configSchema.safeParse({ cnpjBaseUrl: "https://opencnpj.org/api/v1" }).success
++    ).toBe(false);
++    expect(
++      configSchema.safeParse({
++        cnpjBaseUrl: "https://169.254.169.254/latest/meta-data",
++      }).success
++    ).toBe(false);
++    expect(
++      configSchema.safeParse({ cepBaseUrl: "https://evil.com/cep/" }).success
++    ).toBe(false);
++    expect(
++      configSchema.safeParse({
++        cnpjBaseUrl: "https://user:pass@api.opencnpj.org/",
++      }).success
++    ).toBe(false);
++  });
++
++  it("enforces allowlist in createServer even when callers bypass configSchema", () => {
++    expect(() => createServer()).not.toThrow();
++    expect(() =>
++      createServer({
++        config: { cnpjBaseUrl: "https://169.254.169.254/latest/meta-data" },
++      })
++    ).toThrow(/Invalid or disallowed CNPJ API URL/);
++    expect(() =>
++      createServer({
++        config: { cepBaseUrl: "https://evil.com/" },
++      })
++    ).toThrow(/Invalid or disallowed CEP API URL/);
++  });
++});
++
++describe("fipe_veiculos Path Traversal & Input Validation (TCK-0014)", () => {
++  afterEach(() => {
++    vi.restoreAllMocks();
++  });
++
++  it("rejects path traversal and invalid tipo without calling fetch", async () => {
++    const fetchSpy = vi.spyOn(globalThis, "fetch");
++    const apiConfig = resolveApiConfig();
++
++    const traversal = await executeRegisteredTool(
++      "fipe_veiculos",
++      { tipo: "../../cnpj/v1/11222333000181" },
++      apiConfig
++    );
++    expect(traversal.ok).toBe(false);
++    expect(traversal.error).toMatch(/Invalid FIPE vehicle type/i);
++
++    const unknown = await executeRegisteredTool(
++      "fipe_veiculos",
++      { tipo: "aviao" },
++      apiConfig
++    );
++    expect(unknown.ok).toBe(false);
++
++    const smuggled = await executeRegisteredTool(
++      "fipe_veiculos",
++      { tipo: "carros?foo=bar" },
++      apiConfig
++    );
++    expect(smuggled.ok).toBe(false);
++
++    expect(fetchSpy).not.toHaveBeenCalled();
++  });
++
++  it("rejects path traversal and query smuggling in codigo_fipe without calling fetch", async () => {
++    const fetchSpy = vi.spyOn(globalThis, "fetch");
++    const apiConfig = resolveApiConfig();
++
++    const traversal = await executeRegisteredTool(
++      "fipe_veiculos",
++      { codigo_fipe: "../../cnpj/v1/11222333000181" },
++      apiConfig
++    );
++    expect(traversal.ok).toBe(false);
++    expect(traversal.error).toMatch(/Invalid codigo_fipe/i);
++
++    const querySmuggling = await executeRegisteredTool(
++      "fipe_veiculos",
++      { codigo_fipe: "001004-9?x=1" },
++      apiConfig
++    );
++    expect(querySmuggling.ok).toBe(false);
++
++    const empty = await executeRegisteredTool(
++      "fipe_veiculos",
++      { codigo_fipe: "   " },
++      apiConfig
++    );
++    expect(empty.ok).toBe(false);
++
++    expect(fetchSpy).not.toHaveBeenCalled();
++  });
++
++  it("accepts valid vehicle types (carros, motos, caminhoes) and valid codigo_fipe", async () => {
++    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async () => {
++      return new Response(JSON.stringify([{ nome: "Mock", codigo: "1" }]), {
++        status: 200,
++        headers: { "Content-Type": "application/json" },
++      });
++    });
++    const apiConfig = resolveApiConfig();
++
++    for (const tipo of ["carros", "motos", "caminhoes"] as const) {
++      const res = await executeRegisteredTool("fipe_veiculos", { tipo }, apiConfig);
++      expect(res.ok).toBe(true);
++      expect(fetchSpy).toHaveBeenLastCalledWith(
++        `https://brasilapi.com.br/api/fipe/marcas/v1/${tipo}`,
++        expect.anything()
++      );
++    }
++
++    const byCode = await executeRegisteredTool(
++      "fipe_veiculos",
++      { codigo_fipe: " 001004-9 " },
++      apiConfig
++    );
++    expect(byCode.ok).toBe(true);
++    expect(fetchSpy).toHaveBeenLastCalledWith(
++      "https://brasilapi.com.br/api/fipe/preco/v1/001004-9",
++      expect.anything()
++    );
++  });
++});

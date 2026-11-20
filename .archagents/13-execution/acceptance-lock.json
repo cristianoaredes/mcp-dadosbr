@@ -106,5 +106,14 @@
     "tree": null,
     "updated_at": "2026-11-20T16:25:33Z",
     "updated_by": "criteria-check"
+  },
+  "TCK-0014": {
+    "content_digest": null,
+    "criteria_digest": null,
+    "head": null,
+    "passes": true,
+    "tree": null,
+    "updated_at": "2026-11-20T16:33:36Z",
+    "updated_by": "criteria-check"
   }
 }

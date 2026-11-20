@@ -5,34 +5,46 @@ import { TIMEOUTS } from "./timeouts.js";
 import { CACHE } from "../shared/utils/constants.js";
 
 // Default API URLs
-const DEFAULT_CNPJ_URL = "https://api.opencnpj.org/";
-const DEFAULT_CEP_URL = "https://opencep.com/v1/";
+export const DEFAULT_CNPJ_URL = "https://api.opencnpj.org/";
+export const DEFAULT_CEP_URL = "https://opencep.com/v1/";
 
 // Constants
 export const SERVER_NAME = "mcp-dadosbr";
 export const SERVER_VERSION = "1.0.0";
 
 // Allowed API hosts (SSRF protection)
-// Only these hosts can be used for CNPJ and CEP APIs
-const ALLOWED_CNPJ_HOSTS = [
+// Only these production hosts can be used for CNPJ and CEP APIs
+export const ALLOWED_CNPJ_HOSTS: readonly string[] = [
   "api.opencnpj.org",
   "www.receitaws.com.br",
   "receitaws.com.br",
   "brasilapi.com.br",
   "publica.cnpj.ws",
   "minhareceita.org",
-  "localhost", // Allow localhost for development/testing
-  "127.0.0.1",
 ];
 
-const ALLOWED_CEP_HOSTS = [
+export const ALLOWED_CEP_HOSTS: readonly string[] = [
   "opencep.com",
   "viacep.com.br",
   "brasilapi.com.br",
   "cep.awesomeapi.com.br",
-  "localhost", // Allow localhost for development/testing
-  "127.0.0.1",
 ];
+
+const DEV_LOCALHOST_HOSTS = new Set(["localhost", "127.0.0.1"]);
+
+function isLocalhostAllowed(): boolean {
+  const nodeEnv = typeof process !== "undefined" ? process.env?.NODE_ENV : undefined;
+  return nodeEnv === "development" || nodeEnv === "test";
+}
+
+function sanitizeUrlForLog(url: string): string {
+  try {
+    const parsed = new URL(url);
+    return `${parsed.protocol}//${parsed.host}${parsed.pathname}`;
+  } catch {
+    return "[invalid-url]";
+  }
+}
 
 /**
  * Validates URL for SSRF protection
@@ -40,19 +52,48 @@ const ALLOWED_CEP_HOSTS = [
  * @param allowedHosts - List of allowed hostnames
  * @returns true if URL is valid and host is allowed
  */
-function validateUrl(url: string, allowedHosts: string[]): boolean {
+export function validateUrl(url: string, allowedHosts: readonly string[]): boolean {
+  if (typeof url !== "string" || !url.trim()) {
+    console.error("[Security] Rejected empty or non-string URL");
+    return false;
+  }
+
   try {
     const parsed = new URL(url);
 
-    // Only HTTPS allowed (except localhost for development)
-    const isLocalhost = parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1";
-    if (!isLocalhost && parsed.protocol !== "https:") {
-      console.error(`[Security] Rejected non-HTTPS URL: ${url}`);
+    // Reject URLs with embedded credentials to avoid credential confusion and secret leakage
+    if (parsed.username || parsed.password) {
+      console.error(
+        `[Security] Rejected URL with embedded credentials: ${parsed.protocol}//${parsed.host}`
+      );
       return false;
     }
 
-    // Check if host is in allowlist
-    const isAllowed = allowedHosts.some(allowed => {
+    // Loopback is only permitted in explicit development/test environments over HTTP(S)
+    if (DEV_LOCALHOST_HOSTS.has(parsed.hostname)) {
+      if (!isLocalhostAllowed()) {
+        console.error(
+          `[Security] Rejected loopback URL outside development/test: ${parsed.hostname}`
+        );
+        return false;
+      }
+      if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+        console.error(
+          `[Security] Rejected non-HTTP(S) loopback URL: ${parsed.protocol}//${parsed.host}`
+        );
+        return false;
+      }
+      return true;
+    }
+
+    // Only HTTPS allowed for non-loopback hosts
+    if (parsed.protocol !== "https:") {
+      console.error(`[Security] Rejected non-HTTPS URL: ${sanitizeUrlForLog(url)}`);
+      return false;
+    }
+
+    // Check if host is in allowlist (exact match or subdomain of non-loopback host)
+    const isAllowed = allowedHosts.some((allowed) => {
       return parsed.hostname === allowed || parsed.hostname.endsWith(`.${allowed}`);
     });
 
@@ -63,19 +104,48 @@ function validateUrl(url: string, allowedHosts: string[]): boolean {
     }
 
     return true;
-  } catch (error) {
-    console.error(`[Security] Invalid URL format: ${url}`);
+  } catch {
+    console.error(`[Security] Invalid URL format: ${sanitizeUrlForLog(url)}`);
     return false;
   }
+}
+
+export function isAllowedCnpjUrl(url: string): boolean {
+  return validateUrl(url, ALLOWED_CNPJ_HOSTS);
+}
+
+export function isAllowedCepUrl(url: string): boolean {
+  return validateUrl(url, ALLOWED_CEP_HOSTS);
 }
 
 function normalizeBaseUrl(url: string): string {
   return url.endsWith("/") ? url : url + "/";
 }
 
+function validateAndNormalizeApiConfig(config: ApiConfig): ApiConfig {
+  if (!validateUrl(config.cnpjBaseUrl, ALLOWED_CNPJ_HOSTS)) {
+    throw new Error(
+      `Invalid or disallowed CNPJ API URL: ${sanitizeUrlForLog(config.cnpjBaseUrl)}. ` +
+      `Allowed hosts: ${ALLOWED_CNPJ_HOSTS.join(", ")}`
+    );
+  }
+  if (!validateUrl(config.cepBaseUrl, ALLOWED_CEP_HOSTS)) {
+    throw new Error(
+      `Invalid or disallowed CEP API URL: ${sanitizeUrlForLog(config.cepBaseUrl)}. ` +
+      `Allowed hosts: ${ALLOWED_CEP_HOSTS.join(", ")}`
+    );
+  }
+
+  return {
+    ...config,
+    cnpjBaseUrl: normalizeBaseUrl(config.cnpjBaseUrl),
+    cepBaseUrl: normalizeBaseUrl(config.cepBaseUrl),
+  };
+}
+
 // Configuration loading with hierarchy: env vars > config file > defaults
 function loadApiConfiguration(): ApiConfig {
-  let config: ApiConfig = {
+  const config: ApiConfig = {
     cnpjBaseUrl: DEFAULT_CNPJ_URL,
     cepBaseUrl: DEFAULT_CEP_URL,
   };
@@ -96,7 +166,7 @@ function loadApiConfiguration(): ApiConfig {
     if (configFile.auth?.headers) {
       config.authHeaders = configFile.auth.headers;
     }
-  } catch (error) {
+  } catch {
     // Config file doesn't exist or is invalid, continue with defaults
   }
 
@@ -117,23 +187,7 @@ function loadApiConfiguration(): ApiConfig {
   }
 
   // Validate and normalize URLs with SSRF protection
-  if (!validateUrl(config.cnpjBaseUrl, ALLOWED_CNPJ_HOSTS)) {
-    throw new Error(
-      `Invalid or disallowed CNPJ API URL: ${config.cnpjBaseUrl}. ` +
-      `Allowed hosts: ${ALLOWED_CNPJ_HOSTS.join(", ")}`
-    );
-  }
-  if (!validateUrl(config.cepBaseUrl, ALLOWED_CEP_HOSTS)) {
-    throw new Error(
-      `Invalid or disallowed CEP API URL: ${config.cepBaseUrl}. ` +
-      `Allowed hosts: ${ALLOWED_CEP_HOSTS.join(", ")}`
-    );
-  }
-
-  config.cnpjBaseUrl = normalizeBaseUrl(config.cnpjBaseUrl);
-  config.cepBaseUrl = normalizeBaseUrl(config.cepBaseUrl);
-
-  return config;
+  return validateAndNormalizeApiConfig(config);
 }
 
 export function loadServerConfiguration(): ServerConfig {
@@ -151,7 +205,8 @@ export function resolveApiConfig(overrides?: Partial<ApiConfig>): ApiConfig {
   if (!overrides) return base;
   const merged: ApiConfig = {
     ...base,
-    ...overrides,
+    ...(overrides.cnpjBaseUrl !== undefined ? { cnpjBaseUrl: overrides.cnpjBaseUrl } : {}),
+    ...(overrides.cepBaseUrl !== undefined ? { cepBaseUrl: overrides.cepBaseUrl } : {}),
   };
   if (base.authHeaders || overrides.authHeaders) {
     merged.authHeaders = {
@@ -159,5 +214,5 @@ export function resolveApiConfig(overrides?: Partial<ApiConfig>): ApiConfig {
       ...(overrides.authHeaders ?? {}),
     };
   }
-  return merged;
+  return validateAndNormalizeApiConfig(merged);
 }
