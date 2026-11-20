@@ -16,6 +16,7 @@ O snapshot inicial continha workflows de CI, release por tag e Cloudflare com ru
 - O job `lint` (`Code Quality`) de `.github/workflows/ci.yml:L116-L117` executa `npm audit --omit=dev --audit-level=high` após `npm ci`.
 - `.github/workflows/cloudflare-deploy.yml:L27-L41` declara `permissions: { contents: read }` no nível do workflow (menor privilégio para `GITHUB_TOKEN`) e `persist-credentials: false` em `actions/checkout@v4`.
 - Dependências de runtime mortas (`agents`, `@smithery/sdk`, `workers-mcp`, `async-mutex`) e o módulo obsoleto `lib/workers/mcp-agent.ts` foram removidos em `TCK-0021`; `zod` (`^4.6.7`) e `express` (`^5.3.0`) + transitivas foram saneados com `package-lock.json` validado via `npm ci`. A execução efetiva dos pipelines no GitHub Actions após essas alterações permanece **a confirmar**.
+- Em `TCK-0022`, as `devDependencies` diretas vulneráveis foram atualizadas (`vitest@^4.1.12`, `@vitest/ui@^4.1.12`, `vite@^7.3.8`, `wrangler@^4.166.0`, `@cloudflare/workers-types@^5.20261120.1`) e as transitivas saneadas no `package-lock.json` via `npm install && npm audit fix` (validado com `npm ci`), alinhando `wranglerVersion: "4.166.0"` em `.github/workflows/cloudflare-deploy.yml:L71`. A execução remota do deploy Cloudflare com `wrangler@4.166.0` no GitHub Actions permanece **a confirmar**.
 
 ## Alteração preparada para o runner próprio
 

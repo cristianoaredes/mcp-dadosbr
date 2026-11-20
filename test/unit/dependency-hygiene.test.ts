@@ -43,3 +43,58 @@ describe("TCK-0021 / FND-0009: Runtime dependency hygiene & CI audit gate", () =
     expect(badHeaders.success).toBe(false);
   });
 });
+
+function parseSemverTuple(raw: string): [number, number, number] {
+  const cleaned = raw.replace(/^[^0-9]*/, "");
+  const parts = cleaned.split(".").map((n) => Number.parseInt(n, 10));
+  return [parts[0] || 0, parts[1] || 0, parts[2] || 0];
+}
+
+function isAtLeastSemver(actual: string, min: [number, number, number]): boolean {
+  const [a0, a1, a2] = parseSemverTuple(actual);
+  if (a0 !== min[0]) return a0 > min[0];
+  if (a1 !== min[1]) return a1 > min[1];
+  return a2 >= min[2];
+}
+
+describe("TCK-0022 / FND-0010: DevDependencies CVE patches & CI wranglerVersion alignment", () => {
+  it("declares patched floors for vulnerable devDependencies in package.json", () => {
+    const pkg = JSON.parse(readFileSync(resolve(ROOT, "package.json"), "utf8")) as {
+      devDependencies: Record<string, string>;
+    };
+
+    expect(isAtLeastSemver(pkg.devDependencies.vitest, [4, 1, 12])).toBe(true);
+    expect(isAtLeastSemver(pkg.devDependencies["@vitest/ui"], [4, 1, 12])).toBe(true);
+    expect(isAtLeastSemver(pkg.devDependencies.vite, [7, 3, 8])).toBe(true);
+    expect(isAtLeastSemver(pkg.devDependencies.wrangler, [4, 166, 0])).toBe(true);
+    expect(pkg.devDependencies["@cloudflare/workers-types"]).toMatch(/^\^5\./);
+  });
+
+  it("aligns wranglerVersion in .github/workflows/cloudflare-deploy.yml with package.json", () => {
+    const pkg = JSON.parse(readFileSync(resolve(ROOT, "package.json"), "utf8")) as {
+      devDependencies: Record<string, string>;
+    };
+    const workflow = readFileSync(
+      resolve(ROOT, ".github/workflows/cloudflare-deploy.yml"),
+      "utf8",
+    );
+    const match = workflow.match(/wranglerVersion:\s*"([^"]+)"/);
+    expect(match).not.toBeNull();
+    const ciWrangler = match![1];
+    expect(ciWrangler).not.toMatch(/^3\./);
+    expect(isAtLeastSemver(ciWrangler, [4, 166, 0])).toBe(true);
+    expect(ciWrangler).toBe(pkg.devDependencies.wrangler.replace(/^\^/, ""));
+  });
+
+  it("pins patched versions of direct and transitive packages in package-lock.json", () => {
+    const lock = JSON.parse(readFileSync(resolve(ROOT, "package-lock.json"), "utf8")) as {
+      packages: Record<string, { version?: string }>;
+    };
+
+    expect(isAtLeastSemver(lock.packages["node_modules/vitest"]?.version ?? "0.0.0", [4, 1, 12])).toBe(true);
+    expect(isAtLeastSemver(lock.packages["node_modules/@vitest/ui"]?.version ?? "0.0.0", [4, 1, 12])).toBe(true);
+    expect(isAtLeastSemver(lock.packages["node_modules/vite"]?.version ?? "0.0.0", [7, 3, 8])).toBe(true);
+    expect(isAtLeastSemver(lock.packages["node_modules/wrangler"]?.version ?? "0.0.0", [4, 166, 0])).toBe(true);
+    expect(isAtLeastSemver(lock.packages["node_modules/handlebars"]?.version ?? "0.0.0", [4, 7, 10])).toBe(true);
+  });
+});
