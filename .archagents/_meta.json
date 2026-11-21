@@ -374,6 +374,11 @@
       "ticket": "TCK-0012",
       "run": "RUN-20261119-174741-ephemeral-runner-supervisor",
       "learning": "Em repositórios públicos com self-hosted runners em Docker sobre host dual-stack, regras apenas IPv4 deixam bypass via fe80::/64 contra sockets [::]:22 (exige disable_ipv6 sysctl + ip6tables DROP); além disso, default labels (self-hosted/linux/x64) exigem approval_policy=all_external_contributors somado a guarda pré-spawn contra label-subset hijacking."
+    },
+    {
+      "ticket": "TCK-0025",
+      "run": "RUN-20261120-210540-tck-0025",
+      "learning": "No ciclo de remediação TCK-0013..TCK-0029: (1) testes reais importando os módulos de lib/ + vi.useFakeTimers() revelam bugs invisíveis em suites replicadas (SSE finally, AbortController, async abort race); (2) Logger em MCP stdio deve usar 100% stderr com Web Crypto portable em Cloudflare Workers; (3) Observe handoff (48h pós-deploy, owner operador): validar métricas RED/cacheHits, /health com sonda KV real, wrangler tail sem vazamento de segredos e npm run test:integration."
     }
   ],
   "framework_version": "2.25.0",
