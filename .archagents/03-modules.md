@@ -6,7 +6,7 @@ Base revisada: `c83d626` (`0.6.0`, worktree `audit-remediation`; base inicial: `
 - `lib/tools`: módulos de domínio auto-registrados via barrel `index.ts` (`core`, `government`, `legal`, `company`, `financial`, `health`, `osint`). Não são importados por `lib/core/` (fluxo acíclico `tools -> core`).
 - `lib/shared`: contratos e projeções compartilhadas entre servidor e apps (`bacen.ts`, `pncp.ts`, `cnpj-profile.ts`, `errors.ts`, `log-redaction.ts`, `types/`, `utils/constants.ts`, `utils/timeout.ts`).
 - `lib/adapters` e `lib/bin`: adaptadores do CLI (`cli.ts` em stdio/HTTP, `cli-http.ts` com servidor Express, headers e `createGracefulShutdown`), Cloudflare (`cloudflare.ts` com `syncWorkerEnv`), Smithery (`smithery.ts`) e binário `mcp-dadosbr.ts`.
-- `lib/workers`: ponto de entrada (`worker.ts`), rotas REST (`rest.ts`), SSE (`sse.ts`), OpenAPI (`openapi.ts`), autenticação/OAuth (`auth.ts`, `oauth.ts`, `tokens.ts`, `crypto.ts`, `types.ts`) e rate limit (`rate-limit.ts`) do Cloudflare Worker.
+- `lib/workers`: ponto de entrada (`worker.ts`), rotas REST (`rest.ts`), SSE (`sse.ts`), OpenAPI (`openapi.ts`), autenticação/OAuth/tipos (`auth.ts`, `oauth.ts`, `types.ts`) e rate limit (`rate-limit.ts`) do Cloudflare Worker.
 - `apps/` e `scripts/build-apps.mjs`: cinco interfaces MCP Apps (`apps/ibge`, `apps/querido-diario`, `apps/bacen`, `apps/pncp`, `apps/cnpj`), empacotadas via `esbuild` em HTML autônomo sob `build/lib/apps/*.html`.
 - `infra/runner/`: supervisor systemd/Docker isolado (`supervisor.py`, `setup-network-isolation.sh`, `Dockerfile`, `dadosbr-runner-supervisor.service`, `test_supervisor.py`) documentado em `.archagents/06-infra-devops.md`.
 

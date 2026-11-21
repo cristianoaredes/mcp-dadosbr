@@ -11,9 +11,12 @@ import {
   handleSearchEndpoint,
   handleThinkingEndpoint,
 } from "../../lib/workers/rest.js";
-import { generateSecureToken } from "../../lib/workers/tokens.js";
+import { generateOpenAPISchema } from "../../lib/workers/openapi.js";
 import worker from "../../lib/workers/worker.js";
+import { DORK_CATEGORIES, SEARCH_PROVIDERS } from "../../lib/core/tool-schemas.js";
+import * as toolsModule from "../../lib/core/tools.js";
 import { TOOL_DEFINITIONS } from "../../lib/core/tools.js";
+import { PerplexityProvider } from "../../lib/core/search-providers.js";
 import { resetCircuitBreakers } from "../../lib/core/http-client.js";
 
 function createMemoryKv(initial: Record<string, string> = {}): KVNamespace & {
@@ -54,7 +57,7 @@ function createExecutionContext(): ExecutionContext {
   } as unknown as ExecutionContext;
 }
 
-describe("Workers REST API, Tokens, Worker Router & Cloudflare Adapter", () => {
+describe("Workers REST API, OpenAPI, Worker Router & Cloudflare Adapter", () => {
   const originalTavily = process.env.TAVILY_API_KEY;
   const originalPerplexity = process.env.PERPLEXITY_API_KEY;
 
@@ -76,15 +79,73 @@ describe("Workers REST API, Tokens, Worker Router & Cloudflare Adapter", () => {
     vi.useRealTimers();
   });
 
-  describe("lib/workers/tokens.ts", () => {
-    it("generates cryptographically random 64-hex-char tokens with default and custom prefixes", () => {
-      const defaultToken = generateSecureToken();
-      const secondToken = generateSecureToken();
-      const oauthToken = generateSecureToken("oauth");
+  describe("lib/workers/openapi.ts", () => {
+    it("aligns /intelligence and /thinking schemas with Zod tool schemas", () => {
+      const schema = generateOpenAPISchema("https://worker.example/openapi.json") as {
+        paths: Record<string, {
+          post?: {
+            requestBody?: {
+              content?: {
+                "application/json"?: {
+                  schema?: {
+                    properties?: Record<string, unknown>;
+                    required?: string[];
+                  };
+                };
+              };
+            };
+          };
+        }>;
+      };
 
-      expect(defaultToken).toMatch(/^mcp_[0-9a-f]{64}$/);
-      expect(oauthToken).toMatch(/^oauth_[0-9a-f]{64}$/);
-      expect(secondToken).not.toBe(defaultToken);
+      const intelSchema =
+        schema.paths["/intelligence"]?.post?.requestBody?.content?.["application/json"]?.schema;
+      const intelProps = intelSchema?.properties as {
+        categories: { items: { enum: string[] } };
+        provider: { type: string; enum: string[] };
+        max_results: { type: string; minimum: number; maximum: number };
+      };
+      expect(intelProps.categories.items.enum).toEqual([...DORK_CATEGORIES]);
+      expect(intelProps.categories.items.enum).toHaveLength(10);
+      expect(intelProps.provider).toMatchObject({
+        type: "string",
+        enum: [...SEARCH_PROVIDERS],
+      });
+      expect(intelProps.max_results).toMatchObject({
+        type: "integer",
+        minimum: 1,
+        maximum: 10,
+      });
+
+      const thinkingSchema =
+        schema.paths["/thinking"]?.post?.requestBody?.content?.["application/json"]?.schema;
+      const thinkingProps = thinkingSchema?.properties as Record<string, Record<string, unknown>>;
+      expect(thinkingSchema?.required).toEqual([
+        "thought",
+        "nextThoughtNeeded",
+        "thoughtNumber",
+        "totalThoughts",
+      ]);
+      expect(thinkingProps.thought).toMatchObject({
+        type: "string",
+        minLength: 1,
+        maxLength: 10000,
+      });
+      expect(thinkingProps.thoughtNumber).toMatchObject({
+        type: "integer",
+        minimum: 1,
+        maximum: 1000,
+      });
+      expect(thinkingProps.totalThoughts).toMatchObject({
+        type: "integer",
+        minimum: 1,
+        maximum: 1000,
+      });
+      expect(thinkingProps.isRevision).toMatchObject({ type: "boolean" });
+      expect(thinkingProps.revisesThought).toMatchObject({ type: "integer", minimum: 1, maximum: 1000 });
+      expect(thinkingProps.branchFromThought).toMatchObject({ type: "integer", minimum: 1, maximum: 1000 });
+      expect(thinkingProps.branchId).toMatchObject({ type: "string", minLength: 1, maxLength: 100 });
+      expect(thinkingProps.needsMoreThoughts).toMatchObject({ type: "boolean" });
     });
   });
 
@@ -117,12 +178,19 @@ describe("Workers REST API, Tokens, Worker Router & Cloudflare Adapter", () => {
       const invalidBody = (await invalidResp.json()) as { error: string; code: number };
       expect(invalidBody.code).toBe(-32603);
 
-      // Upstream 404 on valid checksum CNPJ -> tool returns "CNPJ not found" -> REST endpoint maps to 400
+      // Upstream 404 on valid checksum CNPJ -> tool returns "CNPJ not found" -> REST endpoint maps to 404
       vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(jsonResponse({ message: "not found" }, 404));
       const notFoundResp = await handleLookupEndpoint("cnpj", "33000167000101", {});
-      expect(notFoundResp.status).toBe(400);
+      expect(notFoundResp.status).toBe(404);
       const nfBody = (await notFoundResp.json()) as { data?: string };
       expect(nfBody.data).toMatch(/not found/i);
+
+      // Upstream 404 on valid CEP -> tool returns "CEP not found" -> REST endpoint maps to 404
+      vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(jsonResponse({ message: "not found" }, 404));
+      const cepNotFoundResp = await handleLookupEndpoint("cep", "01310999", {});
+      expect(cepNotFoundResp.status).toBe(404);
+      const cepNfBody = (await cepNotFoundResp.json()) as { data?: string };
+      expect(cepNfBody.data).toMatch(/not found/i);
 
       // Trigger outer try/catch -> 500 when env triggers TypeError in handleMCPRequest
       const errResp = await handleLookupEndpoint("cnpj", "11222333000181", null as unknown as Env);
@@ -245,6 +313,60 @@ describe("Workers REST API, Tokens, Worker Router & Cloudflare Adapter", () => {
         {}
       );
       expect(malformedResp.status).toBe(500);
+    });
+
+    it("handleIntelligenceEndpoint forwards provider and max_results without injecting undefined keys", async () => {
+      process.env.PERPLEXITY_API_KEY = "pplx-test-key";
+      vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+        jsonResponse({
+          cnpj: "11222333000181",
+          razao_social: "EMPRESA STRICT LTDA",
+          nome_fantasia: "STRICT",
+          municipio: "SAO PAULO",
+          uf: "SP",
+        })
+      );
+      const executeSpy = vi.spyOn(toolsModule, "executeTool");
+      const searchSpy = vi
+        .spyOn(PerplexityProvider.prototype, "search")
+        .mockResolvedValue({
+          ok: true,
+          value: [
+            {
+              title: "Contrato",
+              url: "https://dados.gov.br/1",
+              snippet: "Contrato 11222333000181",
+            },
+          ],
+        });
+
+      const resp = await handleIntelligenceEndpoint(
+        new Request("https://worker.example/intelligence", {
+          method: "POST",
+          body: JSON.stringify({
+            cnpj: "11222333000181",
+            provider: "perplexity",
+            max_results: 3,
+          }),
+        }),
+        {}
+      );
+
+      expect(resp.status).toBe(200);
+      expect(executeSpy).toHaveBeenCalledTimes(1);
+      const forwardedArgs = executeSpy.mock.calls[0]?.[1] as Record<string, unknown>;
+      expect(forwardedArgs).toEqual({
+        cnpj: "11222333000181",
+        provider: "perplexity",
+        max_results: 3,
+      });
+      expect(Object.keys(forwardedArgs).sort()).toEqual(["cnpj", "max_results", "provider"]);
+      expect(searchSpy).toHaveBeenCalled();
+      expect(searchSpy.mock.calls[0]?.[1]).toBe(3);
+
+      const payload = (await resp.json()) as { content: Array<{ text: string }> };
+      const parsed = JSON.parse(payload.content[0].text) as { provider_used: string };
+      expect(parsed.provider_used).toBe("perplexity");
     });
 
     it("handleThinkingEndpoint supports valid thoughts (200), schema failure (400), and invalid JSON (500)", async () => {
@@ -425,7 +547,7 @@ describe("Workers REST API, Tokens, Worker Router & Cloudflare Adapter", () => {
       expect(notFound.status).toBe(404);
 
       // GET /cnpj/:cnpj and /cep/:cep with mocked fetch + env.TAVILY_API_KEY propagation
-      vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
+      const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
         jsonResponse({ cnpj: "11222333000181", cep: "01310100", ok: true })
       );
       const cnpjResp = await worker.fetch(
@@ -435,6 +557,27 @@ describe("Workers REST API, Tokens, Worker Router & Cloudflare Adapter", () => {
       );
       expect(cnpjResp.status).toBe(200);
       expect(process.env.TAVILY_API_KEY).toBe("tvly-worker");
+
+      // URL-encoded slash in formatted CNPJ (%2F) is decoded safely before lookup
+      const encodedCnpjResp = await worker.fetch(
+        new Request("https://worker.example/cnpj/11.222.333%2F0001-81"),
+        baseEnv,
+        ctx
+      );
+      expect(encodedCnpjResp.status).toBe(200);
+      expect(String(fetchSpy.mock.calls[1]?.[0])).toContain("11222333000181");
+
+      // Invalid URL encoding returns 400 Bad Request
+      const invalidEncodingResp = await worker.fetch(
+        new Request("https://worker.example/cnpj/%ZZ"),
+        baseEnv,
+        ctx
+      );
+      expect(invalidEncodingResp.status).toBe(400);
+      expect(await invalidEncodingResp.json()).toEqual({
+        error: "Bad Request",
+        message: "Invalid URL encoding in path parameter",
+      });
 
       const cepResp = await worker.fetch(
         new Request("https://worker.example/cep/01310100"),
