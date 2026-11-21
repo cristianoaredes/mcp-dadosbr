@@ -5,8 +5,8 @@ title: "Propagar requestContext em REST/CLI-MCP e unificar Logger estruturado em
 source: audit
 created_at: 2026-11-21T13:09:45Z
 created_by: ops
-updated_at: 2026-11-21T14:20:53Z
-status: verifying
+updated_at: 2026-11-21T14:29:03Z
+status: done
 severity: medium
 category: observability
 effort: M
@@ -19,7 +19,8 @@ linked_designs:
   - DES-0034
 linked_runs:
   - RUN-20261121-141121-tck-0038
-linked_verifications: []
+linked_verifications:
+  - VER-20261121-142727-tck-0038
 linked_docs:
   - .archagents/10-runbooks.md
 external_refs: []
@@ -77,3 +78,4 @@ Antes do fix, `lib/workers/worker.ts:L139,L144,L148,L152`, `lib/workers/rest.ts:
 - 2026-11-21T14:11:21Z - **executing** - executing TCK-0038
 - 2026-11-21T14:11:49Z - **executing** - executing TCK-0038 with RUN-20261121-141121-tck-0038
 - 2026-11-21T14:20:53Z - **verifying** - TCK-0038 implemented and verified in wave 2 (RUN-20261121-141121-tck-0038)
+- 2026-11-21T14:29:03Z - **done** - P10 verify approved-with-notes (8a5e5b4e) + judge pass

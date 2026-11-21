@@ -10,7 +10,7 @@
   "current_step": 4,
   "total_steps": 4,
   "ended_at": "2026-11-21T14:14:30Z",
-  "result": "TCK-0035 completed: REST invalid JSON 400, sanitized 500 with masked logger, and Worker defensive headers/Cache-Control no-store; 34 files / 470 tests PASS",
+  "result": "TCK-0035 completed: REST 400 invalid JSON, sanitized 500, Worker defensive headers, 36 files / 491 tests PASS",
   "loop_iterations": 0,
   "attempt_count": 0,
   "lessons_consulted": [
@@ -20,7 +20,16 @@
   "cost_source": "unknown",
   "loop_strategy": "default",
   "context_peak": 0,
-  "final_judge_delta": 0,
+  "final_judge_delta": 31,
   "lesson_consult_attempted": true,
-  "warmup": false
+  "warmup": false,
+  "final_judge_delta_source": "judge",
+  "lesson_utility": {
+    "utility": 0.62,
+    "n_lessons": 1,
+    "lessons_consulted": [
+      "Precisou de 2 iterações (re-execução)"
+    ],
+    "signal": "computed"
+  }
 }

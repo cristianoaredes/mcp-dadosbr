@@ -520,6 +520,8 @@ Adicionar testes unitários importando diretamente os módulos reais de `auth`, 
 | `FND-0023` | `observability` | `medium` | Correlação `X-Request-Id` quebrada em REST (`worker.ts` → `rest.ts`) e `POST /messages` → `mcp-server.ts`, além de logs não estruturados residuais | `TCK-0038` |
 | `FND-0024` | `test-coverage` | `medium` | Fluxos de runtime/segurança em `cli-http.ts` (`429`, `413`, `400`, `extraAllowedHosts`, SSE/shutdown) e handlers/erros em `mcp-server.ts` sem testes unitários no Vitest | `TCK-0039` |
 
+*(Atualização pós-remediação Wave 2 — `feature/audit-remediation-wave2`: `FND-0018` a `FND-0024` foram remediados, verificados em contexto independente `P10` e encerrados nos tickets `TCK-0033`–`TCK-0039`. `FND-0015`, `FND-0016` e `FND-0017` — tickets `TCK-0030`, `TCK-0031` e `TCK-0032` — foram mantidos em `raw` por solicitação explícita do operador.)*
+
 ---
 
 ### FND-0015 — Ausência de minimização de dados pessoais, chaves de cache em claro com CPF/nomes penais e ausência de eliminação por titular no cache

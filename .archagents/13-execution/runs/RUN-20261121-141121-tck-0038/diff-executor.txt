@@ -1,0 +1,1302 @@
+commit 91bbc058cea16eabf0b55e325921314d2151d900
+Author: Cristiano <cristiano@neositten.com>
+Date:   Sat Nov 21 11:21:27 2026 -0300
+
+    feat(observability): propagate RequestContext across REST/CLI-MCP and unify structured logger (TCK-0038)
+
+diff --git a/lib/adapters/cli-http.ts b/lib/adapters/cli-http.ts
+index 2a38bd1..8c28fc9 100644
+--- a/lib/adapters/cli-http.ts
++++ b/lib/adapters/cli-http.ts
+@@ -1,5 +1,6 @@
+ import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
+ import express from "express";
++import { AsyncLocalStorage } from "node:async_hooks";
+ import { createHash, timingSafeEqual } from "node:crypto";
+ import type http from "node:http";
+ import { createMCPServer } from "../core/mcp-server.js";
+@@ -14,6 +15,7 @@ import { maskSensitiveText } from "../shared/log-redaction.js";
+ import { ApiConfig, Cache } from "../types/index.js";
+ 
+ const cliHttpLogger = createLogger("cli-http");
++const requestContextStore = new AsyncLocalStorage<RequestContext>();
+ import { TIMEOUTS } from "../config/timeouts.js";
+ 
+ export const DEFAULT_CLI_HTTP_HOST = "127.0.0.1";
+@@ -510,7 +512,11 @@ export function createCliHttpApp(options: CliHttpOptions): CliHttpContext {
+         );
+       };
+ 
+-      const server = createMCPServer({ apiConfig: options.apiConfig, cache: options.cache });
++      const server = createMCPServer({
++        apiConfig: options.apiConfig,
++        cache: options.cache,
++        getRequestContext: () => requestContextStore.getStore(),
++      });
+       await server.connect(transport);
+       debug(`MCP server connected to SSE transport ${sessionId}`);
+     } catch (error) {
+@@ -567,7 +573,9 @@ export function createCliHttpApp(options: CliHttpOptions): CliHttpContext {
+       }
+ 
+       session.lastActivity = new Date();
+-      await session.transport.handlePostMessage(req, res, req.body);
++      await requestContextStore.run(requestContext, () =>
++        session.transport.handlePostMessage(req, res, req.body)
++      );
+     } catch (error) {
+       debug("Error handling message:", error);
+       cliHttpLogger.error(
+diff --git a/lib/core/intelligence.ts b/lib/core/intelligence.ts
+index 36f99e6..4815fd8 100644
+--- a/lib/core/intelligence.ts
++++ b/lib/core/intelligence.ts
+@@ -9,8 +9,11 @@ import { buildDorks, DorkCategory, CNPJData } from './dork-templates.js';
+ import { TimeoutError } from '../shared/types/result.js';
+ import { SEARCH } from '../shared/utils/constants.js';
+ import { TIMEOUTS } from '../config/timeouts.js';
++import { createLogger } from '../infrastructure/logger.js';
+ import { maskCnpj, maskSensitiveText, summarizeQueryForLog } from '../shared/log-redaction.js';
+ 
++const intelligenceLogger = createLogger('intelligence');
++
+ /**
+  * Execute tasks with concurrency limit
+  * Runs multiple promises concurrently up to the specified limit
+@@ -74,6 +77,7 @@ export interface IntelligenceOptions {
+   maxResultsPerQuery?: number;
+   maxQueries?: number;
+   cachedCompanyData?: CNPJData; // Reuse company data if already fetched
++  requestId?: string;
+ }
+ 
+ export interface IntelligenceResult {
+@@ -159,9 +163,11 @@ export function filterResultsByCnpj(results: SearchResult[], cnpj: string): Sear
+ export async function executeIntelligence(
+   options: IntelligenceOptions,
+   apiConfig: ApiConfig,
+-  cache?: Cache
++  cache?: Cache,
++  requestId?: string
+ ): Promise<LookupResult> {
+   const TOTAL_TIMEOUT_MS = TIMEOUTS.INTELLIGENCE_TOTAL_MS;
++  const activeRequestId = requestId ?? options.requestId;
+   const controller = new AbortController();
+   let timeoutId: ReturnType<typeof setTimeout> | undefined;
+ 
+@@ -182,7 +188,8 @@ export async function executeIntelligence(
+     options,
+     apiConfig,
+     cache,
+-    controller.signal
++    controller.signal,
++    activeRequestId
+   );
+   // Prevent unhandled rejection if execution rejects after timeout wins Promise.race
+   executionPromise.catch(() => {});
+@@ -192,8 +199,10 @@ export async function executeIntelligence(
+   } catch (error: unknown) {
+     if (error instanceof TimeoutError) {
+       const maskedCnpj = maskCnpj(options.cnpj);
+-      console.error(
+-        `[intelligence] [${maskedCnpj}] Timeout reached (limit: ${error.timeoutMs}ms)`
++      intelligenceLogger.warn(
++        'intelligence.timeout',
++        { cnpj: maskedCnpj, timeoutMs: error.timeoutMs },
++        activeRequestId
+       );
+       return {
+         ok: false,
+@@ -213,7 +222,8 @@ async function executeIntelligenceInternal(
+   options: IntelligenceOptions,
+   apiConfig: ApiConfig,
+   cache: Cache | undefined,
+-  signal: AbortSignal
++  signal: AbortSignal,
++  requestId?: string
+ ): Promise<LookupResult> {
+   const startTime = Date.now();
+   const normalizedCnpj = normalizeCnpj(options.cnpj);
+@@ -221,14 +231,22 @@ async function executeIntelligenceInternal(
+ 
+   try {
+     // Step 1: Get company data (reuse cached if provided)
+-    console.error(`[intelligence] [${maskedCnpj}] Starting CNPJ intelligence search...`);
++    intelligenceLogger.info(
++      'intelligence.started',
++      { cnpj: maskedCnpj },
++      requestId
++    );
+ 
+     let companyData: CNPJData;
+ 
+     if (options.cachedCompanyData) {
+       // Reuse provided company data
+       companyData = options.cachedCompanyData;
+-      console.error(`[intelligence] [${maskedCnpj}] Using cached company data`);
++      intelligenceLogger.debug(
++        'intelligence.company_cached_input',
++        { cnpj: maskedCnpj },
++        requestId
++      );
+     } else {
+       // Try to get from cache first using normalized CNPJ key (matching lookup())
+       const cacheKey = `cnpj:${apiConfig.cnpjBaseUrl}:${normalizedCnpj}`;
+@@ -236,7 +254,11 @@ async function executeIntelligenceInternal(
+ 
+       if (cachedData) {
+         companyData = cachedData;
+-        console.error(`[intelligence] [${maskedCnpj}] Using cache hit for company data`);
++        intelligenceLogger.debug(
++          'intelligence.company_cache_hit',
++          { cnpj: maskedCnpj },
++          requestId
++        );
+       } else {
+         // Fetch from API only if not in cache
+         const cnpjResult = await lookup('cnpj', normalizedCnpj, apiConfig, cache);
+@@ -257,14 +279,22 @@ async function executeIntelligenceInternal(
+     }
+ 
+     const company = companyData as { razao_social?: string };
+-    console.error(`[intelligence] [${maskedCnpj}] Company resolved (has_name=${Boolean(company.razao_social)})`);
++    intelligenceLogger.debug(
++      'intelligence.company_resolved',
++      { cnpj: maskedCnpj, hasName: Boolean(company.razao_social) },
++      requestId
++    );
+ 
+     // Step 2: Build dorks based on company data
+     const dorks = buildDorks(companyData, options.categories);
+     const maxQueries = options.maxQueries || SEARCH.DEFAULT_MAX_QUERIES;
+     const selectedDorks = dorks.slice(0, maxQueries);
+ 
+-    console.error(`[intelligence] [${maskedCnpj}] Generated ${dorks.length} dorks, using ${selectedDorks.length}`);
++    intelligenceLogger.debug(
++      'intelligence.dorks_generated',
++      { cnpj: maskedCnpj, generated: dorks.length, selected: selectedDorks.length },
++      requestId
++    );
+ 
+     // Step 3: Resolve provider (requires Tavily API key from server config)
+     const provider: SearchProvider = await getAvailableProvider(options.provider);
+@@ -273,8 +303,10 @@ async function executeIntelligenceInternal(
+       throw new TimeoutError('Intelligence search timed out', TIMEOUTS.INTELLIGENCE_TOTAL_MS);
+     }
+ 
+-    console.error(
+-      `[intelligence] [${maskedCnpj}] Using provider: ${provider.name}`
++    intelligenceLogger.debug(
++      'intelligence.provider_selected',
++      { cnpj: maskedCnpj, provider: provider.name },
++      requestId
+     );
+ 
+     // Step 4: Execute searches with concurrency limit
+@@ -295,12 +327,15 @@ async function executeIntelligenceInternal(
+     const maxResultsPerQuery = options.maxResultsPerQuery || SEARCH.DEFAULT_MAX_RESULTS;
+ 
+     // Get concurrency limit from environment or use default
+-    const rawConcurrency = Number.parseInt(process.env.MCP_INTELLIGENCE_CONCURRENCY || '3', 10);
++    const rawConcurrencyEnv =
++      typeof process !== 'undefined' ? process.env?.MCP_INTELLIGENCE_CONCURRENCY : undefined;
++    const rawConcurrency = Number.parseInt(rawConcurrencyEnv || '3', 10);
+     const concurrencyLimit = Number.isFinite(rawConcurrency) && rawConcurrency > 0 ? rawConcurrency : 3;
+ 
+-    console.error(
+-      `[intelligence] [${maskedCnpj}] Executing ${selectedDorks.length} queries ` +
+-      `with concurrency limit: ${concurrencyLimit}`
++    intelligenceLogger.debug(
++      'intelligence.queries_executing',
++      { cnpj: maskedCnpj, queryCount: selectedDorks.length, concurrencyLimit },
++      requestId
+     );
+ 
+     // Create tasks for concurrent execution
+@@ -315,7 +350,15 @@ async function executeIntelligenceInternal(
+         }
+ 
+         try {
+-          console.error(`[intelligence] [${dork.category}] Searching (${summarizeQueryForLog(dork.query)})`);
++          intelligenceLogger.debug(
++            'intelligence.dork_searching',
++            {
++              cnpj: maskedCnpj,
++              category: dork.category,
++              querySummary: summarizeQueryForLog(dork.query),
++            },
++            requestId
++          );
+           const searchResult = await provider.search(
+             dork.query,
+             maxResultsPerQuery,
+@@ -332,9 +375,15 @@ async function executeIntelligenceInternal(
+               category: dork.category
+             }));
+ 
+-            console.error(
+-              `[intelligence] [${dork.category}] Found ${searchResult.value.length} results, ` +
+-              `${filteredResults.length} after CNPJ filter`
++            intelligenceLogger.debug(
++              'intelligence.dork_results',
++              {
++                cnpj: maskedCnpj,
++                category: dork.category,
++                totalResults: searchResult.value.length,
++                filteredResults: filteredResults.length,
++              },
++              requestId
+             );
+ 
+             return {
+@@ -344,7 +393,15 @@ async function executeIntelligenceInternal(
+             };
+           } else {
+             // Log error but continue with other searches
+-            console.error(`[intelligence] [${dork.category}] Search failed: ${maskSensitiveText(searchResult.error.message)}`);
++            intelligenceLogger.warn(
++              'intelligence.dork_failed',
++              {
++                cnpj: maskedCnpj,
++                category: dork.category,
++                error: maskSensitiveText(searchResult.error.message),
++              },
++              requestId
++            );
+             return {
+               category: dork.category,
+               results: [],
+@@ -353,7 +410,15 @@ async function executeIntelligenceInternal(
+           }
+         } catch (error: unknown) {
+           const err = error as Error;
+-          console.error(`[intelligence] [${dork.category}] Unexpected error: ${maskSensitiveText(err.message)}`);
++          intelligenceLogger.error(
++            'intelligence.dork_exception',
++            {
++              cnpj: maskedCnpj,
++              category: dork.category,
++              error: maskSensitiveText(err.message),
++            },
++            requestId
++          );
+           return {
+             category: dork.category,
+             results: [],
+@@ -405,7 +470,11 @@ async function executeIntelligenceInternal(
+     const duplicatesRemoved = Object.values(searchResults).reduce((sum, results) => sum + results.length, 0) - totalResults;
+ 
+     if (duplicatesRemoved > 0) {
+-      console.error(`[intelligence] [${maskedCnpj}] Removed ${duplicatesRemoved} duplicate results`);
++      intelligenceLogger.debug(
++        'intelligence.duplicates_removed',
++        { cnpj: maskedCnpj, duplicatesRemoved },
++        requestId
++      );
+     }
+ 
+     // Step 6: Build response
+@@ -419,8 +488,16 @@ async function executeIntelligenceInternal(
+       timestamp: new Date().toISOString()
+     };
+ 
+-    console.error(
+-      `[intelligence] [${maskedCnpj}] Complete [${elapsed}ms] [${queriesExecuted} queries] [${providerUsed}]`
++    intelligenceLogger.info(
++      'intelligence.completed',
++      {
++        cnpj: maskedCnpj,
++        elapsedMs: elapsed,
++        queriesExecuted,
++        provider: providerUsed,
++        totalResults,
++      },
++      requestId
+     );
+ 
+     return {
+@@ -433,8 +510,10 @@ async function executeIntelligenceInternal(
+ 
+     // Handle timeout errors specifically
+     if (error instanceof TimeoutError) {
+-      console.error(
+-        `[intelligence] [${maskedCnpj}] Timeout after ${elapsed}ms (limit: ${error.timeoutMs}ms)`
++      intelligenceLogger.warn(
++        'intelligence.timeout',
++        { cnpj: maskedCnpj, elapsedMs: elapsed, timeoutMs: error.timeoutMs },
++        requestId
+       );
+       return {
+         ok: false,
+@@ -443,8 +522,14 @@ async function executeIntelligenceInternal(
+     }
+ 
+     const err = error as Error;
+-    console.error(
+-      `[intelligence] [${maskedCnpj}] Error: ${maskSensitiveText(err.message)} [${elapsed}ms]`
++    intelligenceLogger.error(
++      'intelligence.error',
++      {
++        cnpj: maskedCnpj,
++        elapsedMs: elapsed,
++        error: maskSensitiveText(err.message),
++      },
++      requestId
+     );
+ 
+     return {
+diff --git a/lib/core/mcp-server.ts b/lib/core/mcp-server.ts
+index 998dbc3..0e40b6b 100644
+--- a/lib/core/mcp-server.ts
++++ b/lib/core/mcp-server.ts
+@@ -84,10 +84,11 @@ export interface MCPServerOptions {
+   apiConfig: ApiConfig;
+   cache?: Cache;
+   rateLimit?: { windowMs: number; maxRequests: number } | false;
++  getRequestContext?: () => RequestContext | undefined;
+ }
+ 
+ export function createMCPServer(options: MCPServerOptions): Server {
+-  const { apiConfig, cache, rateLimit } = options;
++  const { apiConfig, cache, rateLimit, getRequestContext } = options;
+ 
+   // Session-local sequential thinking state (isolated per server/connection)
+   const thinkingProcessor = new SequentialThinkingProcessor();
+@@ -142,7 +143,7 @@ export function createMCPServer(options: MCPServerOptions): Server {
+   // Register call tool handler
+   server.setRequestHandler(CallToolRequestSchema, async (request) => {
+     const { name, arguments: args } = request.params;
+-    const requestContext = new RequestContext();
++    const requestContext = getRequestContext?.() ?? new RequestContext();
+     requestContext.addMetadata("tool", name);
+ 
+     if (toolRateLimiter && !toolRateLimiter.checkLimit("mcp-session")) {
+diff --git a/lib/core/search.ts b/lib/core/search.ts
+index cf3d970..eb94b0e 100644
+--- a/lib/core/search.ts
++++ b/lib/core/search.ts
+@@ -1,7 +1,10 @@
+-import { Cache, LookupResult } from '../types/index.js';
++import { Cache } from '../types/index.js';
+ import { getAvailableProvider, SearchResult } from './search-providers.js';
++import { createLogger } from '../infrastructure/logger.js';
+ import { maskSensitiveText, summarizeQueryForLog } from '../shared/log-redaction.js';
+ 
++const searchLogger = createLogger('search');
++
+ export interface SearchResponseData {
+   results: SearchResult[];
+   query: string;
+@@ -18,11 +21,13 @@ export type SearchResponse =
+ export async function executeSearch(
+   query: string,
+   maxResults: number = 5,
+-  cache?: Cache
++  cache?: Cache,
++  requestId?: string
+ ): Promise<SearchResponse> {
+   const startTime = Date.now();
+   const cacheKey = `search:${query}:${maxResults}`;
+-  const transportMode = process.env.MCP_TRANSPORT || "stdio";
++  const transportMode =
++    (typeof process !== "undefined" && process.env?.MCP_TRANSPORT) || "stdio";
+ 
+   const querySummary = summarizeQueryForLog(query);
+ 
+@@ -31,8 +36,15 @@ export async function executeSearch(
+     const cached = await cache.get<SearchResponseData>(cacheKey);
+     if (cached) {
+       const elapsed = Date.now() - startTime;
+-      console.error(
+-        `[${new Date().toISOString()}] [search] [${querySummary}] [cache_hit] [${elapsed}ms] [${transportMode}]`
++      searchLogger.info(
++        "search.cache_hit",
++        {
++          querySummary,
++          elapsedMs: elapsed,
++          transportMode,
++          cacheHit: true,
++        },
++        requestId
+       );
+       return { ok: true, data: cached };
+     }
+@@ -46,8 +58,15 @@ export async function executeSearch(
+     if (!searchResult.ok) {
+       // All providers failed, return error
+       const elapsed = Date.now() - startTime;
+-      console.error(
+-        `[${new Date().toISOString()}] [search] [${querySummary}] [error: ${maskSensitiveText(searchResult.error.message)}] [${elapsed}ms] [${transportMode}]`
++      searchLogger.error(
++        "search.error",
++        {
++          querySummary,
++          elapsedMs: elapsed,
++          transportMode,
++          error: maskSensitiveText(searchResult.error.message),
++        },
++        requestId
+       );
+ 
+       return {
+@@ -73,8 +92,16 @@ export async function executeSearch(
+     }
+ 
+     const elapsed = Date.now() - startTime;
+-    console.error(
+-      `[${new Date().toISOString()}] [search] [${querySummary}] [success] [${elapsed}ms] [${transportMode}] [provider: ${providerName}] [results: ${searchResult.value.length}]`
++    searchLogger.info(
++      "search.completed",
++      {
++        querySummary,
++        elapsedMs: elapsed,
++        transportMode,
++        provider: providerName,
++        results: searchResult.value.length,
++      },
++      requestId
+     );
+ 
+     return {
+@@ -86,8 +113,15 @@ export async function executeSearch(
+     const err = error as Error;
+     const errorMessage = err.message || 'Search failed';
+ 
+-    console.error(
+-      `[${new Date().toISOString()}] [search] [${querySummary}] [error: ${maskSensitiveText(errorMessage)}] [${elapsed}ms] [${transportMode}]`
++    searchLogger.error(
++      "search.exception",
++      {
++        querySummary,
++        elapsedMs: elapsed,
++        transportMode,
++        error: maskSensitiveText(errorMessage),
++      },
++      requestId
+     );
+ 
+     return {
+diff --git a/lib/core/tools.ts b/lib/core/tools.ts
+index 86669ed..b79846e 100644
+--- a/lib/core/tools.ts
++++ b/lib/core/tools.ts
+@@ -135,7 +135,7 @@ export async function executeTool(
+     const elapsedMs = Date.now() - startTime;
+     recordMetrics(elapsedMs, cacheHit, !result.ok, name);
+     if (result.ok) {
+-      toolsLogger.debug(
++      toolsLogger.info(
+         "tool.executed",
+         { tool: name, ok: true, cacheHit, elapsedMs },
+         requestContext.requestId,
+diff --git a/lib/tools/company.ts b/lib/tools/company.ts
+index 4ed6eaa..8722d9c 100644
+--- a/lib/tools/company.ts
++++ b/lib/tools/company.ts
+@@ -174,10 +174,16 @@ interface DeepProfileArgs {
+ 
+ // Import shared lookup service from core and sibling tool executors
+ import { lookup } from "../core/lookup.js";
++import type { ToolExecutionContext } from "../core/registry.js";
+ import { executeTransparencia } from "./government.js";
+ import { executeDatajud, executeListaSuja } from "./legal.js";
+ 
+-async function executeDeepProfile(args: DeepProfileArgs, apiConfig: ApiConfig, cache?: Cache): Promise<LookupResult> {
++async function executeDeepProfile(
++    args: DeepProfileArgs,
++    apiConfig: ApiConfig,
++    cache?: Cache,
++    context?: ToolExecutionContext,
++): Promise<LookupResult> {
+     const { cnpj, include_news = true, include_legal = true, include_government = true, domain } = args;
+     const cleanCnpj = cnpj.replace(/\D/g, "");
+     const results: Record<string, unknown> = {};
+@@ -200,7 +206,7 @@ async function executeDeepProfile(args: DeepProfileArgs, apiConfig: ApiConfig, c
+     }
+     tasks.push(executeListaSuja({ query: cleanCnpj }, cache).then(r => { results.lista_suja = r.ok ? r.data : null; }));
+     if (include_news) {
+-        tasks.push(executeSearch(cleanCnpj, 5, cache).then(r => { results.news_results = r.ok ? r.data : null; }));
++        tasks.push(executeSearch(cleanCnpj, 5, cache, context?.requestId).then(r => { results.news_results = r.ok ? r.data : null; }));
+     }
+     await Promise.allSettled(tasks);
+ 
+@@ -231,7 +237,8 @@ This is the most powerful tool for company due diligence.`,
+         required: ["cnpj"],
+     },
+     zodSchema: DeepProfileSchema,
+-    execute: async (args, apiConfig, cache) => executeDeepProfile(args as DeepProfileArgs, apiConfig, cache),
++    execute: async (args, apiConfig, cache, context) =>
++        executeDeepProfile(args as DeepProfileArgs, apiConfig, cache, context),
+ });
+ 
+ export { executeWhois };
+diff --git a/lib/tools/core.ts b/lib/tools/core.ts
+index c483353..c97ff70 100644
+--- a/lib/tools/core.ts
++++ b/lib/tools/core.ts
+@@ -55,9 +55,9 @@ registerTool({
+ registerTool({
+     ...SEARCH_TOOL,
+     zodSchema: CnpjSearchSchema,
+-    execute: async (args, _apiConfig, cache) => {
++    execute: async (args, _apiConfig, cache, context) => {
+         const { query, max_results = 5 } = args as { query: string; max_results?: number };
+-        return await executeSearch(query, max_results, cache);
++        return await executeSearch(query, max_results, cache, context?.requestId);
+     },
+ });
+ 
+@@ -66,7 +66,7 @@ registerTool({
+ registerTool({
+     ...CNPJ_INTELLIGENCE_TOOL,
+     zodSchema: CnpjIntelligenceSchema,
+-    execute: async (args, apiConfig, cache) => {
++    execute: async (args, apiConfig, cache, context) => {
+         const parsed = args as {
+             cnpj: string;
+             categories?: typeof DORK_CATEGORIES[number][];
+@@ -85,6 +85,7 @@ registerTool({
+             },
+             apiConfig,
+             cache,
++            context?.requestId,
+         );
+     },
+ });
+diff --git a/lib/workers/rate-limit.ts b/lib/workers/rate-limit.ts
+index 87cd957..b863d12 100644
+--- a/lib/workers/rate-limit.ts
++++ b/lib/workers/rate-limit.ts
+@@ -11,6 +11,11 @@
+ import { Env, corsHeaders } from "../adapters/cloudflare.js";
+ import { MIN_KV_EXPIRATION_TTL_SECONDS } from "../core/cache.js";
+ import { TIMEOUTS } from "../config/timeouts.js";
++import { createLogger } from "../infrastructure/logger.js";
++import type { RequestContext } from "../infrastructure/tracing.js";
++import { maskSensitiveText } from "../shared/log-redaction.js";
++
++const rateLimitLogger = createLogger("worker-rate-limit");
+ 
+ const RATE_LIMIT_MAX_REQUESTS = 30; // Max requests per window per IP
+ const CLIENT_ID_REGEX = /^[A-Za-z0-9.:_-]{1,64}$/;
+@@ -48,7 +53,8 @@ export function extractClientIdentifier(request: Request, env: Env): string {
+  */
+ export async function checkRateLimit(
+   request: Request,
+-  env: Env
++  env: Env,
++  requestContext?: RequestContext
+ ): Promise<RateLimitResult> {
+   // Skip rate limiting for health checks
+   const url = new URL(request.url);
+@@ -143,7 +149,15 @@ export async function checkRateLimit(
+     return { allowed: true };
+   } catch (error) {
+     // On KV transport error, allow request (fail open)
+-    console.error("Rate limit check failed:", error);
++    rateLimitLogger.error(
++      "rate_limit.check_failed",
++      {
++        error: maskSensitiveText(
++          error instanceof Error ? error.message : String(error)
++        ),
++      },
++      requestContext?.requestId
++    );
+     return { allowed: true };
+   }
+ }
+diff --git a/lib/workers/rest.ts b/lib/workers/rest.ts
+index 2459292..3ab72bf 100644
+--- a/lib/workers/rest.ts
++++ b/lib/workers/rest.ts
+@@ -4,6 +4,7 @@
+ 
+ import { corsHeaders, Env } from '../adapters/cloudflare.js';
+ import { handleMCPRequest } from '../adapters/cloudflare.js';
++import type { RequestContext } from '../infrastructure/tracing.js';
+ import { MCPRequest } from '../types/index.js';
+ import {
+   SearchRequestBody,
+@@ -17,7 +18,8 @@ import {
+ export async function handleLookupEndpoint(
+   toolType: string,
+   value: string,
+-  env: Env
++  env: Env,
++  requestContext?: RequestContext
+ ): Promise<Response> {
+   try {
+     const mcpRequest: MCPRequest = {
+@@ -30,7 +32,7 @@ export async function handleLookupEndpoint(
+       }
+     };
+ 
+-    const mcpResponse = await handleMCPRequest(mcpRequest, env);
++    const mcpResponse = await handleMCPRequest(mcpRequest, env, requestContext);
+ 
+     if (mcpResponse.error) {
+       const isNotFound =
+@@ -82,7 +84,8 @@ export async function handleLookupEndpoint(
+  */
+ export async function handleSearchEndpoint(
+   request: Request,
+-  env: Env
++  env: Env,
++  requestContext?: RequestContext
+ ): Promise<Response> {
+   try {
+     const body = await request.json() as SearchRequestBody;
+@@ -108,7 +111,7 @@ export async function handleSearchEndpoint(
+       }
+     };
+ 
+-    const mcpResponse = await handleMCPRequest(mcpRequest, env);
++    const mcpResponse = await handleMCPRequest(mcpRequest, env, requestContext);
+ 
+     if (mcpResponse.error) {
+       return new Response(
+@@ -146,7 +149,8 @@ export async function handleSearchEndpoint(
+  */
+ export async function handleIntelligenceEndpoint(
+   request: Request,
+-  env: Env
++  env: Env,
++  requestContext?: RequestContext
+ ): Promise<Response> {
+   try {
+     const body = await request.json() as IntelligenceRequestBody;
+@@ -186,7 +190,7 @@ export async function handleIntelligenceEndpoint(
+       }
+     };
+ 
+-    const mcpResponse = await handleMCPRequest(mcpRequest, env);
++    const mcpResponse = await handleMCPRequest(mcpRequest, env, requestContext);
+ 
+     if (mcpResponse.error) {
+       return new Response(
+@@ -224,7 +228,8 @@ export async function handleIntelligenceEndpoint(
+  */
+ export async function handleThinkingEndpoint(
+   request: Request,
+-  env: Env
++  env: Env,
++  requestContext?: RequestContext
+ ): Promise<Response> {
+   try {
+     const body = await request.json() as ThinkingRequestBody;
+@@ -239,7 +244,7 @@ export async function handleThinkingEndpoint(
+       }
+     };
+ 
+-    const mcpResponse = await handleMCPRequest(mcpRequest, env);
++    const mcpResponse = await handleMCPRequest(mcpRequest, env, requestContext);
+ 
+     if (mcpResponse.error) {
+       return new Response(
+diff --git a/lib/workers/worker.ts b/lib/workers/worker.ts
+index 9d66ef5..a59629a 100644
+--- a/lib/workers/worker.ts
++++ b/lib/workers/worker.ts
+@@ -154,20 +154,20 @@ async function routeRequest(
+             { status: 400, headers: { 'Content-Type': 'application/json', ...corsHeaders } }
+           );
+         }
+-        return await handleLookupEndpoint(toolType, decodedValue, env);
++        return await handleLookupEndpoint(toolType, decodedValue, env, requestContext);
+       }
+ 
+       // Handle advanced REST endpoints
+       if (url.pathname === '/search' && request.method === 'POST') {
+-        return await handleSearchEndpoint(request, env);
++        return await handleSearchEndpoint(request, env, requestContext);
+       }
+ 
+       if (url.pathname === '/intelligence' && request.method === 'POST') {
+-        return await handleIntelligenceEndpoint(request, env);
++        return await handleIntelligenceEndpoint(request, env, requestContext);
+       }
+ 
+       if (url.pathname === '/thinking' && request.method === 'POST') {
+-        return await handleThinkingEndpoint(request, env);
++        return await handleThinkingEndpoint(request, env, requestContext);
+       }
+ 
+       return new Response('Not found', {
+@@ -210,7 +210,7 @@ export default {
+     }
+ 
+     // Apply rate limiting
+-    const rateLimitResult = await checkRateLimit(request, env);
++    const rateLimitResult = await checkRateLimit(request, env, requestContext);
+     if (!rateLimitResult.allowed) {
+       return withRequestId(
+         withCorsHeaders(rateLimitResult.error!, request, env, { isPublic }),
+diff --git a/test/unit/observability.test.ts b/test/unit/observability.test.ts
+index 340d162..79df254 100644
+--- a/test/unit/observability.test.ts
++++ b/test/unit/observability.test.ts
+@@ -12,6 +12,8 @@ import {
+   resetMetrics,
+ } from "../../lib/core/tools.js";
+ import { resetCircuitBreakers } from "../../lib/core/http-client.js";
++import { executeIntelligence } from "../../lib/core/intelligence.js";
++import { executeSearch } from "../../lib/core/search.js";
+ import { createLogger, Logger, LogLevel } from "../../lib/infrastructure/logger.js";
+ import {
+   extractRequestId,
+@@ -22,6 +24,7 @@ import {
+ import { createCliHttpApp, type CliHttpContext } from "../../lib/adapters/cli-http.js";
+ import { handleHealthCheck, type Env } from "../../lib/adapters/cloudflare.js";
+ import { authenticateRequest } from "../../lib/workers/auth.js";
++import { checkRateLimit } from "../../lib/workers/rate-limit.js";
+ import { handleSSEEndpoint } from "../../lib/workers/sse.js";
+ import worker from "../../lib/workers/worker.js";
+ 
+@@ -480,4 +483,515 @@ describe("FND-0013 / TCK-0025: Observability (Logger, Tracing, RED Metrics, Auth
+       });
+     });
+   });
++
++  describe("FND-0023 / TCK-0038: End-to-End Request Correlation & Unified Structured Logger", () => {
++    function parseJsonLogs(errSpy: ReturnType<typeof vi.spyOn>): Array<Record<string, unknown>> {
++      const entries: Array<Record<string, unknown>> = [];
++      for (const call of errSpy.mock.calls) {
++        try {
++          const parsed = JSON.parse(String(call[0])) as Record<string, unknown>;
++          if (parsed && typeof parsed === "object") {
++            entries.push(parsed);
++          }
++        } catch {
++          // Ignore non-JSON stderr entries (e.g. periodic [metrics])
++        }
++      }
++      return entries;
++    }
++
++    it("propagates X-Request-Id across Worker REST endpoints through rest.ts -> handleMCPRequest -> tools.ts (INFO tool.executed)", async () => {
++      const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
++      const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
++      delete process.env.TAVILY_API_KEY;
++      process.env.PERPLEXITY_API_KEY = "pplx-test-key";
++
++      vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
++        const url = String(input);
++        if (url.includes("perplexity.ai")) {
++          return jsonResponse({
++            choices: [{ message: { content: "Registro para 11222333000181" } }],
++            citations: ["https://dados.gov.br/doc"],
++          });
++        }
++        return jsonResponse({
++          cnpj: "11222333000181",
++          razao_social: "EMPRESA CORRELACAO LTDA",
++          nome_fantasia: "CORRELACAO",
++          municipio: "SAO PAULO",
++          uf: "SP",
++        });
++      });
++
++      const ctx = {
++        waitUntil: vi.fn(),
++        passThroughOnException: vi.fn(),
++      } as unknown as ExecutionContext;
++      const env: Env = {
++        MCP_DISABLE_RATE_LIMIT: "true",
++        PERPLEXITY_API_KEY: "pplx-test-key",
++      };
++
++      // 1. GET /cnpj/:cnpj
++      const cnpjRes = await worker.fetch(
++        new Request("https://worker.example/cnpj/11222333000181", {
++          headers: { [REQUEST_ID_HEADER]: "worker-rest-cnpj-01" },
++        }),
++        env,
++        ctx
++      );
++      expect(cnpjRes.status).toBe(200);
++      expect(cnpjRes.headers.get(REQUEST_ID_HEADER)).toBe("worker-rest-cnpj-01");
++
++      // 2. POST /search
++      const searchRes = await worker.fetch(
++        new Request("https://worker.example/search", {
++          method: "POST",
++          headers: {
++            "Content-Type": "application/json",
++            [REQUEST_ID_HEADER]: "worker-rest-search-02",
++          },
++          body: JSON.stringify({ query: "JOAO SILVA 123.456.789-00", max_results: 2 }),
++        }),
++        env,
++        ctx
++      );
++      expect(searchRes.status).toBe(200);
++      expect(searchRes.headers.get(REQUEST_ID_HEADER)).toBe("worker-rest-search-02");
++
++      // 3. POST /intelligence
++      const intelRes = await worker.fetch(
++        new Request("https://worker.example/intelligence", {
++          method: "POST",
++          headers: {
++            "Content-Type": "application/json",
++            [REQUEST_ID_HEADER]: "worker-rest-intel-03",
++          },
++          body: JSON.stringify({
++            cnpj: "11222333000181",
++            categories: ["government"],
++            provider: "perplexity",
++            max_queries: 1,
++            max_results_per_query: 2,
++          }),
++        }),
++        env,
++        ctx
++      );
++      expect(intelRes.status).toBe(200);
++      expect(intelRes.headers.get(REQUEST_ID_HEADER)).toBe("worker-rest-intel-03");
++
++      // 4. POST /thinking
++      const thinkRes = await worker.fetch(
++        new Request("https://worker.example/thinking", {
++          method: "POST",
++          headers: {
++            "Content-Type": "application/json",
++            [REQUEST_ID_HEADER]: "worker-rest-think-04",
++          },
++          body: JSON.stringify({
++            thought: "Verificar trace REST",
++            thoughtNumber: 1,
++            totalThoughts: 1,
++            nextThoughtNeeded: false,
++          }),
++        }),
++        env,
++        ctx
++      );
++      expect(thinkRes.status).toBe(200);
++      expect(thinkRes.headers.get(REQUEST_ID_HEADER)).toBe("worker-rest-think-04");
++
++      expect(logSpy).not.toHaveBeenCalled();
++      const entries = parseJsonLogs(errSpy);
++
++      expect(
++        entries.find(
++          (e) =>
++            e.module === "tools" &&
++            e.level === "info" &&
++            e.message === "tool.executed" &&
++            e.requestId === "worker-rest-cnpj-01"
++        )
++      ).toMatchObject({
++        context: { tool: "cnpj_lookup", ok: true },
++      });
++
++      expect(
++        entries.find(
++          (e) =>
++            e.module === "tools" &&
++            e.level === "info" &&
++            e.message === "tool.executed" &&
++            e.requestId === "worker-rest-search-02"
++        )
++      ).toMatchObject({
++        context: { tool: "cnpj_search", ok: true },
++      });
++      expect(
++        entries.find(
++          (e) =>
++            e.module === "search" &&
++            e.level === "info" &&
++            e.message === "search.completed" &&
++            e.requestId === "worker-rest-search-02"
++        )
++      ).toBeDefined();
++
++      expect(
++        entries.find(
++          (e) =>
++            e.module === "tools" &&
++            e.level === "info" &&
++            e.message === "tool.executed" &&
++            e.requestId === "worker-rest-intel-03"
++        )
++      ).toMatchObject({
++        context: { tool: "cnpj_intelligence", ok: true },
++      });
++      expect(
++        entries.find(
++          (e) =>
++            e.module === "intelligence" &&
++            e.level === "info" &&
++            e.message === "intelligence.completed" &&
++            e.requestId === "worker-rest-intel-03"
++        )
++      ).toBeDefined();
++
++      expect(
++        entries.find(
++          (e) =>
++            e.module === "tools" &&
++            e.level === "info" &&
++            e.message === "tool.executed" &&
++            e.requestId === "worker-rest-think-04"
++        )
++      ).toMatchObject({
++        context: { tool: "sequentialthinking", ok: true },
++      });
++
++      const combinedLogs = errSpy.mock.calls.map((c) => String(c[0])).join("\n");
++      expect(combinedLogs).not.toContain("JOAO SILVA");
++      expect(combinedLogs).not.toContain("123.456.789-00");
++    });
++
++    it("propagates X-Request-Id from CLI POST /messages via AsyncLocalStorage into createMCPServer -> tools.ts", async () => {
++      const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
++      const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
++
++      const ctx = createCliHttpApp({
++        apiConfig,
++        cache: new MemoryCache(10, 1000),
++        host: "127.0.0.1",
++      });
++      const server = http.createServer(ctx.app);
++      await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", () => resolve()));
++      activeServers.push({ server, ctx });
++      const addr = server.address() as { port: number };
++      const baseUrl = `http://127.0.0.1:${addr.port}`;
++
++      const abortController = new AbortController();
++      const sseResponse = await fetch(`${baseUrl}/mcp`, {
++        headers: { Host: `127.0.0.1:${addr.port}`, Accept: "text/event-stream" },
++        signal: abortController.signal,
++      });
++      expect(sseResponse.status).toBe(200);
++      const reader = sseResponse.body!.getReader();
++      const decoder = new TextDecoder();
++      let sseBuffer = "";
++
++      async function readUntil(predicate: (buffer: string) => boolean): Promise<string> {
++        while (!predicate(sseBuffer)) {
++          const { value, done } = await reader.read();
++          if (done) {
++            throw new Error("SSE stream closed before expected event");
++          }
++          sseBuffer += decoder.decode(value, { stream: true });
++        }
++        return sseBuffer;
++      }
++
++      await readUntil((buf) => /data:\s*\/messages\?sessionId=/.test(buf));
++      const endpointMatch = /data:\s*(\/messages\?sessionId=[^\r\n]+)/.exec(sseBuffer);
++      expect(endpointMatch).not.toBeNull();
++      const messagesPath = endpointMatch![1];
++
++      try {
++        // Initialize MCP session
++        const initResp = await fetch(`${baseUrl}${messagesPath}`, {
++          method: "POST",
++          headers: {
++            Host: `127.0.0.1:${addr.port}`,
++            "Content-Type": "application/json",
++          },
++          body: JSON.stringify({
++            jsonrpc: "2.0",
++            id: 1,
++            method: "initialize",
++            params: {
++              protocolVersion: "2024-11-05",
++              capabilities: {},
++              clientInfo: { name: "obs-cli-test", version: "1.0.0" },
++            },
++          }),
++        });
++        expect(initResp.status).toBe(202);
++        await readUntil((buf) => buf.includes('"id":1'));
++
++        await fetch(`${baseUrl}${messagesPath}`, {
++          method: "POST",
++          headers: {
++            Host: `127.0.0.1:${addr.port}`,
++            "Content-Type": "application/json",
++          },
++          body: JSON.stringify({
++            jsonrpc: "2.0",
++            method: "notifications/initialized",
++          }),
++        });
++
++        // Two consecutive tools/call requests on the same SSE session with distinct X-Request-Id values
++        const call1Resp = await fetch(`${baseUrl}${messagesPath}`, {
++          method: "POST",
++          headers: {
++            Host: `127.0.0.1:${addr.port}`,
++            "Content-Type": "application/json",
++            [REQUEST_ID_HEADER]: "cli-als-req-01",
++          },
++          body: JSON.stringify({
++            jsonrpc: "2.0",
++            id: 2,
++            method: "tools/call",
++            params: {
++              name: "cpf_validate",
++              arguments: { cpf: "52998224725" },
++            },
++          }),
++        });
++        expect(call1Resp.status).toBe(202);
++        expect(call1Resp.headers.get("x-request-id")).toBe("cli-als-req-01");
++        await readUntil((buf) => buf.includes('"id":2'));
++
++        const call2Resp = await fetch(`${baseUrl}${messagesPath}`, {
++          method: "POST",
++          headers: {
++            Host: `127.0.0.1:${addr.port}`,
++            "Content-Type": "application/json",
++            [REQUEST_ID_HEADER]: "cli-als-req-02",
++          },
++          body: JSON.stringify({
++            jsonrpc: "2.0",
++            id: 3,
++            method: "tools/call",
++            params: {
++              name: "cpf_validate",
++              arguments: { cpf: "52998224725" },
++            },
++          }),
++        });
++        expect(call2Resp.status).toBe(202);
++        expect(call2Resp.headers.get("x-request-id")).toBe("cli-als-req-02");
++        await readUntil((buf) => buf.includes('"id":3'));
++      } finally {
++        abortController.abort();
++        await reader.cancel().catch(() => {});
++      }
++
++      expect(logSpy).not.toHaveBeenCalled();
++      const entries = parseJsonLogs(errSpy);
++      expect(
++        entries.find(
++          (e) =>
++            e.module === "tools" &&
++            e.level === "info" &&
++            e.message === "tool.executed" &&
++            e.requestId === "cli-als-req-01"
++        )
++      ).toMatchObject({
++        context: { tool: "cpf_validate", ok: true },
++      });
++      expect(
++        entries.find(
++          (e) =>
++            e.module === "tools" &&
++            e.level === "info" &&
++            e.message === "tool.executed" &&
++            e.requestId === "cli-als-req-02"
++        )
++      ).toMatchObject({
++        context: { tool: "cpf_validate", ok: true },
++      });
++    });
++
++    it("emits structured redacted JSON stderr logs from rate-limit.ts, search.ts, and intelligence.ts", async () => {
++      const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
++      const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
++      delete process.env.TAVILY_API_KEY;
++      process.env.PERPLEXITY_API_KEY = "pplx-test-key";
++
++      // 1. rate-limit.ts KV error path
++      const failingKv = {
++        get: vi
++          .fn()
++          .mockRejectedValue(new Error("KV outage for 11.222.333/0001-81 user@example.com\nline2")),
++        put: vi.fn(),
++        delete: vi.fn(),
++      } as unknown as KVNamespace;
++      const rlRes = await checkRateLimit(
++        new Request("https://worker.example/cnpj/11222333000181"),
++        { MCP_KV: failingKv },
++        new RequestContext("rl-corr-77")
++      );
++      expect(rlRes.allowed).toBe(true);
++
++      // 2. search.ts error + success + cache hit paths
++      const cache = new MemoryCache(10, 60_000);
++      vi.spyOn(globalThis, "fetch")
++        .mockResolvedValueOnce(new Response("bad gateway", { status: 502 }))
++        .mockResolvedValueOnce(
++          jsonResponse({
++            choices: [{ message: { content: "Empresa encontrada" } }],
++            citations: ["https://dados.gov.br/1"],
++          })
++        )
++        .mockResolvedValueOnce(
++          jsonResponse({
++            choices: [{ message: { content: "Registro 11222333000181" } }],
++            citations: ["https://dados.gov.br/2"],
++          })
++        );
++
++      const errSearch = await executeSearch(
++        "SIGILOSO CPF 123.456.789-00",
++        3,
++        cache,
++        "search-corr-88"
++      );
++      expect(errSearch.ok).toBe(false);
++
++      const okSearch = await executeSearch(
++        "SIGILOSO CPF 123.456.789-00",
++        3,
++        cache,
++        "search-corr-88"
++      );
++      expect(okSearch.ok).toBe(true);
++
++      const cachedSearch = await executeSearch(
++        "SIGILOSO CPF 123.456.789-00",
++        3,
++        cache,
++        "search-corr-88"
++      );
++      expect(cachedSearch.ok).toBe(true);
++
++      // 3. intelligence.ts debug + info paths with redaction
++      process.env.LOG_LEVEL = "debug";
++      const intelRes = await executeIntelligence(
++        {
++          cnpj: "11222333000181",
++          cachedCompanyData: {
++            cnpj: "11222333000181",
++            razao_social: "EMPRESA PRIVADA SA",
++            qsa: [{ nome_socio: "SOCIO OCULTO" }],
++          },
++          categories: ["government"],
++          provider: "perplexity",
++          maxQueries: 1,
++        },
++        apiConfig,
++        undefined,
++        "intel-corr-99"
++      );
++      expect(intelRes.ok).toBe(true);
++
++      expect(logSpy).not.toHaveBeenCalled();
++      const entries = parseJsonLogs(errSpy);
++
++      expect(
++        entries.find(
++          (e) =>
++            e.module === "worker-rate-limit" &&
++            e.level === "error" &&
++            e.message === "rate_limit.check_failed" &&
++            e.requestId === "rl-corr-77"
++        )
++      ).toMatchObject({
++        context: {
++          error: "KV outage for [REDACTED] [REDACTED] line2",
++        },
++      });
++
++      expect(
++        entries.find(
++          (e) =>
++            e.module === "search" &&
++            e.level === "error" &&
++            e.message === "search.error" &&
++            e.requestId === "search-corr-88"
++        )
++      ).toMatchObject({
++        context: { querySummary: "query(len=27)" },
++      });
++      expect(
++        entries.find(
++          (e) =>
++            e.module === "search" &&
++            e.level === "info" &&
++            e.message === "search.completed" &&
++            e.requestId === "search-corr-88"
++        )
++      ).toMatchObject({
++        context: { querySummary: "query(len=27)", provider: "perplexity", results: 1 },
++      });
++      expect(
++        entries.find(
++          (e) =>
++            e.module === "search" &&
++            e.level === "info" &&
++            e.message === "search.cache_hit" &&
++            e.requestId === "search-corr-88"
++        )
++      ).toMatchObject({
++        context: { querySummary: "query(len=27)", cacheHit: true },
++      });
++
++      expect(
++        entries.find(
++          (e) =>
++            e.module === "intelligence" &&
++            e.level === "info" &&
++            e.message === "intelligence.completed" &&
++            e.requestId === "intel-corr-99"
++        )
++      ).toMatchObject({
++        context: { cnpj: "***0181", provider: "perplexity" },
++      });
++      expect(
++        entries.find(
++          (e) =>
++            e.module === "intelligence" &&
++            e.level === "debug" &&
++            e.message === "intelligence.dork_searching" &&
++            e.requestId === "intel-corr-99"
++        )
++      ).toMatchObject({
++        context: {
++          cnpj: "***0181",
++          category: "government",
++          querySummary: expect.stringMatching(/^query\(len=\d+\)$/),
++        },
++      });
++
++      const combinedLogs = errSpy.mock.calls.map((c) => String(c[0])).join("\n");
++      expect(combinedLogs).not.toContain("11.222.333/0001-81");
++      expect(combinedLogs).not.toContain("user@example.com");
++      expect(combinedLogs).not.toContain("SIGILOSO");
++      expect(combinedLogs).not.toContain("123.456.789-00");
++      expect(combinedLogs).not.toContain("11222333000181");
++      expect(combinedLogs).not.toContain("EMPRESA PRIVADA SA");
++      expect(combinedLogs).not.toContain("SOCIO OCULTO");
++    });
++  });
+ });
+diff --git a/test/unit/session-thinking-redaction-ratelimit.test.ts b/test/unit/session-thinking-redaction-ratelimit.test.ts
+index cc3f8fd..5fd51a3 100644
+--- a/test/unit/session-thinking-redaction-ratelimit.test.ts
++++ b/test/unit/session-thinking-redaction-ratelimit.test.ts
+@@ -237,6 +237,8 @@ describe("TCK-0017: Session Isolation, Log Redaction & MCP Rate Limiting", () =>
+       const res = await executeSearch("JOAO SILVA 123.456.789-00", 5, cache);
+       expect(res.ok).toBe(true);
+ 
++      const entries = errSpy.mock.calls.map((c) => JSON.parse(String(c[0])) as Record<string, unknown>);
++      expect(entries.some((e) => e.module === "search" && e.level === "info")).toBe(true);
+       const combinedLogs = errSpy.mock.calls.map((c) => String(c[0])).join("\n");
+       expect(combinedLogs).toContain("query(len=25)");
+       expect(combinedLogs).not.toContain("JOAO SILVA");
+@@ -245,6 +247,7 @@ describe("TCK-0017: Session Isolation, Log Redaction & MCP Rate Limiting", () =>
+ 
+     it("masks CNPJ, company name, and dorks in executeIntelligence stderr logs", async () => {
+       process.env.TAVILY_API_KEY = "test-api-key";
++      process.env.LOG_LEVEL = "debug";
+       const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+       const apiConfig = resolveApiConfig();
+ 
+@@ -264,6 +267,9 @@ describe("TCK-0017: Session Isolation, Log Redaction & MCP Rate Limiting", () =>
+       );
+       expect(res.ok).toBe(true);
+ 
++      const entries = errSpy.mock.calls.map((c) => JSON.parse(String(c[0])) as Record<string, unknown>);
++      expect(entries.some((e) => e.module === "intelligence" && e.level === "info")).toBe(true);
++      expect(entries.some((e) => e.module === "intelligence" && e.level === "debug")).toBe(true);
+       const combinedLogs = errSpy.mock.calls.map((c) => String(c[0])).join("\n");
+       expect(combinedLogs).toContain("***0181");
+       expect(combinedLogs).toContain("query(len=");

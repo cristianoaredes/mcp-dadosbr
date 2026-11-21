@@ -10,7 +10,7 @@
   "current_step": 4,
   "total_steps": 4,
   "ended_at": "2026-11-21T14:20:19Z",
-  "result": "TCK-0038 completed: X-Request-Id propagated end-to-end across Worker REST and CLI POST /messages (AsyncLocalStorage), rate-limit/search/intelligence migrated to createLogger, tool.executed promoted to INFO, 33 files / 467 tests PASS, tsc + tsc.worker + build + build:worker + test:transport + secret-scan PASS",
+  "result": "TCK-0038 completed: RequestContext correlation + AsyncLocalStorage + unified logger + tool.executed info, 36 files / 491 tests PASS",
   "loop_iterations": 0,
   "attempt_count": 0,
   "lessons_consulted": [
@@ -20,7 +20,16 @@
   "cost_source": "unknown",
   "loop_strategy": "default",
   "context_peak": 0,
-  "final_judge_delta": 0,
+  "final_judge_delta": 31,
   "lesson_consult_attempted": true,
-  "warmup": false
+  "warmup": false,
+  "final_judge_delta_source": "judge",
+  "lesson_utility": {
+    "utility": 0.62,
+    "n_lessons": 1,
+    "lessons_consulted": [
+      "Precisou de 2 iterações (re-execução)"
+    ],
+    "signal": "computed"
+  }
 }

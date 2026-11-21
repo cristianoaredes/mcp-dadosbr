@@ -5,8 +5,8 @@ title: "Cobrir caminhos 429/413/400/extraAllowedHosts/SSE em cli-http.ts e handl
 source: audit
 created_at: 2026-11-21T13:09:45Z
 created_by: ops
-updated_at: 2026-11-21T14:18:35Z
-status: verifying
+updated_at: 2026-11-21T14:29:04Z
+status: done
 severity: medium
 category: test-coverage
 effort: S
@@ -19,7 +19,8 @@ linked_designs:
   - DES-0035
 linked_runs:
   - RUN-20261121-140937-tck-0039
-linked_verifications: []
+linked_verifications:
+  - VER-20261121-142723-tck-0039
 linked_docs:
   - .archagents/02-architecture.md
 external_refs: []
@@ -68,3 +69,4 @@ Antes do fix, o relatório de cobertura V8 (`npm run test:coverage`) em `a3a2e12
 - 2026-11-21T14:09:37Z - **designed** - DES-0035 created
 - 2026-11-21T14:09:44Z - **executing** - executing TCK-0039
 - 2026-11-21T14:18:35Z - **verifying** - TCK-0039 tests and coverage verified in live run RUN-20261121-140937-tck-0039
+- 2026-11-21T14:29:04Z - **done** - P10 verify approved-with-notes (954e4dd4) + judge pass
