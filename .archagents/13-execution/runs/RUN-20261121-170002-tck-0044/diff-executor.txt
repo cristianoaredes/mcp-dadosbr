@@ -1,0 +1,798 @@
+diff --git a/.archagents/00-overview.md b/.archagents/00-overview.md
+index ae86eb2..1ef1f83 100644
+--- a/.archagents/00-overview.md
++++ b/.archagents/00-overview.md
+@@ -1,8 +1,8 @@
+ # Visão geral
+ 
+-Base revisada: `c83d626` (`0.6.0`, worktree `audit-remediation`; base inicial: `037dae4c`).
++Base revisada: `133dbd5` (`0.7.0`, branch `feature/SPC-0001-v0.7.0-transversal-sources` / `SPC-0001`; base inicial: `037dae4c`).
+ 
+-Servidor MCP em TypeScript (`@aredes.me/mcp-dadosbr`, licença `AGPL-3.0-only`, atribuições em `NOTICE.md`) para consulta de dados públicos brasileiros. O pacote declara e propaga a versão `0.6.0` (`package.json`, `lib/shared/utils/constants.ts`, Worker `/`, `/health`, `/openapi.json` e `/sse`), expõe 23 ferramentas MCP e 5 recursos MCP Apps (`ui://dadosbr/*.html`) em Node.js (`^22.12.0 || ^24.0.0 || ^26.0.0`), além de um adapter separado para Cloudflare Workers (`lib/adapters/cloudflare.ts` + `lib/workers/*`) e documentação operacional de runner Linux isolado em `infra/runner/`. O build compila o servidor com `tsc` e empacota os 5 apps HTML autônomos com `scripts/build-apps.mjs`.
++Servidor MCP em TypeScript (`@aredes.me/mcp-dadosbr`, licença `AGPL-3.0-only`, atribuições em `NOTICE.md`) para consulta de dados públicos brasileiros. O pacote declara e propaga a versão `0.7.0` (`package.json`, `lib/shared/utils/constants.ts`, Worker `/`, `/health`, `/openapi.json` e `/sse`), expõe 29 ferramentas MCP e 5 recursos MCP Apps (`ui://dadosbr/*.html`) em Node.js (`^22.12.0 || ^24.0.0 || ^26.0.0`), além de um adapter separado para Cloudflare Workers (`lib/adapters/cloudflare.ts` + `lib/workers/*`) e documentação operacional de runner Linux isolado em `infra/runner/`. O build compila o servidor com `tsc` e empacota os 5 apps HTML autônomos com `scripts/build-apps.mjs`.
+ 
+ ## Fontes
+ 
+diff --git a/.archagents/01-business-domain.md b/.archagents/01-business-domain.md
+index 631bcf4..5758276 100644
+--- a/.archagents/01-business-domain.md
++++ b/.archagents/01-business-domain.md
+@@ -1,13 +1,16 @@
+ # Domínio e regras
+ 
+-Base revisada: `79aa712` (`v0.5.0`; base inicial: `037dae4c`).
++Base revisada: `133dbd5` (`0.7.0`, `SPC-0001`; base inicial: `037dae4c`).
+ 
+-O domínio cobre consultas cadastrais de empresas (CNPJ), endereços (CEP), dados geográficos (IBGE), diários oficiais municipais (Querido Diário), contratações públicas (PNCP), transparência e sanções federais (Portal da Transparência, CEIS/CNEP/CEPIM), séries financeiras (Banco Central SGS) e preços de veículos (FIPE).
++O domínio cobre consultas cadastrais de empresas (CNPJ), endereços (CEP), classificações econômicas e fiscais (CNAE IBGE `v2` e NCM), calendário/DDDs, dados geográficos e indicadores demográficos/econômicos (IBGE Localidades e Agregados `v3`), diários oficiais municipais (Querido Diário), contratações públicas (PNCP), transparência e integridade/sanções federais (Portal da Transparência, CEIS/CNEP/CEPIM, Certidões Consolidadas TCU, Lista Suja MTE via CSV aberto), séries financeiras e sistema financeiro (Banco Central SGS, Olinda PTAX/Focus, bancos/Pix/corretoras CVM) e preços de veículos (FIPE).
+ 
+ - `ibge_localidades`: localidades por UF (`municipios_por_uf`) exige sigla `uf`.
++- `ibge_indicadores`: `codigo_ibge` estrito de 2 dígitos (`N3` UF) ou 7 dígitos (`N6` município) para População (`6579/9324`) e/ou PIB (`5938/37`), com cálculo explícito de PIB per capita indicando os anos das séries.
+ - `bacen_taxas`: aceita `selic`, `ipca`, `dolar`, `euro` ou `cdi` e janelas explícitas `periodo_dias` em `30`, `90` ou `365` (sobrescrevendo `ultimos`, com data final no dia corrente em `America/Sao_Paulo`).
++- `bcb_olinda`: `ptax` resolve dia útil mais recente em janela de 7 dias corridos com flag `exact_date_match`, e `focus` aceita enums estritos de indicadores macroeconômicos.
+ - `pncp_licitacoes`: o modo de publicações filtradas exige `modalidade_id` positivo, período `data_inicial`/`data_final` válido e `query` vazia (tratando HTTP 204 como página vazia); sem `modalidade_id`, mantém a busca legada por termo.
+ - `querido_diario`: aceita `territory_id` no padrão de código IBGE e ordena por data decrescente quando `query` é vazia.
++- `lista_suja_lookup`, `tcu_certidoes` e `consumidor_reclamacoes`: `lista_suja_lookup` consulta e filtra o CSV aberto oficial do MTE com `lgpd_notice`; `tcu_certidoes` consulta Certidões Consolidadas PJ sem API key e integra `company_deep_profile`; `consumidor_reclamacoes` devolve orientação oficial imediata sem tentar contornar proteção anti-bot.
+ - Distingua sempre dado retornado pelo provedor (e sua data de atualização cadastral, quando informada) de horário de consulta no servidor ou provedor indisponível.
+ 
+ ## Fontes
+@@ -16,5 +19,10 @@ O domínio cobre consultas cadastrais de empresas (CNPJ), endereços (CEP), dado
+ - `lib/tools/government.ts:L20-L61`
+ - `lib/tools/government.ts:L225-L339`
+ - `lib/tools/financial.ts:L13-L64`
++- `lib/tools/tcu.ts:L1-L186`
++- `lib/tools/fiscal-banking.ts:L1-L915`
++- `lib/tools/olinda.ts:L1-L456`
++- `lib/tools/ibge-indicadores.ts:L1-L520`
++- `lib/shared/mte-lista-suja.ts:L1-L301`
+ - `lib/shared/bacen.ts:L1-L37`
+ - `lib/shared/pncp.ts:L27-L56`
+diff --git a/.archagents/02-architecture.md b/.archagents/02-architecture.md
+index 7a831e7..8dfa669 100644
+--- a/.archagents/02-architecture.md
++++ b/.archagents/02-architecture.md
+@@ -1,8 +1,8 @@
+ # Arquitetura AS-IS
+ 
+-Base revisada: `a7fd8e4` (`0.6.0`, branch `feature/audit-remediation-wave2` sobre `origin/main` `dae3ca0`; base inicial: `037dae4c`).
++Base revisada: `133dbd5` (`0.7.0`, branch `feature/SPC-0001-v0.7.0-transversal-sources` / `SPC-0001`; base inicial: `037dae4c`).
+ 
+-O CLI conecta o servidor MCP por stdio ou HTTP/SSE (`lib/adapters/cli-http.ts`, com métricas de execução emitidas em `stderr` para manter `stdout` exclusivo de JSON-RPC no transporte stdio). Há um adapter separado no Cloudflare Worker. O servidor central consulta o registro unificado de 23 ferramentas por domínio (`lib/core/registry.ts`, `lib/core/tools.ts`) e expõe cinco recursos MCP Apps (`ui://dadosbr/*.html`) no runtime Node, enquanto a automação de produção/sandbox opcional vive isolada em `infra/runner/`.
++O CLI conecta o servidor MCP por stdio ou HTTP/SSE (`lib/adapters/cli-http.ts`, com métricas de execução emitidas em `stderr` para manter `stdout` exclusivo de JSON-RPC no transporte stdio). Há um adapter separado no Cloudflare Worker. O servidor central consulta o registro unificado de 29 ferramentas por domínio (`lib/core/registry.ts`, `lib/core/tools.ts`, barrel `lib/tools/index.ts`) e expõe cinco recursos MCP Apps (`ui://dadosbr/*.html`) no runtime Node, enquanto a automação de produção/sandbox opcional vive isolada em `infra/runner/`.
+ 
+ ```mermaid
+ flowchart LR
+@@ -68,7 +68,7 @@ O servidor Node associa `cnpj_lookup` a `ui://dadosbr/ficha-cnpj.html`. A proje
+ ## Arquitetura em Camadas e Paridade Worker (`TCK-0024` / `FND-0012`)
+ 
+ - **Separação acíclica `lib/core` <- `lib/tools` (`ADR-0001`)**: `lookup()`, `deduplicate()` e `getPendingRequestCount()` residem em `lib/core/lookup.ts` (`L1-L87`). `lib/core/intelligence.ts` e `lib/tools/company.ts` consomem `core/lookup.ts` diretamente, eliminando qualquer import de `lib/tools/` dentro de `lib/core/`. `lib/tools/core.ts` consome `...CNPJ_INTELLIGENCE_TOOL` e `executeIntelligence` estaticamente (sem schema duplicado) mantendo apenas re-exports de `lookup`/`deduplicate`/`getPendingRequestCount` em `L103` para retrocompatibilidade dos testes. `executeIntelligenceInternal` normaliza `options.cnpj` via `normalizeCnpj` antes de acessar/gravar chaves `cnpj:<baseUrl>:<digits>`.
+-- **Paridade Node <-> Cloudflare Worker (`ADR-0002`)**: `SERVER.VERSION` em `lib/shared/utils/constants.ts:L37` e `SERVER_VERSION` em `lib/config/index.ts:L13` refletem `"0.6.0"` (mesma versão de `package.json`), propagada para `/`, `/health`, `/openapi.json` e eventos `/sse`. `GET /` em `lib/workers/worker.ts:L109` publica dinamicamente todas as 23 ferramentas de `TOOL_DEFINITIONS`. `syncWorkerEnv(env)` em `lib/adapters/cloudflare.ts:L40-L58` sincroniza a allowlist explícita (`TAVILY_API_KEY`, `PERPLEXITY_API_KEY`, `TRANSPARENCIA_API_KEY`, `DATAJUD_API_KEY`) para `process.env` no Worker sem vazar `MCP_API_KEY` ou bindings KV. Comportamento em runtime edge de produção no Cloudflare Workers fica *a confirmar*.
++- **Paridade Node <-> Cloudflare Worker (`ADR-0002`)**: `SERVER.VERSION` em `lib/shared/utils/constants.ts:L37` e `SERVER_VERSION` em `lib/config/index.ts:L13` refletem `"0.7.0"` (mesma versão de `package.json`), propagada para `/`, `/health`, `/openapi.json` e eventos `/sse`. `GET /` em `lib/workers/worker.ts:L120` publica dinamicamente todas as 29 ferramentas de `TOOL_DEFINITIONS`. `syncWorkerEnv(env)` em `lib/adapters/cloudflare.ts:L40-L58` sincroniza a allowlist explícita (`TAVILY_API_KEY`, `PERPLEXITY_API_KEY`, `TRANSPARENCIA_API_KEY`, `DATAJUD_API_KEY`) para `process.env` no Worker sem vazar `MCP_API_KEY` ou bindings KV. Comportamento em runtime edge de produção no Cloudflare Workers fica *a confirmar*.
+ 
+ ## Consolidação Wave 2 (`TCK-0033`–`TCK-0039`)
+ 
+diff --git a/.archagents/03-modules.md b/.archagents/03-modules.md
+index d9bd6b3..c6e7184 100644
+--- a/.archagents/03-modules.md
++++ b/.archagents/03-modules.md
+@@ -1,10 +1,10 @@
+ # Mapa de módulos
+ 
+-Base revisada: `a7fd8e4` (`0.6.0`, branch `feature/audit-remediation-wave2` sobre `origin/main` `dae3ca0`; base inicial: `037dae4c`).
++Base revisada: `133dbd5` (`0.7.0`, branch `feature/SPC-0001-v0.7.0-transversal-sources` / `SPC-0001`; base inicial: `037dae4c`).
+ 
+ - `lib/core`: servidor MCP (`mcp-server.ts`), registro (`registry.ts`), orquestração e métricas (`tools.ts`), serviço acíclico de lookup/deduplicação (`lookup.ts`), cliente HTTP com retry/circuit breaker e proteção SSRF (`http-client.ts`), cache (`cache.ts`), schemas compartilhados (`tool-schemas.ts`), busca (`search.ts`, `search-providers.ts`, `dork-templates.ts`), inteligência CNPJ (`intelligence.ts`), pensamento sequencial (`sequential-thinking.ts`) e validação Zod (`validation.ts`). Decisões estruturais registradas em `.archagents/09-decisions/ADR-0001-*.md` e `ADR-0002-*.md`.
+-- `lib/tools`: módulos de domínio auto-registrados via barrel `index.ts` (`core`, `government`, `legal`, `company`, `financial`, `health`, `osint`). Não são importados por `lib/core/` (fluxo acíclico `tools -> core`).
+-- `lib/shared`: contratos e utilitários portáveis (Web-standard, sem imports `node:*`) compartilhados entre servidor, Worker e apps (`bacen.ts`, `pncp.ts`, `cnpj-profile.ts`, `errors.ts`, `log-redaction.ts`, `agentic-guard.ts`, `compliance-notices.ts`, `types/`, `utils/constants.ts`, `utils/timeout.ts`).
++- `lib/tools`: módulos de domínio registrados via barrel `index.ts` (`core`, `government`, `legal`, `company`, `financial`, `health`, `osint`, `tcu`, `fiscal-banking`, `olinda`, `ibge-indicadores`). Não são importados por `lib/core/` (fluxo acíclico `tools -> core`).
++- `lib/shared`: contratos, schemas `.strict()` e utilitários portáveis (Web-standard, sem imports `node:*`) compartilhados entre servidor, Worker e apps (`bacen.ts`, `pncp.ts`, `cnpj-profile.ts`, `errors.ts`, `log-redaction.ts`, `agentic-guard.ts`, `compliance-notices.ts`, `mte-lista-suja.ts`, `tcu-schema.ts`, `fiscal-banking-schemas.ts`, `olinda-ibge-schemas.ts`, `types/`, `utils/constants.ts`, `utils/timeout.ts`).
+ - `lib/adapters` e `lib/bin`: adaptadores do CLI (`cli.ts` em stdio/HTTP com `MCP_API_KEY` fail-closed fora de loopback, `cli-http.ts` com Express, auth Bearer/`X-API-Key`, `AsyncLocalStorage<RequestContext>`, headers e `createGracefulShutdown`), Cloudflare (`cloudflare.ts` com `syncWorkerEnv`, headers defensivos e `serializeBoundedToolOutput`), Smithery (`smithery.ts`) e binário `mcp-dadosbr.ts`.
+ - `lib/workers`: ponto de entrada (`worker.ts`), rotas REST (`rest.ts` com `parseJsonBody` `400`, `404` e `500` sanitizado), SSE (`sse.ts`), OpenAPI (`openapi.ts`), autenticação/OAuth/tipos (`auth.ts`, `oauth.ts`, `types.ts`) e rate limit (`rate-limit.ts`) do Cloudflare Worker.
+ - `apps/` e `scripts/build-apps.mjs`: cinco interfaces MCP Apps (`apps/ibge`, `apps/querido-diario`, `apps/bacen`, `apps/pncp`, `apps/cnpj`), empacotadas via `esbuild` em HTML autônomo sob `build/lib/apps/*.html`.
+@@ -29,4 +29,12 @@ Base revisada: `a7fd8e4` (`0.6.0`, branch `feature/audit-remediation-wave2` sobr
+ - `lib/shared/cnpj-profile.ts:L1-L119`
+ - `lib/shared/agentic-guard.ts:L1-L151`
+ - `lib/shared/compliance-notices.ts:L1-L20`
++- `lib/shared/mte-lista-suja.ts:L1-L301`
++- `lib/shared/tcu-schema.ts:L1-L54`
++- `lib/shared/fiscal-banking-schemas.ts:L1-L49`
++- `lib/shared/olinda-ibge-schemas.ts:L1-L85`
++- `lib/tools/tcu.ts:L1-L186`
++- `lib/tools/fiscal-banking.ts:L1-L915`
++- `lib/tools/olinda.ts:L1-L456`
++- `lib/tools/ibge-indicadores.ts:L1-L520`
+ - `PRIVACY.md:L1-L78`
+diff --git a/.archagents/05-integrations.md b/.archagents/05-integrations.md
+index 9d09657..ddb53c8 100644
+--- a/.archagents/05-integrations.md
++++ b/.archagents/05-integrations.md
+@@ -1,15 +1,16 @@
+ # Integrações
+ 
+-Base revisada: `79aa712` (`v0.5.0`; base inicial: `037dae4c`).
++Base revisada: `133dbd5` (`0.7.0`, `SPC-0001`; base inicial: `037dae4c`).
+ 
+ - **CNPJ e CEP (configuráveis com allowlist SSRF):** padrão `https://api.opencnpj.org/` e `https://opencep.com/v1/`, com hosts adicionais permitidos em `lib/config/index.ts` (ReceitaWS, BrasilAPI, CNPJ.ws, Minha Receita, ViaCEP, AwesomeAPI).
+-- **IBGE Localidades:** `https://servicodados.ibge.gov.br/api/v1/localidades` (sem chave). Em `TCK-0023` (`FND-0011`), `ibge_localidades` passou a cachear a lista bruta por URL (`ibge:${url}`), suportar filtros opcionais em memória (`id` e `nome` acento/case-insensitive) e paginação opcional (`page`/`limit`, retornando `{ items, pagination, filter? }` apenas quando `page`/`limit` são informados e mantendo array bruto legado + `structuredContent.source` para MCP Apps quando omitidos).
++- **IBGE Localidades & Indicadores:** `https://servicodados.ibge.gov.br/api/v1/localidades` (sem chave) para regiões/UFs/municípios (com filtro acento/case-insensitive e paginação opcional em `TCK-0023`); `https://servicodados.ibge.gov.br/api/v2/cnae` para hierarquia CNAE `v2` (`cnae_ncm_lookup`); e `https://servicodados.ibge.gov.br/api/v3/agregados` para População (`6579/9324`) e PIB (`5938/37`) por UF (`N3`) ou município (`N6`) em `ibge_indicadores`.
+ - **PNCP (Publicações):** `https://pncp.gov.br/api/consulta/v1/contratacoes/publicacao` (sem chave), com HTTP 204 tratado como página vazia no modo filtrado (`options.noContent` em `lib/core/http-client.ts`) e cache apenas de respostas `ok: true` preservando `source`.
+ - **Querido Diário (Open Knowledge Brasil):** `https://api.queridodiario.org.br/gazettes` (sem chave), com cache de sucessos preservando `source`.
+-- **Banco Central (BCData/SGS):** `https://api.bcb.gov.br/dados/serie/bcdata.sgs` para séries 432, 433, 1, 21619 e 12 (sem chave), com cache de sucessos preservando `source`.
+-- **FIPE (via BrasilAPI):** `https://brasilapi.com.br/api/fipe` (sem chave), com cache de sucessos em `fipe:preco:*` e `fipe:marcas:*`.
++- **Banco Central (BCData/SGS & Olinda OData):** `https://api.bcb.gov.br/dados/serie/bcdata.sgs` para séries 432, 433, 1, 21619 e 12 (`bacen_taxas`, sem chave); e `https://olinda.bcb.gov.br/olinda/servico/{PTAX,Expectativas}/versao/v1/odata` para cotações PTAX históricas e Expectativas Focus (`bcb_olinda`, sem chave).
++- **BrasilAPI (FIPE, NCM, SFN/Pix/Corretoras CVM, Feriados & DDD):** `https://brasilapi.com.br/api/{fipe,ncm/v1,banks/v1,pix/v1/participants,cvm/corretoras/v1,feriados/v1,ddd/v1}` (sem chave), com cache e paginação server-side nas listas extensas (`pix`, `corretoras`).
++- **TCU Certidões Consolidadas & MTE Lista Suja CSV:** `https://certidoes-apf.apps.tcu.gov.br/api/rest/publico/certidoes` (TCU Inidôneos, CNJ CNIA, CEIS, CNEP com timeout `10_000ms`, sem chave, integrada a `company_deep_profile`) e CSV oficial aberto do MTE `https://www.gov.br/trabalho-e-emprego/pt-br/assuntos/inspecao-do-trabalho/areas-de-atuacao/cadastro_de_empregadores.csv` (~76 KB, parse UTF-8/ISO-8859-1 em `lista_suja_lookup`).
+ - **Portal da Transparência / CEIS / CNEP / CEPIM:** `https://api.portaldatransparencia.gov.br/api-de-dados` exige `TRANSPARENCIA_API_KEY` (com fallback para URLs manuais em `ceis_cnep_lookup`). A checagem de API key ocorre sempre antes da leitura do cache, as chaves de cache nunca incluem segredos e respostas com falhas parciais (`errors.length > 0`) ou fallbacks nunca são cacheadas.
+-- **Reuso de `lookup()` e caching nas demais tools read-heavy (`TCK-0023`):** `company_deep_profile` (`lib/tools/company.ts`) reutiliza `lookup("cnpj", ...)` (`cache` + `deduplicate`) e propaga `cache` aos sub-lookups; `domain_whois`, `consumidor_reclamacoes`, `datajud_processos`, `oab_advogado`, `bnmp_mandados`, `lista_suja_lookup` e `cnes_saude` cacheiam apenas sucessos reais (`ok: true`, jamais fallbacks/CAPTCHAs/erros e com `DATAJUD_API_KEY` validada antes do cache).
++- **Reuso de `lookup()`, anti-bot e caching (`TCK-0023`, `SPC-0001`):** `company_deep_profile` (`lib/tools/company.ts`) reutiliza `lookup("cnpj", ...)` (`cache` + `deduplicate`) e aciona `executeTcuCertidoes` + sub-lookups com propagação de `cache`; `consumidor_reclamacoes` retorna fallback guiado sem chamadas `fetch` devido ao challenge anti-bot JS F5 do portal; `domain_whois`, `datajud_processos`, `oab_advogado`, `bnmp_mandados`, `lista_suja_lookup`, `tcu_certidoes`, `cnes_saude`, `cnae_ncm_lookup`, `sistema_financeiro_lookup`, `feriados_ddd_lookup`, `bcb_olinda` e `ibge_indicadores` cacheiam apenas sucessos reais (`ok: true`, jamais fallbacks/CAPTCHAs/erros/`[]`).
+ 
+ ## Resiliência HTTP (`lib/core/http-client.ts`)
+ 
+@@ -37,4 +38,9 @@ Disponibilidade, limites de taxa e cobertura efetiva de cada provedor ficam **a
+ - `lib/shared/utils/timeout.ts:L1-L138`
+ - `lib/core/search-providers.ts:L1-L296`
+ - `lib/core/intelligence.ts:L1-L523`
+-- `lib/tools/legal.ts:L1-L504`
++- `lib/tools/legal.ts:L1-L563`
++- `lib/shared/mte-lista-suja.ts:L1-L301`
++- `lib/tools/tcu.ts:L1-L186`
++- `lib/tools/fiscal-banking.ts:L1-L915`
++- `lib/tools/olinda.ts:L1-L456`
++- `lib/tools/ibge-indicadores.ts:L1-L520`
+diff --git a/.archagents/07-security-compliance.md b/.archagents/07-security-compliance.md
+index cfaec5c..a75edc0 100644
+--- a/.archagents/07-security-compliance.md
++++ b/.archagents/07-security-compliance.md
+@@ -1,8 +1,8 @@
+ # Segurança e limites
+ 
+-Base revisada: `a7fd8e4` (`0.6.0`, branch `feature/audit-remediation-wave2` sobre `origin/main` `dae3ca0`; base inicial: `037dae4c`).
++Base revisada: `133dbd5` (`0.7.0`, branch `feature/SPC-0001-v0.7.0-transversal-sources` / `SPC-0001`; base inicial: `037dae4c`).
+ 
+-O Worker define rotas públicas explícitas (`PUBLIC_PATHS`: `/health`, `/`, `/openapi.json`, `/.well-known/*`), adiciona headers defensivos globais em `BASE_CORS_HEADERS` (`X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, `Cache-Control: no-store`), valida JSON malformado como HTTP `400` (`parseJsonBody`) e sanitiza falhas `500` em `lib/workers/rest.ts` via `internalServerErrorResponse` sem expor `error.message` ao cliente; exige `MCP_API_KEY` com comparação constant-time em `/mcp`, `/sse` e rotas REST quando configurada, mantendo `/oauth/*` e descoberta OAuth desabilitados em modo fail-closed (`501 oauth_not_supported`) e aplicando CORS restritivo via `MCP_ALLOWED_ORIGINS` (sem `*` em rotas autenticadas). O transporte HTTP/SSE local do CLI (`lib/adapters/cli.ts` + `lib/adapters/cli-http.ts`) realiza bind padrão em `127.0.0.1` (`MCP_HTTP_HOST`), exige `MCP_API_KEY` em modo fail-closed sempre que configurado fora de loopback (`!isLoopbackHost(host)`), valida Bearer/`X-API-Key` via SHA-256 + `timingSafeEqual` (`isValidApiKey`) quando definida, desativa `x-powered-by`, impõe headers defensivos (`X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Content-Security-Policy`, `Referrer-Policy: no-referrer`), valida `Host` (anti-DNS-rebinding) e `Origin` (CORS loopback/allowlist explícito, nunca `*`, com `Vary: Origin`), aplica rate limit por IP, propaga `RequestContext` via `AsyncLocalStorage`, valida `sessionId` (`^[A-Za-z0-9_-]{1,128}$`) e armazena sessões SSE em `Map` com teto configurável (`MCP_MAX_SSE_SESSIONS`, default `100`). `.github/workflows/cloudflare-deploy.yml` restringe o token com `permissions: { contents: read }` e `persist-credentials: false`. URLs configuráveis de CNPJ e CEP passam por allowlist de hosts HTTPS e normalização (`validateAndNormalizeApiConfig`), tanto em `loadApiConfiguration()` quanto em `resolveApiConfig(overrides)` e no adaptador Smithery (`configSchema` / `createServer`), restringindo loopback (`localhost`, `127.0.0.1` exatos via HTTP/HTTPS) exclusivamente a `NODE_ENV` `development`/`test` (fail-closed quando ausente ou `production`), rejeitando credenciais embutidas (`username`/`password`) e sanitizando URLs em logs/erros. A tool `fipe_veiculos` valida `tipo` contra `ALLOWED_FIPE_TYPES` e `codigo_fipe` contra regex estrito antes de chamar `httpJson`. Todas as **23** ferramentas MCP registradas exigem `zodSchema` em tempo de compilação e passam por `zodSchema.safeParse(...)` centralizado em `executeRegisteredTool` (`lib/core/registry.ts` + `lib/core/tool-schemas.ts`, Zod `v4`) antes de qualquer chamada externa, com limites explícitos de paginação/tamanho; `cnpj_intelligence` removeu `api_key` do schema e rejeita argumentos extras (`.strict()`). As capacidades e a allowlist agêntica (`SAFETY.md §SC-9`) estão versionadas em `.archagents/_capabilities.json` e `.archagents/mcp-tool-allowlist.json` (`20 queries` alinhado ao schema). Em proteção agêntica e compliance (`TCK-0033` / `TCK-0036`), `lib/shared/agentic-guard.ts` encapsula contexto externo/de usuário com `<untrusted_user_context>` e `sanitizeUntrustedText` (`osint.ts`, `search-providers.ts`, `legal.ts` `parseProcuradosHtml`) e limita o tamanho de respostas MCP em `mcp-server.ts` e `cloudflare.ts` via `serializeBoundedToolOutput` (`MCP_MAX_TOOL_OUTPUT_CHARS`, default `100000`); `PRIVACY.md`, `.archagents/10-runbooks.md` (Art. 48 ANPD), `GET /`/`openapi.json` (`MCP_DPO_CONTACT`, Art. 41) e `lib/shared/compliance-notices.ts` (`HOMONYM_HUMAN_REVIEW_NOTICE`, Art. 20 em `procurados_lookup`, `bnmp_mandados`, `ceis_cnep_lookup` e `datajud_processos`) reforçam a governança LGPD (permanecendo pendentes em `raw` os tickets `TCK-0030`–`TCK-0032` referentes a `FND-0015`–`FND-0017`, adiados por instrução do operador). O histórico de `sequentialthinking` é isolado por sessão via `ToolExecutionContext` (`lib/core/mcp-server.ts`, `lib/tools/core.ts` — sem singleton de módulo; `tokens.ts` e `smithery.config.js` removidos em `TCK-0037`), usa `Map` seguro contra colisão de protótipo com tetos FIFO (`100/20/50`) e mantém logging de pensamentos desligado por padrão; logs de `search.ts`, `intelligence.ts`, `rate-limit.ts` e `tools.ts` (`tool.executed` em `INFO`) emitem JSON em `stderr` via `createLogger` com redação em `lib/shared/log-redaction.ts`; o dispatcher MCP (`lib/core/mcp-server.ts`) aplica rate limit configurável por sessão (`MCP_TOOL_RATE_LIMIT_MAX`, default `120` chamadas/janela) inclusive em `stdio`. Em dependências de produção (`package.json` / `package-lock.json`), foram removidas `@smithery/sdk`, `agents`, `workers-mcp` e `async-mutex`, atualizados `zod` (`^4.6.7`) e `express` (`^5.3.0`), e adicionado o gate `npm audit --omit=dev --audit-level=high` em `.github/workflows/ci.yml:L116-L117`. `readCnpjProfile` rejeita credenciais embutidas na URL do provedor, e `scripts/build-apps.mjs` bloqueia fechamentos inline `</script`/`</style` ao empacotar os MCP Apps. Exposição efetiva, controles ativos no host e conformidade ficam **a confirmar** por ambiente. Credenciais e evidências de execução ficam fora do Git.
++O Worker define rotas públicas explícitas (`PUBLIC_PATHS`: `/health`, `/`, `/openapi.json`, `/.well-known/*`), adiciona headers defensivos globais em `BASE_CORS_HEADERS` (`X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, `Cache-Control: no-store`), valida JSON malformado como HTTP `400` (`parseJsonBody`) e sanitiza falhas `500` em `lib/workers/rest.ts` via `internalServerErrorResponse` sem expor `error.message` ao cliente; exige `MCP_API_KEY` com comparação constant-time em `/mcp`, `/sse` e rotas REST quando configurada, mantendo `/oauth/*` e descoberta OAuth desabilitados em modo fail-closed (`501 oauth_not_supported`) e aplicando CORS restritivo via `MCP_ALLOWED_ORIGINS` (sem `*` em rotas autenticadas). O transporte HTTP/SSE local do CLI (`lib/adapters/cli.ts` + `lib/adapters/cli-http.ts`) realiza bind padrão em `127.0.0.1` (`MCP_HTTP_HOST`), exige `MCP_API_KEY` em modo fail-closed sempre que configurado fora de loopback (`!isLoopbackHost(host)`), valida Bearer/`X-API-Key` via SHA-256 + `timingSafeEqual` (`isValidApiKey`) quando definida, desativa `x-powered-by`, impõe headers defensivos (`X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Content-Security-Policy`, `Referrer-Policy: no-referrer`), valida `Host` (anti-DNS-rebinding) e `Origin` (CORS loopback/allowlist explícito, nunca `*`, com `Vary: Origin`), aplica rate limit por IP, propaga `RequestContext` via `AsyncLocalStorage`, valida `sessionId` (`^[A-Za-z0-9_-]{1,128}$`) e armazena sessões SSE em `Map` com teto configurável (`MCP_MAX_SSE_SESSIONS`, default `100`). `.github/workflows/cloudflare-deploy.yml` restringe o token com `permissions: { contents: read }` e `persist-credentials: false`. URLs configuráveis de CNPJ e CEP passam por allowlist de hosts HTTPS e normalização (`validateAndNormalizeApiConfig`), tanto em `loadApiConfiguration()` quanto em `resolveApiConfig(overrides)` e no adaptador Smithery (`configSchema` / `createServer`), restringindo loopback (`localhost`, `127.0.0.1` exatos via HTTP/HTTPS) exclusivamente a `NODE_ENV` `development`/`test` (fail-closed quando ausente ou `production`), rejeitando credenciais embutidas (`username`/`password`) e sanitizando URLs em logs/erros. A tool `fipe_veiculos` valida `tipo` contra `ALLOWED_FIPE_TYPES` e `codigo_fipe` contra regex estrito antes de chamar `httpJson`. Todas as **29** ferramentas MCP registradas exigem `zodSchema` em tempo de compilação e passam por `zodSchema.safeParse(...)` centralizado em `executeRegisteredTool` (`lib/core/registry.ts` + `lib/core/tool-schemas.ts`, Zod `v4`) antes de qualquer chamada externa, com limites explícitos de paginação (`limit <= 50` em `cnae_ncm_lookup`/`sistema_financeiro_lookup`), validação mod-11 (`tcu_certidoes`), enums anti-OData-injection (`bcb_olinda`) e regex numéricos (`ibge_indicadores`); `cnpj_intelligence` removeu `api_key` do schema e rejeita argumentos extras (`.strict()`). As capacidades e a allowlist agêntica (`SAFETY.md §SC-9`) estão versionadas em `.archagents/_capabilities.json` e `.archagents/mcp-tool-allowlist.json` (`29` entradas, `20 queries` alinhado ao schema). Em proteção agêntica e compliance (`TCK-0033` / `TCK-0036` / `SPC-0001`), `lib/shared/agentic-guard.ts` encapsula contexto externo/de usuário com `<untrusted_user_context>` e `sanitizeUntrustedText` (`osint.ts`, `search-providers.ts`, `legal.ts`, `tcu.ts`, `fiscal-banking.ts`, `olinda.ts`, `ibge-indicadores.ts`) e limita o tamanho de respostas MCP em `mcp-server.ts` e `cloudflare.ts` via `serializeBoundedToolOutput` (`MCP_MAX_TOOL_OUTPUT_CHARS`, default `100000`); `PRIVACY.md`, `.archagents/10-runbooks.md` (Art. 48 ANPD), `GET /`/`openapi.json` (`MCP_DPO_CONTACT`, Art. 41) e `lib/shared/compliance-notices.ts` (`HOMONYM_HUMAN_REVIEW_NOTICE`, Art. 20 em `procurados_lookup`, `bnmp_mandados`, `ceis_cnep_lookup`, `datajud_processos`, `lista_suja_lookup` e `tcu_certidoes`) reforçam a governança LGPD (permanecendo pendentes em `raw` os tickets `TCK-0030`–`TCK-0032` referentes a `FND-0015`–`FND-0017`, adiados por instrução do operador). O histórico de `sequentialthinking` é isolado por sessão via `ToolExecutionContext` (`lib/core/mcp-server.ts`, `lib/tools/core.ts` — sem singleton de módulo; `tokens.ts` e `smithery.config.js` removidos em `TCK-0037`), usa `Map` seguro contra colisão de protótipo com tetos FIFO (`100/20/50`) e mantém logging de pensamentos desligado por padrão; logs de `search.ts`, `intelligence.ts`, `rate-limit.ts` e `tools.ts` (`tool.executed` em `INFO`) emitem JSON em `stderr` via `createLogger` com redação em `lib/shared/log-redaction.ts`; o dispatcher MCP (`lib/core/mcp-server.ts`) aplica rate limit configurável por sessão (`MCP_TOOL_RATE_LIMIT_MAX`, default `120` chamadas/janela) inclusive em `stdio`. Em dependências de produção (`package.json` / `package-lock.json`), foram removidas `@smithery/sdk`, `agents`, `workers-mcp` e `async-mutex`, atualizados `zod` (`^4.6.7`) e `express` (`^5.3.0`), e adicionado o gate `npm audit --omit=dev --audit-level=high` em `.github/workflows/ci.yml:L116-L117`. `readCnpjProfile` rejeita credenciais embutidas na URL do provedor, e `scripts/build-apps.mjs` bloqueia fechamentos inline `</script`/`</style` ao empacotar os MCP Apps. Exposição efetiva, controles ativos no host e conformidade ficam **a confirmar** por ambiente. Credenciais e evidências de execução ficam fora do Git.
+ 
+ ## Fontes
+ 
+diff --git a/.archagents/08-conventions.md b/.archagents/08-conventions.md
+index 04f9355..4e357e0 100644
+--- a/.archagents/08-conventions.md
++++ b/.archagents/08-conventions.md
+@@ -1,11 +1,11 @@
+ # Convenções
+ 
+-Base revisada: `79aa712` (`v0.5.0`; base inicial: `037dae4c`).
++Base revisada: `133dbd5` (`0.7.0`, `SPC-0001`; base inicial: `037dae4c`).
+ 
+ - O pacote usa ESM (`"type": "module"`), TypeScript (`tsc`), `esbuild` para os MCP Apps (`npm run build:apps`, acionado em `build` e `predev`) e Vitest para testes unitários.
+-- As 23 ferramentas registradas usam nomes em `snake_case`; os 5 recursos MCP Apps usam URIs `ui://dadosbr/<id>.html` com MIME `text/html;profile=mcp-app`.
++- As 29 ferramentas registradas usam nomes em `snake_case`; os 5 recursos MCP Apps usam URIs `ui://dadosbr/<id>.html` com MIME `text/html;profile=mcp-app`.
+ - No transporte Node `stdio`, `stdout` é exclusivo para mensagens JSON-RPC; métricas e logs devem ir para `stderr` (`lib/core/tools.ts`).
+-- O teste de transporte (`npm run test:transport`) exige `initialize`, `ping`, catálogo explícito de 23 ferramentas, descoberta/leitura dos 5 recursos MCP Apps e 101 chamadas `stdio` sem erro de protocolo.
++- O teste de transporte (`npm run test:transport`) exige `initialize`, `ping`, catálogo explícito de 29 ferramentas, descoberta/leitura dos 5 recursos MCP Apps e 101 chamadas `stdio` sem erro de protocolo.
+ - **Cobertura e Fake Timers (`TCK-0027`, `TCK-0028`, `TCK-0029` / `FND-0014`):** `npm run test:coverage` utiliza `@vitest/coverage-v8` (`^4.1.12`) cobrindo `lib/**/*.ts` (incluindo `lib/workers/` e `lib/adapters/cloudflare.ts`, excluindo apenas tipos/entrypoints CLI/UI), com ratchet elevado em `TCK-0029` para `80% lines / 80% functions / 75% branches / 80% statements` (baseline medido `88.64% lines / 86.89% functions / 80.27% branches / 87.91% statements` em `28` suítes / `420` testes, incluindo `worker-rest-cloudflare.test.ts` e `tools-company-health-osint-legal.test.ts`). Suítes baseadas em tempo (`circuit-breaker.test.ts`, `concurrency.test.ts`, `deduplication.test.ts`, `sse.test.ts`) importam implementações reais de `lib/` (sem réplicas locais) e utilizam `vi.useFakeTimers()` (restaurando mocks antes de `vi.useRealTimers()`).
+ 
+ ## Fontes
+diff --git a/.archagents/16-designs/DES-0040-integrar-catalogo-29-tools-v0-7-0-allowlists-sc-9-worker-e-docs.md b/.archagents/16-designs/DES-0040-integrar-catalogo-29-tools-v0-7-0-allowlists-sc-9-worker-e-docs.md
+index 61d1a73..031d906 100644
+--- a/.archagents/16-designs/DES-0040-integrar-catalogo-29-tools-v0-7-0-allowlists-sc-9-worker-e-docs.md
++++ b/.archagents/16-designs/DES-0040-integrar-catalogo-29-tools-v0-7-0-allowlists-sc-9-worker-e-docs.md
+@@ -18,6 +18,8 @@ scope_files_modified:
+   - test/unit/tool-validation-allowlist.test.ts
+   - test/unit/architecture-hygiene.test.ts
+   - test/unit/mcp-server-handlers.test.ts
++  - test/unit/tcu-mte-v070.test.ts
++  - test/unit/fiscal-banking-v070.test.ts
+   - test/integration/transports.mjs
+   - README.md
+   - .archagents/00-overview.md
+diff --git a/.archagents/_capabilities.json b/.archagents/_capabilities.json
+index bf0d5ee..623fef6 100644
+--- a/.archagents/_capabilities.json
++++ b/.archagents/_capabilities.json
+@@ -6,7 +6,7 @@
+     "llm": false,
+     "role": "mcp-server",
+     "server_name": "mcp-dadosbr",
+-    "tool_count": 23,
++    "tool_count": 29,
+     "transports": [
+       "stdio",
+       "http",
+diff --git a/.archagents/mcp-tool-allowlist.json b/.archagents/mcp-tool-allowlist.json
+index a1562ee..b435cde 100644
+--- a/.archagents/mcp-tool-allowlist.json
++++ b/.archagents/mcp-tool-allowlist.json
+@@ -1,7 +1,7 @@
+ {
+   "schema_version": "1.0",
+   "server": "mcp-dadosbr",
+-  "updated_at": "2026-11-20T16:50:30Z",
++  "updated_at": "2026-11-21T17:00:00Z",
+   "mcp_servers": {
+     "allowed": [
+       {
+@@ -265,6 +265,72 @@
+       "rationale": "Pure local template rendering restricted to fixed template enum and bounded strings.",
+       "network_access": "none",
+       "api_key_env": null
++    },
++    {
++      "id": "MCP-TOOL-24",
++      "name": "tcu_certidoes",
++      "risk_level": "low",
++      "destructive": false,
++      "requires_approval": false,
++      "description": "Query consolidated public integrity certificates (TCU, CNJ/CNIA, CEIS, CNEP) for a Brazilian CNPJ.",
++      "rationale": "Read-only fixed-HTTPS TCU public query validated by strict mod-11 CNPJ schema with sanitization and LGPD Art. 20 notice.",
++      "network_access": "external-https",
++      "api_key_env": null
++    },
++    {
++      "id": "MCP-TOOL-25",
++      "name": "cnae_ncm_lookup",
++      "risk_level": "low",
++      "destructive": false,
++      "requires_approval": false,
++      "description": "Look up IBGE v2 CNAE economic classifications and BrasilAPI NCM product codes.",
++      "rationale": "Read-only fixed-HTTPS lookup validated by CnaeNcmSchema.strict() with bounded paginated search (limit <= 50) and sanitized outputs.",
++      "network_access": "external-https",
++      "api_key_env": null
++    },
++    {
++      "id": "MCP-TOOL-26",
++      "name": "sistema_financeiro_lookup",
++      "risk_level": "low",
++      "destructive": false,
++      "requires_approval": false,
++      "description": "Query Brazilian banks (COMPE/ISPB), Pix participants, and CVM brokers (corretoras) via BrasilAPI.",
++      "rationale": "Read-only fixed-HTTPS financial registry lookup validated by SistemaFinanceiroSchema.strict() with strict pagination (limit <= 50) to prevent oversized responses.",
++      "network_access": "external-https",
++      "api_key_env": null
++    },
++    {
++      "id": "MCP-TOOL-27",
++      "name": "feriados_ddd_lookup",
++      "risk_level": "low",
++      "destructive": false,
++      "requires_approval": false,
++      "description": "Check Brazilian national holidays/business days and validate DDD area codes against states and cities via BrasilAPI.",
++      "rationale": "Read-only fixed-HTTPS lookup validated by FeriadosDddSchema.strict() with regex constraints on ISO date, 2-digit DDD, and 2-letter UF.",
++      "network_access": "external-https",
++      "api_key_env": null
++    },
++    {
++      "id": "MCP-TOOL-28",
++      "name": "bcb_olinda",
++      "risk_level": "low",
++      "destructive": false,
++      "requires_approval": false,
++      "description": "Query Central Bank of Brazil (Olinda OData) historical PTAX exchange rates and Focus market expectations.",
++      "rationale": "Read-only fixed-HTTPS OData query validated by BcbOlindaSchema.strict() with literal currency and indicator enums preventing OData filter injection.",
++      "network_access": "external-https",
++      "api_key_env": null
++    },
++    {
++      "id": "MCP-TOOL-29",
++      "name": "ibge_indicadores",
++      "risk_level": "low",
++      "destructive": false,
++      "requires_approval": false,
++      "description": "Fetch municipal and state population estimates and GDP series from IBGE Agregados v3.",
++      "rationale": "Read-only fixed-HTTPS IBGE Agregados v3 query validated by IbgeIndicadoresSchema.strict() with strict 2- or 7-digit IBGE code regex.",
++      "network_access": "external-https",
++      "api_key_env": null
+     }
+   ]
+ }
+diff --git a/README.md b/README.md
+index a5bb0b7..5a83fc7 100644
+--- a/README.md
++++ b/README.md
+@@ -6,13 +6,13 @@
+ [![npm](https://img.shields.io/npm/v/%40aredes.me%2Fmcp-dadosbr?label=npm&color=0f766e&style=flat)](https://www.npmjs.com/package/@aredes.me/mcp-dadosbr)
+ [![License: AGPL-3.0-only](https://img.shields.io/badge/license-AGPL--3.0--only-1e293b?style=flat)](LICENSE)
+ [![Node.js](https://img.shields.io/badge/node-22.12%2B%20%7C%2024%20%7C%2026-334155?style=flat)](package.json)
+-[![Tools & Apps](https://img.shields.io/badge/tools-23%20%7C%20MCP%20Apps%3A%205-0f766e?style=flat)](#os-5-mcp-apps-interativos)
++[![Tools & Apps](https://img.shields.io/badge/tools-29%20%7C%20MCP%20Apps%3A%205-0f766e?style=flat)](#os-5-mcp-apps-interativos)
+ 
+-[O problema](#o-problema) · [5 MCP Apps](#os-5-mcp-apps-interativos) · [23 ferramentas](#catálogo-completo-das-23-ferramentas) · [Perímetro](#perímetro-de-execução) · [Instalação](#instalação-e-configuração) · [Por dentro](#como-funciona-por-dentro) · [O que não faz](#honestidade-o-que-o-mcp-dadosbr-não-faz) · [Governança](#governança-construído-com-codebase-ops-by-orqo) · [AGPL-3.0](#licença-gnu-agpl-30) · [English](#english)
++[O problema](#o-problema) · [5 MCP Apps](#os-5-mcp-apps-interativos) · [29 ferramentas](#catálogo-completo-das-29-ferramentas) · [Perímetro](#perímetro-de-execução) · [Instalação](#instalação-e-configuração) · [Por dentro](#como-funciona-por-dentro) · [O que não faz](#honestidade-o-que-o-mcp-dadosbr-não-faz) · [Governança](#governança-construído-com-codebase-ops-by-orqo) · [AGPL-3.0](#licença-gnu-agpl-30) · [English](#english)
+ 
+ ---
+ 
+-O **MCP DadosBR** é um servidor open source do [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) desenvolvido pela [Orqo](https://orqo.pro/) que conecta assistentes de IA a **23 consultas de dados públicos brasileiros** — com **5 painéis interativos (MCP Apps)** para explorar municípios, diários oficiais, indicadores do Banco Central, editais do PNCP e fichas cadastrais de CNPJ diretamente na conversa.
++O **MCP DadosBR** é um servidor open source do [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) desenvolvido pela [Orqo](https://orqo.pro/) que conecta assistentes de IA a **29 consultas de dados públicos brasileiros** — com **5 painéis interativos (MCP Apps)** para explorar municípios, diários oficiais, indicadores do Banco Central, editais do PNCP e fichas cadastrais de CNPJ diretamente na conversa.
+ 
+ - **Zero chave nos 5 MCP Apps e no CEP** — IBGE, Querido Diário, Banco Central, PNCP, OpenCNPJ e OpenCEP funcionam sem cadastro prévio.
+ - **Proveniência explícita** — URL consultada e horário da consulta no servidor (`fetchedAt`) nos 5 MCP Apps (`structuredContent`) e nas consultas de CNPJ/CEP (`source`/`fetchedAt`), com separação explícita entre `fetchedAt` e `updatedAt` na ficha cadastral.
+@@ -64,51 +64,57 @@ Os cinco painéis implementam a extensão [MCP Apps](https://modelcontextprotoco
+ 
+ ---
+ 
+-## Catálogo completo das 23 ferramentas
++## Catálogo completo das 29 ferramentas
+ 
+-Todas as 23 ferramentas registradas em [`lib/tools/index.ts`](lib/tools/index.ts) respondem em JSON estruturado no conteúdo textual (`content[0].text`). As cinco marcadas com **MCP App** também entregam `structuredContent` e painel HTML quando o cliente suporta `io.modelcontextprotocol/ui`.
++Todas as 29 ferramentas registradas em [`lib/tools/index.ts`](lib/tools/index.ts) respondem em JSON estruturado no conteúdo textual (`content[0].text`). As cinco marcadas com **MCP App** também entregam `structuredContent` e painel HTML quando o cliente suporta `io.modelcontextprotocol/ui`.
+ 
+-### Cadastro, endereços e validação (3)
++### Cadastro, endereços, validação e classificação (5)
+ 
+ | Ferramenta | Descrição | Fonte | MCP App | Credencial |
+ | --- | --- | --- | --- | --- |
+ | `cnpj_lookup` | Dados cadastrais de empresa brasileira por CNPJ (com ou sem máscara). | OpenCNPJ (padrão) ou allowlist | **Sim** | Sem chave |
+ | `cep_lookup` | Endereço completo por CEP brasileiro (com ou sem máscara). | OpenCEP (padrão) ou allowlist | Texto | Sem chave |
+ | `cpf_validate` | Valida dígito verificador (mod-11), formata e informa a região fiscal do 9º dígito. | Cálculo local | Texto | Sem chave |
++| `cnae_ncm_lookup` | Consulta classificações CNAE (`IBGE v2` divisões/grupos/classes/subclasses) e códigos NCM (`BrasilAPI`), por código ou busca paginada. | IBGE CNAE `v2` / BrasilAPI NCM | Texto | Sem chave |
++| `feriados_ddd_lookup` | Consulta feriados nacionais / dias úteis por ano/data e valida DDDs contra UF e municípios. | BrasilAPI (`feriados/v1`, `ddd/v1`) | Texto | Sem chave |
+ 
+-### Governo, diários e contratações (5)
++### Governo, diários, contratações e indicadores (6)
+ 
+ | Ferramenta | Descrição | Fonte | MCP App | Credencial |
+ | --- | --- | --- | --- | --- |
+ | `ibge_localidades` | Lista regiões (`regioes`), estados (`estados`), todos os municípios (`municipios`) ou por UF (`municipios_por_uf`). | API de Localidades do IBGE | **Sim** | Sem chave |
++| `ibge_indicadores` | População residente estimada (`6579/9324`), PIB municipal/estadual (`5938/37`) e PIB per capita estimado para UF (`N3`) ou município (`N6`). | IBGE Agregados `v3` | Texto | Sem chave |
+ | `querido_diario` | Busca publicações em diários oficiais municipais por texto, `territory_id`, `since`, `until`, `page`, `size`. | Open Knowledge Brasil | **Sim** | Sem chave |
+ | `pncp_licitacoes` | Consulta publicações filtradas (`modalidade_id`, `data_inicial`, `data_final`, `cnpj_orgao`, `query: ""`) ou busca legada por termo. | PNCP (Lei 14.133/2021) | **Sim** | Sem chave |
+ | `transparencia_lookup` | Consulta `contratos`, `licitacoes`, `convenios`, `servidores` ou `sancoes` federais por CNPJ/CPF e período. | Portal da Transparência (CGU) | Texto | `TRANSPARENCIA_API_KEY` |
+ | `ceis_cnep_lookup` | Verifica sanções em **CEIS**, **CNEP** e **CEPIM** (`tipo: ceis\|cnep\|cepim\|all`). Sem chave, retorna URLs de consulta manual. | Portal da Transparência (CGU) | Texto | `TRANSPARENCIA_API_KEY` (opcional com fallback manual) |
+ 
+-### Financeiro e mercado (2)
++### Financeiro e mercado (4)
+ 
+ | Ferramenta | Descrição | Fonte | MCP App | Credencial |
+ | --- | --- | --- | --- | --- |
+ | `bacen_taxas` | Séries `selic`, `ipca`, `dolar`, `euro` e `cdi` por `ultimos` pontos ou `periodo_dias` (`30`, `90`, `365`). | Banco Central — BCData/SGS | **Sim** | Sem chave |
++| `bcb_olinda` | Cotação PTAX histórica por data (resolução de dias não-úteis em janela de 7 dias) e Expectativas de Mercado (Boletim Focus). | Banco Central — Olinda OData | Texto | Sem chave |
++| `sistema_financeiro_lookup` | Consulta bancos (COMPE/ISPB), participantes do Pix e corretoras CVM com filtro e paginação. | BrasilAPI (`banks/v1`, `pix/v1`, `cvm/corretoras/v1`) | Texto | Sem chave |
+ | `fipe_veiculos` | Consulta preços por `codigo_fipe` ou lista marcas por `tipo` (`carros`, `motos`, `caminhoes`). | Tabela FIPE via BrasilAPI | Texto | Sem chave |
+ 
+-### Jurídico, compliance e integridade (5)
++### Jurídico, compliance e integridade (6)
+ 
+ | Ferramenta | Descrição | Fonte | MCP App | Credencial |
+ | --- | --- | --- | --- | --- |
+ | `datajud_processos` | Busca processos judiciais em 17 tribunais mapeados (`tst`, `trf1`–`trf5`, `tjsp`, `tjrj`, `tjmg`, `tjrs`, `tjpr`, `tjsc`, `tjba`, `tjpe`, `tjce`, `tjgo`, `tjdf`). | API Pública DataJud (CNJ) | Texto | `DATAJUD_API_KEY` |
++| `tcu_certidoes` | Consulta Certidões Consolidadas PJ no TCU (Licitantes Inidôneos TCU, Improbidade CNJ/CNIA, CEIS e CNEP) por CNPJ. | TCU — Consulta Consolidada | Texto | Sem chave |
+ | `oab_advogado` | Consulta o Cadastro Nacional dos Advogados por `nome`, `inscricao` e `uf`. Retorna link manual quando bloqueado por CAPTCHA. | OAB — CNA | Texto | Sem chave (sujeito a CAPTCHA) |
+ | `bnmp_mandados` | Consulta mandados de prisão por `nome` e `orgaoJulgador`. Retorna link manual quando bloqueado por CAPTCHA. | CNJ — BNMP | Texto | Sem chave (sujeito a CAPTCHA) |
+ | `procurados_lookup` | Busca por correspondência parcial na lista federal de procurados (~195 registros). | MJSP — Projeto Captura | Texto | Sem chave |
+-| `lista_suja_lookup` | Verifica o cadastro de empregadores em trabalho análogo à escravidão (com fallback para links oficiais). | Portal da Transparência / MTE | Texto | Sem chave |
++| `lista_suja_lookup` | Verifica o cadastro oficial de empregadores em trabalho análogo à escravidão via CSV aberto do MTE (com fallback manual em indisponibilidade). | MTE — Cadastro de Empregadores | Texto | Sem chave |
+ 
+ ### Saúde e consumo (2)
+ 
+ | Ferramenta | Descrição | Fonte | MCP App | Credencial |
+ | --- | --- | --- | --- | --- |
+ | `cnes_saude` | Busca estabelecimentos (`estabelecimento`) ou profissionais (`profissional`) por código CNES, nome, UF ou município (códigos IBGE). | CNES — DataSUS | Texto | Sem chave |
+-| `consumidor_reclamacoes` | Consulta indicadores de reclamações por nome da empresa (com fallback para dados abertos). | Consumidor.gov.br — SENACON | Texto | Sem chave |
++| `consumidor_reclamacoes` | Retorna orientação guiada e links oficiais (portal + dados abertos), pois o portal aplica proteção anti-bot interativa sem API JSON pública. | Consumidor.gov.br — SENACON | Texto | Sem chave (portal com anti-bot) |
+ 
+ ### Inteligência, busca web, domínio e raciocínio (6)
+ 
+@@ -116,7 +122,7 @@ Todas as 23 ferramentas registradas em [`lib/tools/index.ts`](lib/tools/index.ts
+ | --- | --- | --- | --- | --- |
+ | `cnpj_search` | Pesquisa web com dorks e filtros direcionados sobre empresas e CNPJs. | Tavily / Perplexity | Texto | `TAVILY_API_KEY` ou `PERPLEXITY_API_KEY` |
+ | `cnpj_intelligence` | Pesquisa automatizada multi-categoria por CNPJ com limite de concorrência configurável. | Tavily / Perplexity + CNPJ | Texto | `TAVILY_API_KEY` ou `PERPLEXITY_API_KEY` |
+-| `company_deep_profile` | Orquestra em paralelo `cnpj_lookup`, `transparencia_lookup`, `datajud_processos`, `domain_whois`, `lista_suja_lookup` e `cnpj_search`, listando fontes consultadas e indisponíveis. | Múltiplas fontes acima | Texto | Usa chaves configuradas |
++| `company_deep_profile` | Orquestra em paralelo `cnpj_lookup`, `transparencia_lookup`, `tcu_certidoes`, `datajud_processos`, `domain_whois`, `lista_suja_lookup` e `cnpj_search`, listando fontes consultadas e indisponíveis. | Múltiplas fontes acima | Texto | Usa chaves configuradas |
+ | `domain_whois` | Consulta registro de domínio via RDAP (`.br` no Registro.br com fallback IANA RDAP). | Registro.br / RDAP.org | Texto | Sem chave |
+ | `strategic_osint_prompt` | Gera roteiros estruturados de análise (`due_diligence`, `competitor_analysis`, `fraud_detection`, `esg_compliance`, `investment_screening`) referenciando as ferramentas do servidor. | Templates locais | Texto | Sem chave |
+ | `sequentialthinking` | Auxilia decomposição passo a passo e revisão de hipóteses em investigações complexas. | Processamento local | Texto | Sem chave |
+@@ -131,8 +137,8 @@ O que muda entre os modos é onde o servidor executa e se o cliente recebe os pa
+ 
+ | Modo | Transporte | MCP Apps (`ui://`) | Retorno JSON textual | Controles inclusos | Quando escolher |
+ | --- | --- | --- | --- | --- | --- |
+-| **CLI local (padrão)** | `stdio` | **Sim (5 apps)** | Sim (23 ferramentas) | `stdout` reservado para JSON-RPC, cache em memória, deduplicação, retry + circuit breaker, allowlist SSRF | Uso local no Claude Desktop, Cursor, Windsurf, Claude Code e demais hosts desktop |
+-| **CLI HTTP/SSE local** | `GET /mcp` + `POST /messages` | **Sim (5 apps)** | Sim (23 ferramentas) | Rate limit (30 req/min por IP), limpeza de sessões SSE inativas, CORS restrito, `MCP_API_KEY` obrigatória fora de loopback | Rede local, Docker, VPS própria ou clientes MCP remotos com suporte a SSE |
++| **CLI local (padrão)** | `stdio` | **Sim (5 apps)** | Sim (29 ferramentas) | `stdout` reservado para JSON-RPC, cache em memória, deduplicação, retry + circuit breaker, allowlist SSRF | Uso local no Claude Desktop, Cursor, Windsurf, Claude Code e demais hosts desktop |
++| **CLI HTTP/SSE local** | `GET /mcp` + `POST /messages` | **Sim (5 apps)** | Sim (29 ferramentas) | Rate limit (30 req/min por IP), limpeza de sessões SSE inativas, CORS restrito, `MCP_API_KEY` obrigatória fora de loopback | Rede local, Docker, VPS própria ou clientes MCP remotos com suporte a SSE |
+ | **Cloudflare Worker** | `POST /mcp`, `/sse`, REST e OAuth | Não (somente texto) | Sim | Autenticação/OAuth, rate limit na borda, `GET /health`, OpenAPI | Conectores remotos serverless e integrações HTTP sem manter servidor dedicado |
+ 
+ > **Autenticação obrigatória fora de loopback (`MCP_API_KEY`):** por padrão, o modo `HTTP/SSE` escuta em `127.0.0.1`. Ao definir `MCP_HTTP_HOST` para um endereço não-loopback (`0.0.0.0`, `::`, IP de rede etc.), o servidor opera em modo **fail-closed** e recusa iniciar sem `MCP_API_KEY`. Com `MCP_API_KEY` configurada (inclusive em loopback), todas as requisições `GET /mcp` e `POST /messages` exigem `Authorization: Bearer <chave>` ou `X-API-Key: <chave>`.
+@@ -276,10 +282,10 @@ flowchart LR
+   Host["Host MCP"] -->|"stdio ou HTTP/SSE"| CLI["CLI Node.js"]
+   Host -->|"POST /mcp, /sse, REST, OAuth"| Worker["Cloudflare Worker"]
+   CLI --> Server["createMCPServer + 5 MCP Apps (ui://)"]
+-  Server --> Registry["Registry: 23 ferramentas"]
++  Server --> Registry["Registry: 29 ferramentas"]
+   Worker --> Registry
+   Registry --> Infra["Cache + Deduplicação + Retry/Circuit Breaker + Allowlist SSRF"]
+-  Infra --> APIs["IBGE · Querido Diário · BCB/SGS · PNCP · OpenCNPJ/CEP · CGU · CNJ · DataSUS"]
++  Infra --> APIs["IBGE · Querido Diário · BCB SGS/Olinda · PNCP · OpenCNPJ/CEP · TCU · MTE · BrasilAPI · CGU · CNJ · DataSUS"]
+ ```
+ 
+ - **Contrato `structuredContent` + fallback textual ([`lib/core/mcp-server.ts`](lib/core/mcp-server.ts#L109-L143)):** toda chamada bem-sucedida devolve o JSON serializado em `content[0].text`. Quando o cliente negocia `extensions["io.modelcontextprotocol/ui"]` com `text/html;profile=mcp-app`, o servidor acrescenta `structuredContent`: `{ items, source }` no IBGE, `{ ...result.data, provenance: result.source }` em Querido Diário/BACEN/PNCP, e `{ profile }` (via [`readCnpjProfile`](lib/shared/cnpj-profile.ts)) no CNPJ.
+@@ -320,10 +326,10 @@ Conheça mais sobre a camada de governança em **[orqo.pro](https://orqo.pro/)**
+ ## Perguntas diretas
+ 
+ **Preciso de chaves de API para começar?**
+-Não. Os cinco MCP Apps (`ibge_localidades`, `querido_diario`, `bacen_taxas`, `pncp_licitacoes`, `cnpj_lookup`), além de `cep_lookup`, `cpf_validate`, `fipe_veiculos`, `domain_whois`, `cnes_saude`, `consumidor_reclamacoes`, `procurados_lookup`, `lista_suja_lookup`, `strategic_osint_prompt` e `sequentialthinking`, funcionam sem nenhuma credencial. Chaves opcionais ampliam o alcance para Portal da Transparência, DataJud e busca web.
++Não. Os cinco MCP Apps (`ibge_localidades`, `querido_diario`, `bacen_taxas`, `pncp_licitacoes`, `cnpj_lookup`), além de `cep_lookup`, `cpf_validate`, `cnae_ncm_lookup`, `feriados_ddd_lookup`, `ibge_indicadores`, `bcb_olinda`, `sistema_financeiro_lookup`, `fipe_veiculos`, `domain_whois`, `cnes_saude`, `consumidor_reclamacoes`, `procurados_lookup`, `lista_suja_lookup`, `tcu_certidoes`, `strategic_osint_prompt` e `sequentialthinking`, funcionam sem nenhuma credencial. Chaves opcionais ampliam o alcance para Portal da Transparência, DataJud e busca web.
+ 
+ **O que acontece se o meu cliente MCP não suportar MCP Apps?**
+-Todas as 23 ferramentas continuam funcionando normalmente com retorno JSON estruturado em texto. O `structuredContent` e os recursos `ui://` só são ativados quando o cliente anuncia suporte a `io.modelcontextprotocol/ui`.
++Todas as 29 ferramentas continuam funcionando normalmente com retorno JSON estruturado em texto. O `structuredContent` e os recursos `ui://` só são ativados quando o cliente anuncia suporte a `io.modelcontextprotocol/ui`.
+ 
+ **Posso trocar o provedor de CNPJ ou CEP?**
+ Sim, via `CNPJ_API_BASE_URL` / `CEP_API_BASE_URL` ou `.mcprc.json`, desde que o host esteja na allowlist HTTPS de [`lib/config/index.ts`](lib/config/index.ts#L17-L35).
+@@ -355,7 +361,7 @@ Depois de instalar e compilar (`npm ci && npm run build`), execute a verificaç
+ 
+ ```bash
+ npm test                 # Suíte unitária (Vitest)
+-npm run test:transport   # Handshake, 23 ferramentas, 5 MCP Apps e 101 chamadas stdio + HTTP/SSE
++npm run test:transport   # Handshake, 29 ferramentas, 5 MCP Apps e 101 chamadas stdio + HTTP/SSE
+ npm run build:worker     # Validação de build do Cloudflare Worker
+ ```
+ 
+@@ -381,10 +387,10 @@ O MCP DadosBR realiza consultas sob demanda a fontes públicas brasileiras e nã
+ 
+ ### MCP DadosBR `by Orqo` — Brazilian public data in AI conversations, with source, provenance, and explicit boundaries.
+ 
+-**MCP DadosBR** is an open-source [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server maintained by **[Orqo](https://orqo.pro/en/)** that connects AI assistants to **23 Brazilian public-data tools** and **5 interactive [MCP Apps](https://modelcontextprotocol.io/extensions/apps/overview)** (`ui://dadosbr/*.html`).
++**MCP DadosBR** is an open-source [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server maintained by **[Orqo](https://orqo.pro/en/)** that connects AI assistants to **29 Brazilian public-data tools** and **5 interactive [MCP Apps](https://modelcontextprotocol.io/extensions/apps/overview)** (`ui://dadosbr/*.html`).
+ 
+ - **5 interactive MCP Apps (no API key required):** IBGE Locations (`ibge_localidades`), Querido Diário municipal gazettes (`querido_diario`), Central Bank SGS indicators (`bacen_taxas` — Selic, IPCA, USD, EUR, CDI over 30/90/365-day windows), PNCP public procurement notices (`pncp_licitacoes`), and Company Registration Profiles (`cnpj_lookup`).
+-- **23 tools across 6 domains:** company/address lookup & CPF checksum validation, government/gazettes/procurement/transparency, Central Bank & FIPE, CNJ DataJud/OAB/BNMP/MJSP/Lista Suja, CNES/Consumidor.gov.br, plus web search, RDAP WHOIS, OSINT templates, and sequential thinking.
++- **29 tools across 6 domains:** company/address/CNAE/NCM lookup & CPF/DDD/holiday checks, IBGE localities & population/GDP indicators, government/gazettes/procurement/transparency, Central Bank SGS & Olinda PTAX/Focus + SFN/Pix/CVM brokers + FIPE, TCU consolidated integrity certificates + CNJ DataJud/OAB/BNMP/MJSP/MTE Lista Suja CSV, CNES/Consumidor.gov.br, plus web search, RDAP WHOIS, OSINT templates, and sequential thinking.
+ - **Two execution perimeters:** Node.js CLI (`stdio` or `HTTP/SSE`, with all 5 interactive MCP Apps and strict JSON-RPC `stdout` isolation) and Cloudflare Worker (serverless edge runtime with text JSON, REST, and OAuth).
+ - **Quick start (Node.js 22.12+, 24, or 26):**
+   ```json
+diff --git a/lib/core/tool-schemas.ts b/lib/core/tool-schemas.ts
+index b886e83..f606d43 100644
+--- a/lib/core/tool-schemas.ts
++++ b/lib/core/tool-schemas.ts
+@@ -1,11 +1,30 @@
+ /**
+- * Runtime Zod validation schemas for all 23 registered MCP tools.
++ * Runtime Zod validation schemas for all 29 registered MCP tools.
+  * Enforces runtime type safety, explicit min/max bounds, and format allowlists
+  * before any registered tool handler executes.
+  */
+ 
+ import { z, type ZodType } from "zod";
+ import { CnpjSchema, CepSchema } from "./validation.js";
++import { TcuCertidoesSchema } from "../shared/tcu-schema.js";
++import {
++  CnaeNcmSchema,
++  SistemaFinanceiroSchema,
++  FeriadosDddSchema,
++} from "../shared/fiscal-banking-schemas.js";
++import {
++  BcbOlindaSchema,
++  IbgeIndicadoresSchema,
++} from "../shared/olinda-ibge-schemas.js";
++
++export {
++  TcuCertidoesSchema,
++  CnaeNcmSchema,
++  SistemaFinanceiroSchema,
++  FeriadosDddSchema,
++  BcbOlindaSchema,
++  IbgeIndicadoresSchema,
++};
+ 
+ export const DORK_CATEGORIES = [
+   "government",
+@@ -270,4 +289,10 @@ export const TOOL_SCHEMAS: Record<string, ZodType> = {
+   fipe_veiculos: FipeSchema,
+   cnes_saude: CnesSchema,
+   strategic_osint_prompt: StrategicOsintPromptSchema,
++  tcu_certidoes: TcuCertidoesSchema,
++  cnae_ncm_lookup: CnaeNcmSchema,
++  sistema_financeiro_lookup: SistemaFinanceiroSchema,
++  feriados_ddd_lookup: FeriadosDddSchema,
++  bcb_olinda: BcbOlindaSchema,
++  ibge_indicadores: IbgeIndicadoresSchema,
+ };
+diff --git a/lib/shared/utils/constants.ts b/lib/shared/utils/constants.ts
+index 4de4199..7042420 100644
+--- a/lib/shared/utils/constants.ts
++++ b/lib/shared/utils/constants.ts
+@@ -34,7 +34,7 @@ export const SERVER = {
+   NAME: 'mcp-dadosbr',
+   
+   /** Server version (aligned with package.json) */
+-  VERSION: '0.6.0',
++  VERSION: '0.7.0',
+   
+   /** Default transport mode */
+   DEFAULT_TRANSPORT: 'stdio',
+diff --git a/lib/tools/company.ts b/lib/tools/company.ts
+index c2e118c..c2c16f9 100644
+--- a/lib/tools/company.ts
++++ b/lib/tools/company.ts
+@@ -220,7 +220,7 @@ async function executeDeepProfile(
+ registerTool({
+     name: "company_deep_profile",
+     description: `Generate a comprehensive OSINT profile for a Brazilian company by orchestrating multiple data sources.
+-Combines: CNPJ lookup, government transparency records, court records, domain WHOIS, slave labor blacklist, and web search.
++Combines: CNPJ lookup, government transparency records, TCU consolidated certificates, court records, domain WHOIS, slave labor blacklist, and web search.
+ This is the most powerful tool for company due diligence.`,
+     inputSchema: {
+         type: "object",
+diff --git a/lib/tools/index.ts b/lib/tools/index.ts
+index 1b2d959..2cec5fd 100644
+--- a/lib/tools/index.ts
++++ b/lib/tools/index.ts
+@@ -15,6 +15,15 @@ import "./company.js";
+ import "./financial.js";
+ import "./health.js";
+ import "./osint.js";
++import { registerTcuTool } from "./tcu.js";
++import { registerFiscalBankingTools } from "./fiscal-banking.js";
++import { registerOlindaTool } from "./olinda.js";
++import { registerIbgeIndicadoresTool } from "./ibge-indicadores.js";
++
++registerTcuTool();
++registerFiscalBankingTools();
++registerOlindaTool();
++registerIbgeIndicadoresTool();
+ 
+ // Re-export registry API for consumers
+ export {
+diff --git a/package.json b/package.json
+index 6814246..1178be8 100644
+--- a/package.json
++++ b/package.json
+@@ -1,6 +1,6 @@
+ {
+   "name": "@aredes.me/mcp-dadosbr",
+-  "version": "0.6.0",
++  "version": "0.7.0",
+   "description": "Model Context Protocol server for Brazilian public data lookup (CNPJ companies and CEP postal codes) with intelligent web search and sequential thinking",
+   "type": "module",
+   "module": "lib/index.ts",
+diff --git a/test/integration/transports.mjs b/test/integration/transports.mjs
+index 3ae93d5..1a5cd14 100644
+--- a/test/integration/transports.mjs
++++ b/test/integration/transports.mjs
+@@ -17,9 +17,11 @@ const timeout = 5_000;
+ // Keep this public catalogue explicit so a tool missing from both transports fails CI.
+ const expectedTools = [
+   "bacen_taxas",
++  "bcb_olinda",
+   "bnmp_mandados",
+   "ceis_cnep_lookup",
+   "cep_lookup",
++  "cnae_ncm_lookup",
+   "cnes_saude",
+   "cnpj_intelligence",
+   "cnpj_lookup",
+@@ -29,7 +31,9 @@ const expectedTools = [
+   "cpf_validate",
+   "datajud_processos",
+   "domain_whois",
++  "feriados_ddd_lookup",
+   "fipe_veiculos",
++  "ibge_indicadores",
+   "ibge_localidades",
+   "lista_suja_lookup",
+   "oab_advogado",
+@@ -37,7 +41,9 @@ const expectedTools = [
+   "procurados_lookup",
+   "querido_diario",
+   "sequentialthinking",
++  "sistema_financeiro_lookup",
+   "strategic_osint_prompt",
++  "tcu_certidoes",
+   "transparencia_lookup",
+ ];
+ 
+diff --git a/test/unit/architecture-hygiene.test.ts b/test/unit/architecture-hygiene.test.ts
+index 5c10739..dbc1054 100644
+--- a/test/unit/architecture-hygiene.test.ts
++++ b/test/unit/architecture-hygiene.test.ts
+@@ -127,7 +127,7 @@ describe("FND-0012 / TCK-0024: Architecture Hygiene, Contract Unification & Work
+     expect((toolRes.data as { queries_executed: number }).queries_executed).toBe(1);
+   });
+ 
+-  it("synchronizes SERVER_VERSION, OpenAPI, HealthCheck, SSE events, and Worker / 23-tool catalogue with package.json", async () => {
++  it("synchronizes SERVER_VERSION, OpenAPI, HealthCheck, SSE events, and Worker / 29-tool catalogue with package.json", async () => {
+     vi.useFakeTimers();
+     const pkg = JSON.parse(readFileSync(resolve(ROOT, "package.json"), "utf8")) as {
+       version: string;
+@@ -159,7 +159,7 @@ describe("FND-0012 / TCK-0024: Architecture Hygiene, Contract Unification & Work
+     const rootJson = (await rootResp.json()) as { version: string; tools: string[] };
+     expect(rootJson.version).toBe(pkg.version);
+     expect(rootJson.tools).toEqual(TOOL_DEFINITIONS.map((t) => t.name));
+-    expect(rootJson.tools).toHaveLength(23);
++    expect(rootJson.tools).toHaveLength(29);
+ 
+     // Check SSE initial events emit SERVER_VERSION
+     const sseResp = await handleSSEEndpoint(
+diff --git a/test/unit/fiscal-banking-v070.test.ts b/test/unit/fiscal-banking-v070.test.ts
+index 8e4df8c..01e340b 100644
+--- a/test/unit/fiscal-banking-v070.test.ts
++++ b/test/unit/fiscal-banking-v070.test.ts
+@@ -50,8 +50,8 @@ describe("TCK-0042 / DES-0038: Fiscal, Banking, Calendar & DDD Tools", () => {
+     vi.useRealTimers();
+   });
+ 
+-  describe("Isolation, Worker compatibility & idempotent registration", () => {
+-    it("keeps zero node:* imports in schemas and tool module and preserves getToolCount() === 23 on import", () => {
++  describe("Wave-2 integrated registration, Worker compatibility & idempotency", () => {
++    it("keeps zero node:* imports in schemas and tool module and exposes 29 tools via barrel", () => {
+       const schemasSrc = readFileSync(
+         resolve(ROOT, "lib/shared/fiscal-banking-schemas.ts"),
+         "utf8",
+@@ -64,17 +64,17 @@ describe("TCK-0042 / DES-0038: Fiscal, Banking, Calendar & DDD Tools", () => {
+       expect(schemasSrc).not.toMatch(/(?:from|import)\s+["']node:/);
+       expect(schemasSrc).toMatch(/from ["']zod["']/);
+       expect(toolsSrc).not.toMatch(/(?:from|import)\s+["']node:/);
+-      expect(getToolCount()).toBe(23);
+-      expect(hasTool("cnae_ncm_lookup")).toBe(false);
+-      expect(hasTool("sistema_financeiro_lookup")).toBe(false);
+-      expect(hasTool("feriados_ddd_lookup")).toBe(false);
++      expect(getToolCount()).toBe(29);
++      expect(hasTool("cnae_ncm_lookup")).toBe(true);
++      expect(hasTool("sistema_financeiro_lookup")).toBe(true);
++      expect(hasTool("feriados_ddd_lookup")).toBe(true);
+     });
+ 
+-    it("registers the 3 tools idempotently via registerFiscalBankingTools() with Zod schemas and zero api_key fields", async () => {
++    it("keeps registerFiscalBankingTools() idempotent with Zod schemas and zero api_key fields", async () => {
+       const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+ 
+       registerFiscalBankingTools();
+-      expect(getToolCount()).toBe(26);
++      expect(getToolCount()).toBe(29);
+       expect(hasTool("cnae_ncm_lookup")).toBe(true);
+       expect(hasTool("sistema_financeiro_lookup")).toBe(true);
+       expect(hasTool("feriados_ddd_lookup")).toBe(true);
+@@ -82,9 +82,9 @@ describe("TCK-0042 / DES-0038: Fiscal, Banking, Calendar & DDD Tools", () => {
+       expect(hasToolSchema("sistema_financeiro_lookup")).toBe(true);
+       expect(hasToolSchema("feriados_ddd_lookup")).toBe(true);
+ 
+-      // Second call must be a no-op (no overwrite warning, count unchanged)
++      // Subsequent calls must remain no-ops (no overwrite warning, count unchanged)
+       registerFiscalBankingTools();
+-      expect(getToolCount()).toBe(26);
++      expect(getToolCount()).toBe(29);
+       expect(warnSpy).not.toHaveBeenCalled();
+ 
+       for (const tool of [
+diff --git a/test/unit/mcp-server-handlers.test.ts b/test/unit/mcp-server-handlers.test.ts
+index 2ab013e..6947ee6 100644
+--- a/test/unit/mcp-server-handlers.test.ts
++++ b/test/unit/mcp-server-handlers.test.ts
+@@ -102,11 +102,11 @@ describe("TCK-0039 / FND-0024: createMCPServer handlers, MCP Apps & unexpected e
+   });
+ 
+   describe("ListTools, ListResources & ReadResource handlers", () => {
+-    it("lists all 23 tools and attaches _meta.ui.resourceUri exclusively to the 5 MCP App tools", async () => {
++    it("lists all 29 tools and attaches _meta.ui.resourceUri exclusively to the 5 MCP App tools", async () => {
+       await withMcpClient({}, async (client) => {
+         const { tools } = await client.listTools();
+ 
+-        expect(tools).toHaveLength(23);
++        expect(tools).toHaveLength(29);
+         expect(tools).toHaveLength(TOOL_DEFINITIONS.length);
+ 
+         const toolsWithUi = tools.filter((t) => t._meta?.ui !== undefined);
+diff --git a/test/unit/tcu-mte-v070.test.ts b/test/unit/tcu-mte-v070.test.ts
+index 0552445..26d8c14 100644
+--- a/test/unit/tcu-mte-v070.test.ts
++++ b/test/unit/tcu-mte-v070.test.ts
+@@ -53,10 +53,10 @@ describe("TCK-0041: MTE Lista Suja CSV, Consumidor.gov.br Sanitized Fallback & T
+     vi.useRealTimers();
+   });
+ 
+-  describe("Architectural & Wave-1 registration invariants", () => {
+-    it("keeps getToolCount() === 23 without top-level registration of tcu_certidoes", () => {
+-      expect(getToolCount()).toBe(23);
+-      expect(hasTool("tcu_certidoes")).toBe(false);
++  describe("Architectural & Wave-2 catalog registration invariants", () => {
++    it("registers tcu_certidoes in the integrated 29-tool v0.7.0 catalogue", () => {
++      expect(getToolCount()).toBe(29);
++      expect(hasTool("tcu_certidoes")).toBe(true);
+     });
+ 
+     it("enforces ADR-0001 / ADR-0002 boundaries (zero node:* and zero core/tools imports in shared)", () => {
+@@ -74,22 +74,18 @@ describe("TCK-0041: MTE Lista Suja CSV, Consumidor.gov.br Sanitized Fallback & T
+       }
+     });
+ 
+-    it("registers TCU_CERTIDOES_TOOL idempotently via registerTcuTool() when explicitly invoked", async () => {
++    it("keeps registerTcuTool() idempotent when already registered via lib/tools/index.js", async () => {
+       vi.resetModules();
+       await import("../../lib/tools/index.js");
+       const registry = await import("../../lib/core/registry.js");
+       const tcuMod = await import("../../lib/tools/tcu.js");
+ 
+-      expect(registry.getToolCount()).toBe(23);
+-      expect(registry.hasTool("tcu_certidoes")).toBe(false);
+-
+-      tcuMod.registerTcuTool();
++      expect(registry.getToolCount()).toBe(29);
+       expect(registry.hasTool("tcu_certidoes")).toBe(true);
+-      expect(registry.getToolCount()).toBe(24);
+ 
+       const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+       tcuMod.registerTcuTool();
+-      expect(registry.getToolCount()).toBe(24);
++      expect(registry.getToolCount()).toBe(29);
+       expect(warnSpy).not.toHaveBeenCalled();
+     });
+   });
+diff --git a/test/unit/tool-validation-allowlist.test.ts b/test/unit/tool-validation-allowlist.test.ts
+index 80fa695..ecce65e 100644
+--- a/test/unit/tool-validation-allowlist.test.ts
++++ b/test/unit/tool-validation-allowlist.test.ts
+@@ -12,14 +12,14 @@ import { TOOL_SCHEMAS } from "../../lib/core/tool-schemas.js";
+ import { CNPJ_INTELLIGENCE_TOOL } from "../../lib/core/intelligence.js";
+ import { resolveApiConfig } from "../../lib/config/index.js";
+ 
+-describe("TCK-0016: Runtime Zod Validation Across All 23 MCP Tools", () => {
++describe("TCK-0016 / TCK-0044: Runtime Zod Validation Across All 29 MCP Tools", () => {
+   afterEach(() => {
+     vi.restoreAllMocks();
+   });
+ 
+-  it("registers all 23 tools with a runtime Zod schema and zero api_key parameters", () => {
+-    expect(getToolCount()).toBe(23);
+-    expect(TOOL_DEFINITIONS).toHaveLength(23);
++  it("registers all 29 tools with a runtime Zod schema and zero api_key parameters", () => {
++    expect(getToolCount()).toBe(29);
++    expect(TOOL_DEFINITIONS).toHaveLength(29);
+ 
+     for (const def of TOOL_DEFINITIONS) {
+       expect(hasToolSchema(def.name)).toBe(true);
+@@ -78,11 +78,17 @@ describe("TCK-0016: Runtime Zod Validation Across All 23 MCP Tools", () => {
+       { tool: "fipe_veiculos", args: { tipo: "../../cnpj/v1/11222333000181" }, label: "traversal tipo" },
+       { tool: "cnes_saude", args: { tipo: "invalid_type" }, label: "invalid cnes tipo" },
+       { tool: "strategic_osint_prompt", args: { template: "unknown_tpl" }, label: "invalid template" },
++      { tool: "tcu_certidoes", args: { cnpj: "11222333000180" }, label: "bad checksum cnpj" },
++      { tool: "cnae_ncm_lookup", args: { tipo: "cnae" }, label: "missing codigo and termo" },
++      { tool: "sistema_financeiro_lookup", args: { tipo: "pix", ispb: "123" }, label: "short ispb" },
++      { tool: "feriados_ddd_lookup", args: { tipo: "ddd" }, label: "missing ddd" },
++      { tool: "bcb_olinda", args: { consulta: "ptax", data: "2026-02-30" }, label: "invalid calendar date" },
++      { tool: "ibge_indicadores", args: { codigo_ibge: "123" }, label: "invalid codigo_ibge length" },
+     ];
+ 
+-    // Confirm invalidCases covers all 23 registered tools at least once
++    // Confirm invalidCases covers all 29 registered tools at least once
+     const testedTools = new Set(invalidCases.map((c) => c.tool));
+-    expect(testedTools.size).toBe(23);
++    expect(testedTools.size).toBe(29);
+ 
+     for (const { tool, args, label } of invalidCases) {
+       const res = await executeRegisteredTool(tool, args, apiConfig);
+@@ -95,7 +101,7 @@ describe("TCK-0016: Runtime Zod Validation Across All 23 MCP Tools", () => {
+     expect(fetchSpy).not.toHaveBeenCalled();
+   });
+ 
+-  it("versions valid .archagents/_capabilities.json and .archagents/mcp-tool-allowlist.json matching all 23 tools", () => {
++  it("versions valid .archagents/_capabilities.json and .archagents/mcp-tool-allowlist.json matching all 29 tools", () => {
+     const capPath = resolve(process.cwd(), ".archagents/_capabilities.json");
+     const allowlistPath = resolve(
+       process.cwd(),
+@@ -105,7 +111,7 @@ describe("TCK-0016: Runtime Zod Validation Across All 23 MCP Tools", () => {
+     const cap = JSON.parse(readFileSync(capPath, "utf-8"));
+     expect(cap.enabled).toBe(false);
+     expect(cap.agentic?.mcp).toBe(true);
+-    expect(cap.agentic?.tool_count).toBe(23);
++    expect(cap.agentic?.tool_count).toBe(29);
+ 
+     const allowlist = JSON.parse(readFileSync(allowlistPath, "utf-8"));
+     expect(
+@@ -115,7 +121,7 @@ describe("TCK-0016: Runtime Zod Validation Across All 23 MCP Tools", () => {
+     ).toBe(true);
+ 
+     const entries = allowlist.entries as Array<Record<string, unknown>>;
+-    expect(entries).toHaveLength(23);
++    expect(entries).toHaveLength(29);
+ 
+     const ids = new Set<string>();
+     const names: string[] = [];
+@@ -128,7 +134,7 @@ describe("TCK-0016: Runtime Zod Validation Across All 23 MCP Tools", () => {
+       ids.add(String(entry.id));
+       names.push(String(entry.name));
+     }
+-    expect(ids.size).toBe(23);
++    expect(ids.size).toBe(29);
+ 
+     const registeredNames = TOOL_DEFINITIONS.map((t) => t.name).sort();
+     expect(names.sort()).toEqual(registeredNames);

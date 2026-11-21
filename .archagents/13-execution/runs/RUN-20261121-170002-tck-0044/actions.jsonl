@@ -1,0 +1,4 @@
+{"step":1,"ts":"2026-11-21T17:04:00Z","action":"integrate_29_tools_v070_allowlists_docs","gate_status":"flow"}
+{"step":2,"ts":"2026-11-21T17:05:00Z","action":"verify_build_worker_vitest_coverage_transport","gate_status":"flow","tests":"536/536","stmts_pct":94.67,"transport":"29 tools stdio+HTTP/SSE, 5 MCP Apps, 101 calls"}
+{"step":3,"ts":"2026-11-21T17:06:14Z","action":"criteria_check_dry_run","gate_status":"flow","criteria":"6/6"}
+{"step":4,"ts":"2026-11-21T17:11:12Z","action":"secret_scan_and_commit_c6ba490","gate_status":"flow","commit":"c6ba490"}
