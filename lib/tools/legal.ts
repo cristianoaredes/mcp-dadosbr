@@ -14,6 +14,7 @@ import {
     ProcuradosSchema,
 } from "../core/tool-schemas.js";
 import { createTimeoutController, isAbortOrTimeoutError } from "../shared/utils/timeout.js";
+import { sanitizeUntrustedText } from "../shared/agentic-guard.js";
 import { attachLgpdNotice, HOMONYM_HUMAN_REVIEW_NOTICE } from "../shared/compliance-notices.js";
 import { Cache, LookupResult } from "../types/index.js";
 
@@ -231,7 +232,7 @@ function normalizeProcuradosText(text: string): string {
     return text.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 }
 
-function parseProcuradosHtml(html: string): ProcuradosEntry[] {
+export function parseProcuradosHtml(html: string): ProcuradosEntry[] {
     const entries: ProcuradosEntry[] = [];
     const entryRegex = /lista-de-procurados\/([^/]+)\/view[^>]*>\s*\n?\s*([^<]+)\n\s*(\d{2}\/\d{2}\/\d{4})/g;
     let match;
@@ -239,8 +240,8 @@ function parseProcuradosHtml(html: string): ProcuradosEntry[] {
         const entryName = match[2].trim();
         const parts = entryName.split(" - ");
         entries.push({
-            name: parts[0]?.trim() || entryName,
-            state: parts[1]?.trim() || "N/A",
+            name: sanitizeUntrustedText(parts[0]?.trim() || entryName, 200),
+            state: sanitizeUntrustedText(parts[1]?.trim() || "N/A", 50),
             date: match[3].trim(),
             url: `${PROCURADOS_BASE_URL}/${match[1]}/view`,
             normalized: normalizeProcuradosText(entryName),

@@ -5,8 +5,8 @@ title: "Delimitar outputs externos anti-prompt-injection, limitar payload MCP e 
 source: audit
 created_at: 2026-11-21T13:09:43Z
 created_by: ops
-updated_at: 2026-11-21T13:09:43Z
-status: raw
+updated_at: 2026-11-21T13:50:55Z
+status: verifying
 severity: medium
 category: agentic-security
 effort: M
@@ -15,8 +15,10 @@ ceremony: full
 business_impact: ""
 linked_findings:
   - FND-0021
-linked_designs: []
-linked_runs: []
+linked_designs:
+  - DES-0031
+linked_runs:
+  - RUN-20261121-134527-tck-0036
 linked_verifications: []
 linked_docs:
   - .archagents/mcp-tool-allowlist.json
@@ -25,7 +27,21 @@ external_sync: []
 blocks: []
 blocked_by: []
 related: []
-acceptance: []
+acceptance:
+  - check: "npx vitest run test/unit/agentic-security.test.ts test/unit/search.test.ts test/unit/legal-timeouts-intelligence.test.ts test/unit/tools-company-health-osint-legal.test.ts test/unit/tool-validation-allowlist.test.ts test/unit/worker-rest-cloudflare.test.ts && echo AGENTIC_TESTS_OK"
+    expect: AGENTIC_TESTS_OK
+  - check: "npm run test && echo FULL_TESTS_OK"
+    expect: FULL_TESTS_OK
+  - check: "npx tsc --noEmit && npx tsc -p tsconfig.worker.json --noEmit && echo TYPECHECK_OK"
+    expect: TYPECHECK_OK
+  - check: "node -e \"const fs=require('fs');const a=JSON.parse(fs.readFileSync('.archagents/mcp-tool-allowlist.json','utf8'));const e=a.entries.find(x=>x.name==='cnpj_intelligence');if(!e||!e.rationale.includes('20 queries'))process.exit(1);console.log('ALLOWLIST_ALIGNED');\""
+    expect: ALLOWLIST_ALIGNED
+depth_decision:
+  workflow: lightweight
+  design: lightweight
+  verify: completo
+  source: routing-classifier
+  classified_at: 2026-11-21T13:44:56Z
 ---
 # TCK-0036 - Delimitar outputs externos anti-prompt-injection, limitar payload MCP e alinhar allowlist
 
@@ -55,3 +71,7 @@ Antes do fix, `lib/core/search-providers.ts:L96-L105,L209-L223`, `lib/tools/lega
 ## Log de transicoes
 
 - 2026-11-21T13:09:43Z - **raw** - criado via scripts/ops/ticket/create.py.
+- 2026-11-21T13:44:56Z - **triaged** - triaged in wave 1 parallel remediation [depth_decision do routing-classifier: workflow lightweight, design lightweight, verify completo]
+- 2026-11-21T13:45:27Z - **designed** - DES-0031 created
+- 2026-11-21T13:45:34Z - **executing** - executing TCK-0036
+- 2026-11-21T13:50:55Z - **verifying** - DES-0031 implemented and verified in RUN-20261121-134527-tck-0036
