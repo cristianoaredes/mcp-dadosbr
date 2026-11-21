@@ -4,6 +4,7 @@
 
 import { Env, getCorsHeaders } from '../adapters/cloudflare.js';
 import { SERVER_VERSION } from '../config/index.js';
+import { DORK_CATEGORIES, SEARCH_PROVIDERS } from '../core/tool-schemas.js';
 
 /**
  * Generate OpenAPI 3.0 schema for the API
@@ -16,7 +17,12 @@ export function generateOpenAPISchema(requestUrl: string): unknown {
     info: {
       title: 'MCP DadosBR API',
       description: 'Brazilian public data lookup API for CNPJ (companies) and CEP (postal codes) with advanced search capabilities',
-      version: SERVER_VERSION
+      version: SERVER_VERSION,
+      contact: {
+        name: 'MCP DadosBR Maintainers / DPO',
+        url: 'https://github.com/cristianoaredes/mcp-dadosbr/blob/main/PRIVACY.md',
+      },
+      'x-privacy-policy': 'https://github.com/cristianoaredes/mcp-dadosbr/blob/main/PRIVACY.md',
     },
     servers: [{ url: origin }],
     security: [
@@ -146,11 +152,19 @@ export function generateOpenAPISchema(requestUrl: string): unknown {
                     },
                     categories: {
                       type: 'array',
+                      minItems: 1,
+                      maxItems: 10,
                       items: {
                         type: 'string',
-                        enum: ['government', 'legal', 'news', 'documents', 'social', 'partners']
+                        enum: [...DORK_CATEGORIES]
                       },
                       description: 'Search categories to include'
+                    },
+                    provider: {
+                      type: 'string',
+                      enum: [...SEARCH_PROVIDERS],
+                      default: 'tavily',
+                      description: 'Search provider to use (server-configured API key required)'
                     },
                     max_results_per_query: {
                       type: 'integer',
@@ -165,6 +179,12 @@ export function generateOpenAPISchema(requestUrl: string): unknown {
                       maximum: 20,
                       default: 10,
                       description: 'Maximum number of search queries'
+                    },
+                    max_results: {
+                      type: 'integer',
+                      minimum: 1,
+                      maximum: 10,
+                      description: 'Maximum results per search query (alias for max_results_per_query)'
                     }
                   },
                   required: ['cnpj']
@@ -196,6 +216,8 @@ export function generateOpenAPISchema(requestUrl: string): unknown {
                   properties: {
                     thought: {
                       type: 'string',
+                      minLength: 1,
+                      maxLength: 10000,
                       description: 'Current thinking step'
                     },
                     nextThoughtNeeded: {
@@ -205,12 +227,40 @@ export function generateOpenAPISchema(requestUrl: string): unknown {
                     thoughtNumber: {
                       type: 'integer',
                       minimum: 1,
+                      maximum: 1000,
                       description: 'Current thought number'
                     },
                     totalThoughts: {
                       type: 'integer',
                       minimum: 1,
+                      maximum: 1000,
                       description: 'Estimated total thoughts needed'
+                    },
+                    isRevision: {
+                      type: 'boolean',
+                      description: 'Whether this thought revises previous thinking'
+                    },
+                    revisesThought: {
+                      type: 'integer',
+                      minimum: 1,
+                      maximum: 1000,
+                      description: 'Which thought is being reconsidered'
+                    },
+                    branchFromThought: {
+                      type: 'integer',
+                      minimum: 1,
+                      maximum: 1000,
+                      description: 'Branching point thought number'
+                    },
+                    branchId: {
+                      type: 'string',
+                      minLength: 1,
+                      maxLength: 100,
+                      description: 'Branch identifier'
+                    },
+                    needsMoreThoughts: {
+                      type: 'boolean',
+                      description: 'If more thoughts are needed'
                     }
                   },
                   required: ['thought', 'nextThoughtNeeded', 'thoughtNumber', 'totalThoughts']

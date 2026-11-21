@@ -109,23 +109,3 @@ export const TIMEOUTS = {
     return getTimeoutMs('MCP_RATE_LIMIT_WINDOW', 60000);
   },
 };
-
-/**
- * Log current timeout configuration (useful for debugging)
- * Only logs in debug mode (NODE_ENV !== 'production')
- */
-export function logTimeoutConfig(): void {
-  // Only log in non-production environments
-  if (process.env.NODE_ENV === 'production') return;
-
-  console.error('[Config] Timeout configuration:');
-  console.error(`  HTTP_REQUEST_MS: ${TIMEOUTS.HTTP_REQUEST_MS}ms`);
-  console.error(`  INTELLIGENCE_TOTAL_MS: ${TIMEOUTS.INTELLIGENCE_TOTAL_MS}ms`);
-  console.error(`  SEARCH_REQUEST_MS: ${TIMEOUTS.SEARCH_REQUEST_MS}ms`);
-  console.error(`  DEDUP_TIMEOUT_MS: ${TIMEOUTS.DEDUP_TIMEOUT_MS}ms`);
-  console.error(`  CIRCUIT_BREAKER_RESET_MS: ${TIMEOUTS.CIRCUIT_BREAKER_RESET_MS}ms`);
-  console.error(`  SSE_CONNECTION_MS: ${TIMEOUTS.SSE_CONNECTION_MS}ms`);
-  console.error(`  PING_INTERVAL_MS: ${TIMEOUTS.PING_INTERVAL_MS}ms`);
-  console.error(`  RATE_LIMIT_CLEANUP_MS: ${TIMEOUTS.RATE_LIMIT_CLEANUP_MS}ms`);
-  console.error(`  RATE_LIMIT_WINDOW_MS: ${TIMEOUTS.RATE_LIMIT_WINDOW_MS}ms`);
-}

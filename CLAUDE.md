@@ -162,9 +162,9 @@ Logger (`lib/infrastructure/logger.ts`) automatically masks:
 - API keys and tokens
 
 ### Cloudflare Workers Authentication
-Two layers of protection:
-1. **REST endpoints** (`/cnpj/*`, `/cep/*`, `/search`, etc.): Require `X-API-Key` or `Authorization: Bearer` header
-2. **MCP protocol endpoints** (`/mcp`, `/sse`): **Unprotected** for AI assistant compatibility
+When `MCP_API_KEY` is configured, all non-public routes require `X-API-Key` or `Authorization: Bearer <key>`:
+1. **Protected endpoints**: REST endpoints (`/cnpj/*`, `/cep/*`, `/search`, `/intelligence`, `/thinking`) and MCP protocol endpoints (`/mcp`, `/sse`)
+2. **Public endpoints**: `/health`, `/`, `/openapi.json`, and `/.well-known/*`
 
 Configure API key via: `wrangler secret put MCP_API_KEY`
 

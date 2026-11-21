@@ -1,0 +1,712 @@
+commit 78d512c0f35311e6b079eb49249474789e4cddee
+Author: Cristiano Arêdes <cristianoaredes@icloud.com>
+Date:   Sat Nov 21 10:52:12 2026 -0300
+
+    refactor(worker): align REST/OpenAPI contracts, fix 404/decodeURIComponent, and clean legacy artifacts (TCK-0037)
+
+diff --git a/.github/workflows/cloudflare-deploy.yml b/.github/workflows/cloudflare-deploy.yml
+index ae70780..55424d7 100644
+--- a/.github/workflows/cloudflare-deploy.yml
++++ b/.github/workflows/cloudflare-deploy.yml
+@@ -92,6 +92,8 @@ jobs:
+ 
+       - name: Test deployment
+         if: success()
++        env:
++          MCP_API_KEY: ${{ secrets.MCP_API_KEY }}
+         run: |
+           WORKER_URL="${{ steps.get_url.outputs.worker_url }}"
+ 
+@@ -112,20 +114,44 @@ jobs:
+             sleep 5
+           done
+ 
++          # Test OpenAPI endpoint (public)
++          echo "🧪 Testing OpenAPI endpoint..."
++          curl -sf "$WORKER_URL/openapi.json" | grep -q '"openapi"'
++          echo "✅ OpenAPI endpoint test passed"
++
+           # Test MCP endpoint
+           echo "🧪 Testing MCP endpoint..."
+-          RESPONSE=$(curl -sf -X POST "$WORKER_URL/mcp" \
+-            -H "Content-Type: application/json" \
+-            -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}')
+-
+-          if echo "$RESPONSE" | grep -q "tools"; then
+-            echo "✅ MCP endpoint test passed"
+-            echo "📦 Available tools:"
+-            echo "$RESPONSE" | jq -r '.result.tools[].name' 2>/dev/null || echo "$RESPONSE"
++          if [ -n "${MCP_API_KEY:-}" ]; then
++            RESPONSE=$(curl -sf -X POST "$WORKER_URL/mcp" \
++              -H "Content-Type: application/json" \
++              -H "Authorization: Bearer $MCP_API_KEY" \
++              -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}')
++            if echo "$RESPONSE" | grep -q "tools"; then
++              echo "✅ MCP endpoint test passed"
++              echo "📦 Available tools:"
++              echo "$RESPONSE" | jq -r '.result.tools[].name' 2>/dev/null || echo "$RESPONSE"
++            else
++              echo "❌ MCP endpoint test failed"
++              echo "Response: $RESPONSE"
++              exit 1
++            fi
+           else
+-            echo "❌ MCP endpoint test failed"
+-            echo "Response: $RESPONSE"
+-            exit 1
++            RAW=$(curl -s -w "\n%{http_code}" -X POST "$WORKER_URL/mcp" \
++              -H "Content-Type: application/json" \
++              -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}')
++            HTTP_STATUS="${RAW##*$'\n'}"
++            RESPONSE="${RAW%$'\n'*}"
++            if [ "$HTTP_STATUS" = "401" ]; then
++              echo "✅ MCP endpoint enforces authentication (401 without MCP_API_KEY secret)"
++            elif [ "$HTTP_STATUS" = "200" ] && echo "$RESPONSE" | grep -q "tools"; then
++              echo "✅ MCP endpoint test passed (demo mode without MCP_API_KEY)"
++              echo "📦 Available tools:"
++              echo "$RESPONSE" | jq -r '.result.tools[].name' 2>/dev/null || echo "$RESPONSE"
++            else
++              echo "❌ MCP endpoint test failed (HTTP $HTTP_STATUS)"
++              echo "Response: $RESPONSE"
++              exit 1
++            fi
+           fi
+ 
+           echo "✅ All deployment tests passed"
+diff --git a/CLAUDE.md b/CLAUDE.md
+index 8eb251b..d3e37ed 100644
+--- a/CLAUDE.md
++++ b/CLAUDE.md
+@@ -162,9 +162,9 @@ Logger (`lib/infrastructure/logger.ts`) automatically masks:
+ - API keys and tokens
+ 
+ ### Cloudflare Workers Authentication
+-Two layers of protection:
+-1. **REST endpoints** (`/cnpj/*`, `/cep/*`, `/search`, etc.): Require `X-API-Key` or `Authorization: Bearer` header
+-2. **MCP protocol endpoints** (`/mcp`, `/sse`): **Unprotected** for AI assistant compatibility
++When `MCP_API_KEY` is configured, all non-public routes require `X-API-Key` or `Authorization: Bearer <key>`:
++1. **Protected endpoints**: REST endpoints (`/cnpj/*`, `/cep/*`, `/search`, `/intelligence`, `/thinking`) and MCP protocol endpoints (`/mcp`, `/sse`)
++2. **Public endpoints**: `/health`, `/`, `/openapi.json`, and `/.well-known/*`
+ 
+ Configure API key via: `wrangler secret put MCP_API_KEY`
+ 
+diff --git a/docs/CONFIGURATION.md b/docs/CONFIGURATION.md
+index 2f7e43e..6370c0c 100644
+--- a/docs/CONFIGURATION.md
++++ b/docs/CONFIGURATION.md
+@@ -128,15 +128,13 @@ MCP_TRANSPORT=http MCP_HTTP_PORT=3000 npx @aredes.me/mcp-dadosbr
+ ```
+ 
+ **Features:**
+-- JSON-RPC over HTTP
+-- CORS support
+-- Health check endpoint
+-- Metrics endpoint
++- MCP SSE + JSON-RPC over HTTP
++- Host and Origin/CORS validation
++- Per-IP rate limiting
+ 
+ **Endpoints:**
+-- `POST /mcp` - MCP JSON-RPC
+-- `GET /health` - Health check
+-- `GET /metrics` - Performance metrics
++- `GET /mcp` - Establish SSE stream (`SSEServerTransport`)
++- `POST /messages?sessionId=<id>` - MCP JSON-RPC messages for an active SSE session
+ 
+ ## 🔗 API Customization
+ 
+@@ -297,9 +295,10 @@ wrangler secret put MCP_API_KEY
+ MCP_API_KEY=your-secret-key wrangler deploy
+ ```
+ 
+-**Protected Endpoints:**
++**Protected Endpoints (when `MCP_API_KEY` is configured):**
+ - REST API endpoints: `/cnpj/*`, `/cep/*`, `/search`, `/intelligence`, `/thinking`
+-- **Not Protected:** MCP protocol endpoints (`/mcp`, `/sse`) for AI assistant compatibility
++- MCP protocol endpoints: `/mcp`, `/sse`
++- **Public Endpoints:** `/health`, `/`, `/openapi.json`, `/.well-known/*`
+ 
+ **Authentication Methods:**
+ - `Authorization: Bearer <key>`
+diff --git a/lib/config/timeouts.ts b/lib/config/timeouts.ts
+index f857b12..2ebd588 100644
+--- a/lib/config/timeouts.ts
++++ b/lib/config/timeouts.ts
+@@ -109,23 +109,3 @@ export const TIMEOUTS = {
+     return getTimeoutMs('MCP_RATE_LIMIT_WINDOW', 60000);
+   },
+ };
+-
+-/**
+- * Log current timeout configuration (useful for debugging)
+- * Only logs in debug mode (NODE_ENV !== 'production')
+- */
+-export function logTimeoutConfig(): void {
+-  // Only log in non-production environments
+-  if (process.env.NODE_ENV === 'production') return;
+-
+-  console.error('[Config] Timeout configuration:');
+-  console.error(`  HTTP_REQUEST_MS: ${TIMEOUTS.HTTP_REQUEST_MS}ms`);
+-  console.error(`  INTELLIGENCE_TOTAL_MS: ${TIMEOUTS.INTELLIGENCE_TOTAL_MS}ms`);
+-  console.error(`  SEARCH_REQUEST_MS: ${TIMEOUTS.SEARCH_REQUEST_MS}ms`);
+-  console.error(`  DEDUP_TIMEOUT_MS: ${TIMEOUTS.DEDUP_TIMEOUT_MS}ms`);
+-  console.error(`  CIRCUIT_BREAKER_RESET_MS: ${TIMEOUTS.CIRCUIT_BREAKER_RESET_MS}ms`);
+-  console.error(`  SSE_CONNECTION_MS: ${TIMEOUTS.SSE_CONNECTION_MS}ms`);
+-  console.error(`  PING_INTERVAL_MS: ${TIMEOUTS.PING_INTERVAL_MS}ms`);
+-  console.error(`  RATE_LIMIT_CLEANUP_MS: ${TIMEOUTS.RATE_LIMIT_CLEANUP_MS}ms`);
+-  console.error(`  RATE_LIMIT_WINDOW_MS: ${TIMEOUTS.RATE_LIMIT_WINDOW_MS}ms`);
+-}
+diff --git a/lib/core/dork-templates.ts b/lib/core/dork-templates.ts
+index 3e58e59..5c0fac7 100644
+--- a/lib/core/dork-templates.ts
++++ b/lib/core/dork-templates.ts
+@@ -516,25 +516,3 @@ export function buildDorks(cnpjData: CNPJData, categories?: DorkCategory[]): Dor
+ 
+   return allDorks;
+ }
+-
+-// Get dorks for specific category
+-export function getDorksByCategory(cnpjData: CNPJData, category: DorkCategory): DorkTemplate[] {
+-  return buildDorks(cnpjData, [category]);
+-}
+-
+-// Get prioritized dorks (most important first)
+-export function getPrioritizedDorks(cnpjData: CNPJData, maxDorks: number = 10): DorkTemplate[] {
+-  const allDorks = buildDorks(cnpjData);
+-
+-  // Priority order
+-  const priority: DorkCategory[] = ['government', 'legal', 'security', 'databases', 'infrastructure', 'documents', 'news', 'social', 'social_media', 'partners'];
+-
+-  const prioritized: DorkTemplate[] = [];
+-  for (const cat of priority) {
+-    const catDorks = allDorks.filter(d => d.category === cat);
+-    prioritized.push(...catDorks);
+-    if (prioritized.length >= maxDorks) break;
+-  }
+-
+-  return prioritized.slice(0, maxDorks);
+-}
+diff --git a/lib/workers/openapi.ts b/lib/workers/openapi.ts
+index 18223fb..4b9100d 100644
+--- a/lib/workers/openapi.ts
++++ b/lib/workers/openapi.ts
+@@ -4,6 +4,7 @@
+ 
+ import { Env, getCorsHeaders } from '../adapters/cloudflare.js';
+ import { SERVER_VERSION } from '../config/index.js';
++import { DORK_CATEGORIES, SEARCH_PROVIDERS } from '../core/tool-schemas.js';
+ 
+ /**
+  * Generate OpenAPI 3.0 schema for the API
+@@ -146,12 +147,20 @@ export function generateOpenAPISchema(requestUrl: string): unknown {
+                     },
+                     categories: {
+                       type: 'array',
++                      minItems: 1,
++                      maxItems: 10,
+                       items: {
+                         type: 'string',
+-                        enum: ['government', 'legal', 'news', 'documents', 'social', 'partners']
++                        enum: [...DORK_CATEGORIES]
+                       },
+                       description: 'Search categories to include'
+                     },
++                    provider: {
++                      type: 'string',
++                      enum: [...SEARCH_PROVIDERS],
++                      default: 'tavily',
++                      description: 'Search provider to use (server-configured API key required)'
++                    },
+                     max_results_per_query: {
+                       type: 'integer',
+                       minimum: 1,
+@@ -165,6 +174,12 @@ export function generateOpenAPISchema(requestUrl: string): unknown {
+                       maximum: 20,
+                       default: 10,
+                       description: 'Maximum number of search queries'
++                    },
++                    max_results: {
++                      type: 'integer',
++                      minimum: 1,
++                      maximum: 10,
++                      description: 'Maximum results per search query (alias for max_results_per_query)'
+                     }
+                   },
+                   required: ['cnpj']
+@@ -196,6 +211,8 @@ export function generateOpenAPISchema(requestUrl: string): unknown {
+                   properties: {
+                     thought: {
+                       type: 'string',
++                      minLength: 1,
++                      maxLength: 10000,
+                       description: 'Current thinking step'
+                     },
+                     nextThoughtNeeded: {
+@@ -205,12 +222,40 @@ export function generateOpenAPISchema(requestUrl: string): unknown {
+                     thoughtNumber: {
+                       type: 'integer',
+                       minimum: 1,
++                      maximum: 1000,
+                       description: 'Current thought number'
+                     },
+                     totalThoughts: {
+                       type: 'integer',
+                       minimum: 1,
++                      maximum: 1000,
+                       description: 'Estimated total thoughts needed'
++                    },
++                    isRevision: {
++                      type: 'boolean',
++                      description: 'Whether this thought revises previous thinking'
++                    },
++                    revisesThought: {
++                      type: 'integer',
++                      minimum: 1,
++                      maximum: 1000,
++                      description: 'Which thought is being reconsidered'
++                    },
++                    branchFromThought: {
++                      type: 'integer',
++                      minimum: 1,
++                      maximum: 1000,
++                      description: 'Branching point thought number'
++                    },
++                    branchId: {
++                      type: 'string',
++                      minLength: 1,
++                      maxLength: 100,
++                      description: 'Branch identifier'
++                    },
++                    needsMoreThoughts: {
++                      type: 'boolean',
++                      description: 'If more thoughts are needed'
+                     }
+                   },
+                   required: ['thought', 'nextThoughtNeeded', 'thoughtNumber', 'totalThoughts']
+diff --git a/lib/workers/rest.ts b/lib/workers/rest.ts
+index 9ed3745..2459292 100644
+--- a/lib/workers/rest.ts
++++ b/lib/workers/rest.ts
+@@ -33,6 +33,10 @@ export async function handleLookupEndpoint(
+     const mcpResponse = await handleMCPRequest(mcpRequest, env);
+ 
+     if (mcpResponse.error) {
++      const isNotFound =
++        mcpResponse.error.code === -32603 &&
++        typeof mcpResponse.error.data === 'string' &&
++        /not found/i.test(mcpResponse.error.data);
+       return new Response(
+         JSON.stringify({
+           error: mcpResponse.error.message,
+@@ -40,7 +44,7 @@ export async function handleLookupEndpoint(
+           data: mcpResponse.error.data
+         }),
+         {
+-          status: mcpResponse.error.code === -32603 && mcpResponse.error.data === 'Not found' ? 404 : 400,
++          status: isNotFound ? 404 : 400,
+           headers: {
+             'Content-Type': 'application/json',
+             ...corsHeaders,
+@@ -146,7 +150,14 @@ export async function handleIntelligenceEndpoint(
+ ): Promise<Response> {
+   try {
+     const body = await request.json() as IntelligenceRequestBody;
+-    const { cnpj, categories, max_results_per_query = 5, max_queries = 10 } = body;
++    const {
++      cnpj,
++      categories,
++      provider,
++      max_results_per_query,
++      max_queries,
++      max_results,
++    } = body;
+ 
+     if (!cnpj) {
+       return new Response(
+@@ -158,13 +169,20 @@ export async function handleIntelligenceEndpoint(
+       );
+     }
+ 
++    const args: Record<string, unknown> = { cnpj };
++    if (categories !== undefined) args.categories = categories;
++    if (provider !== undefined) args.provider = provider;
++    if (max_results_per_query !== undefined) args.max_results_per_query = max_results_per_query;
++    if (max_queries !== undefined) args.max_queries = max_queries;
++    if (max_results !== undefined) args.max_results = max_results;
++
+     const mcpRequest: MCPRequest = {
+       jsonrpc: '2.0',
+       id: Date.now(),
+       method: 'tools/call',
+       params: {
+         name: 'cnpj_intelligence',
+-        arguments: { cnpj, categories, max_results_per_query, max_queries }
++        arguments: args
+       }
+     };
+ 
+diff --git a/lib/workers/tokens.ts b/lib/workers/tokens.ts
+deleted file mode 100644
+index fdf7845..0000000
+--- a/lib/workers/tokens.ts
++++ /dev/null
+@@ -1,17 +0,0 @@
+-/**
+- * Secure token generation utilities
+- */
+-
+-/**
+- * Generate cryptographically secure random token
+- * @param prefix - Token prefix (e.g., 'mcp', 'access', 'bearer')
+- * @returns Secure random token string
+- */
+-export function generateSecureToken(prefix: string = "mcp"): string {
+-  const buffer = new Uint8Array(32);
+-  crypto.getRandomValues(buffer);
+-  const token = Array.from(buffer)
+-    .map((b) => b.toString(16).padStart(2, "0"))
+-    .join("");
+-  return `${prefix}_${token}`;
+-}
+diff --git a/lib/workers/types.ts b/lib/workers/types.ts
+index e6ca244..a4e3b56 100644
+--- a/lib/workers/types.ts
++++ b/lib/workers/types.ts
+@@ -2,6 +2,11 @@
+  * TypeScript types for Cloudflare Workers
+  */
+ 
++import type { DORK_CATEGORIES, SEARCH_PROVIDERS } from '../core/tool-schemas.js';
++
++export type DorkCategory = typeof DORK_CATEGORIES[number];
++export type SearchProvider = typeof SEARCH_PROVIDERS[number];
++
+ /**
+  * Cloudflare ExecutionContext interface
+  */
+@@ -32,9 +37,11 @@ export interface SearchRequestBody {
+  */
+ export interface IntelligenceRequestBody {
+   cnpj: string;
+-  categories?: string[];
++  categories?: DorkCategory[];
++  provider?: SearchProvider;
+   max_results_per_query?: number;
+   max_queries?: number;
++  max_results?: number;
+ }
+ 
+ /**
+@@ -42,5 +49,12 @@ export interface IntelligenceRequestBody {
+  */
+ export interface ThinkingRequestBody {
+   thought: string;
+-  context?: string;
++  nextThoughtNeeded: boolean;
++  thoughtNumber: number;
++  totalThoughts: number;
++  isRevision?: boolean;
++  revisesThought?: number;
++  branchFromThought?: number;
++  branchId?: string;
++  needsMoreThoughts?: boolean;
+ }
+diff --git a/lib/workers/worker.ts b/lib/workers/worker.ts
+index d5df166..12d3469 100644
+--- a/lib/workers/worker.ts
++++ b/lib/workers/worker.ts
+@@ -136,7 +136,16 @@ async function routeRequest(
+       const pathMatch = url.pathname.match(/^\/(cnpj|cep)\/(.+)$/);
+       if (pathMatch && request.method === 'GET') {
+         const [, toolType, value] = pathMatch;
+-        return await handleLookupEndpoint(toolType, value, env);
++        let decodedValue: string;
++        try {
++          decodedValue = decodeURIComponent(value);
++        } catch {
++          return new Response(
++            JSON.stringify({ error: 'Bad Request', message: 'Invalid URL encoding in path parameter' }),
++            { status: 400, headers: { 'Content-Type': 'application/json', ...corsHeaders } }
++          );
++        }
++        return await handleLookupEndpoint(toolType, decodedValue, env);
+       }
+ 
+       // Handle advanced REST endpoints
+diff --git a/smithery.config.js b/smithery.config.js
+deleted file mode 100644
+index 3f60be0..0000000
+--- a/smithery.config.js
++++ /dev/null
+@@ -1,9 +0,0 @@
+-export default {
+-  esbuild: {
+-    external: [
+-      "@smithery/sdk/server/stateful.js", 
+-      "@smithery/sdk/server/stateless.js",
+-      "@smithery/sdk"
+-    ],
+-  },
+-};
+diff --git a/test/manual/test-manual.js b/test/manual/test-manual.js
+index a951ab4..1dd9851 100644
+--- a/test/manual/test-manual.js
++++ b/test/manual/test-manual.js
+@@ -1,5 +1,5 @@
+-import { executeTool } from './build/lib/core/tools.js';
+-import { resolveApiConfig } from './build/lib/config/index.js';
++import { executeTool } from '../../build/lib/core/tools.js';
++import { resolveApiConfig } from '../../build/lib/config/index.js';
+ 
+ async function testTools() {
+   const apiConfig = resolveApiConfig();
+@@ -16,14 +16,16 @@ async function testTools() {
+   console.log('\nTesting cnpj_search...');
+   const result4 = await executeTool('cnpj_search', {
+     query: 'Banco do Brasil',
+-    maxResults: 1
++    max_results: 1
+   }, apiConfig);
+   console.log('cnpj_search:', result4.ok ? 'SUCCESS' : 'FAILED', result4.ok ? '' : result4.error);
+ 
+   console.log('\nTesting cnpj_intelligence...');
+   const result5 = await executeTool('cnpj_intelligence', {
+-    query: 'What is the CNPJ of Nubank?',
+-    context: 'I am helping a client process payments.'
++    cnpj: '11222333000181',
++    categories: ['government'],
++    max_queries: 1,
++    max_results_per_query: 2
+   }, apiConfig);
+   console.log('cnpj_intelligence:', result5.ok ? 'SUCCESS' : 'FAILED', result5.ok ? '' : result5.error);
+ }
+diff --git a/test/unit/worker-rest-cloudflare.test.ts b/test/unit/worker-rest-cloudflare.test.ts
+index a573be4..9e1c63d 100644
+--- a/test/unit/worker-rest-cloudflare.test.ts
++++ b/test/unit/worker-rest-cloudflare.test.ts
+@@ -11,9 +11,12 @@ import {
+   handleSearchEndpoint,
+   handleThinkingEndpoint,
+ } from "../../lib/workers/rest.js";
+-import { generateSecureToken } from "../../lib/workers/tokens.js";
++import { generateOpenAPISchema } from "../../lib/workers/openapi.js";
+ import worker from "../../lib/workers/worker.js";
++import { DORK_CATEGORIES, SEARCH_PROVIDERS } from "../../lib/core/tool-schemas.js";
++import * as toolsModule from "../../lib/core/tools.js";
+ import { TOOL_DEFINITIONS } from "../../lib/core/tools.js";
++import { PerplexityProvider } from "../../lib/core/search-providers.js";
+ import { resetCircuitBreakers } from "../../lib/core/http-client.js";
+ 
+ function createMemoryKv(initial: Record<string, string> = {}): KVNamespace & {
+@@ -54,7 +57,7 @@ function createExecutionContext(): ExecutionContext {
+   } as unknown as ExecutionContext;
+ }
+ 
+-describe("Workers REST API, Tokens, Worker Router & Cloudflare Adapter", () => {
++describe("Workers REST API, OpenAPI, Worker Router & Cloudflare Adapter", () => {
+   const originalTavily = process.env.TAVILY_API_KEY;
+   const originalPerplexity = process.env.PERPLEXITY_API_KEY;
+ 
+@@ -76,15 +79,73 @@ describe("Workers REST API, Tokens, Worker Router & Cloudflare Adapter", () => {
+     vi.useRealTimers();
+   });
+ 
+-  describe("lib/workers/tokens.ts", () => {
+-    it("generates cryptographically random 64-hex-char tokens with default and custom prefixes", () => {
+-      const defaultToken = generateSecureToken();
+-      const secondToken = generateSecureToken();
+-      const oauthToken = generateSecureToken("oauth");
++  describe("lib/workers/openapi.ts", () => {
++    it("aligns /intelligence and /thinking schemas with Zod tool schemas", () => {
++      const schema = generateOpenAPISchema("https://worker.example/openapi.json") as {
++        paths: Record<string, {
++          post?: {
++            requestBody?: {
++              content?: {
++                "application/json"?: {
++                  schema?: {
++                    properties?: Record<string, unknown>;
++                    required?: string[];
++                  };
++                };
++              };
++            };
++          };
++        }>;
++      };
++
++      const intelSchema =
++        schema.paths["/intelligence"]?.post?.requestBody?.content?.["application/json"]?.schema;
++      const intelProps = intelSchema?.properties as {
++        categories: { items: { enum: string[] } };
++        provider: { type: string; enum: string[] };
++        max_results: { type: string; minimum: number; maximum: number };
++      };
++      expect(intelProps.categories.items.enum).toEqual([...DORK_CATEGORIES]);
++      expect(intelProps.categories.items.enum).toHaveLength(10);
++      expect(intelProps.provider).toMatchObject({
++        type: "string",
++        enum: [...SEARCH_PROVIDERS],
++      });
++      expect(intelProps.max_results).toMatchObject({
++        type: "integer",
++        minimum: 1,
++        maximum: 10,
++      });
+ 
+-      expect(defaultToken).toMatch(/^mcp_[0-9a-f]{64}$/);
+-      expect(oauthToken).toMatch(/^oauth_[0-9a-f]{64}$/);
+-      expect(secondToken).not.toBe(defaultToken);
++      const thinkingSchema =
++        schema.paths["/thinking"]?.post?.requestBody?.content?.["application/json"]?.schema;
++      const thinkingProps = thinkingSchema?.properties as Record<string, Record<string, unknown>>;
++      expect(thinkingSchema?.required).toEqual([
++        "thought",
++        "nextThoughtNeeded",
++        "thoughtNumber",
++        "totalThoughts",
++      ]);
++      expect(thinkingProps.thought).toMatchObject({
++        type: "string",
++        minLength: 1,
++        maxLength: 10000,
++      });
++      expect(thinkingProps.thoughtNumber).toMatchObject({
++        type: "integer",
++        minimum: 1,
++        maximum: 1000,
++      });
++      expect(thinkingProps.totalThoughts).toMatchObject({
++        type: "integer",
++        minimum: 1,
++        maximum: 1000,
++      });
++      expect(thinkingProps.isRevision).toMatchObject({ type: "boolean" });
++      expect(thinkingProps.revisesThought).toMatchObject({ type: "integer", minimum: 1, maximum: 1000 });
++      expect(thinkingProps.branchFromThought).toMatchObject({ type: "integer", minimum: 1, maximum: 1000 });
++      expect(thinkingProps.branchId).toMatchObject({ type: "string", minLength: 1, maxLength: 100 });
++      expect(thinkingProps.needsMoreThoughts).toMatchObject({ type: "boolean" });
+     });
+   });
+ 
+@@ -117,13 +178,20 @@ describe("Workers REST API, Tokens, Worker Router & Cloudflare Adapter", () => {
+       const invalidBody = (await invalidResp.json()) as { error: string; code: number };
+       expect(invalidBody.code).toBe(-32603);
+ 
+-      // Upstream 404 on valid checksum CNPJ -> tool returns "CNPJ not found" -> REST endpoint maps to 400
++      // Upstream 404 on valid checksum CNPJ -> tool returns "CNPJ not found" -> REST endpoint maps to 404
+       vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(jsonResponse({ message: "not found" }, 404));
+       const notFoundResp = await handleLookupEndpoint("cnpj", "33000167000101", {});
+-      expect(notFoundResp.status).toBe(400);
++      expect(notFoundResp.status).toBe(404);
+       const nfBody = (await notFoundResp.json()) as { data?: string };
+       expect(nfBody.data).toMatch(/not found/i);
+ 
++      // Upstream 404 on valid CEP -> tool returns "CEP not found" -> REST endpoint maps to 404
++      vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(jsonResponse({ message: "not found" }, 404));
++      const cepNotFoundResp = await handleLookupEndpoint("cep", "01310999", {});
++      expect(cepNotFoundResp.status).toBe(404);
++      const cepNfBody = (await cepNotFoundResp.json()) as { data?: string };
++      expect(cepNfBody.data).toMatch(/not found/i);
++
+       // Trigger outer try/catch -> 500 when env triggers TypeError in handleMCPRequest
+       const errResp = await handleLookupEndpoint("cnpj", "11222333000181", null as unknown as Env);
+       expect(errResp.status).toBe(500);
+@@ -247,6 +315,60 @@ describe("Workers REST API, Tokens, Worker Router & Cloudflare Adapter", () => {
+       expect(malformedResp.status).toBe(500);
+     });
+ 
++    it("handleIntelligenceEndpoint forwards provider and max_results without injecting undefined keys", async () => {
++      process.env.PERPLEXITY_API_KEY = "pplx-test-key";
++      vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
++        jsonResponse({
++          cnpj: "11222333000181",
++          razao_social: "EMPRESA STRICT LTDA",
++          nome_fantasia: "STRICT",
++          municipio: "SAO PAULO",
++          uf: "SP",
++        })
++      );
++      const executeSpy = vi.spyOn(toolsModule, "executeTool");
++      const searchSpy = vi
++        .spyOn(PerplexityProvider.prototype, "search")
++        .mockResolvedValue({
++          ok: true,
++          value: [
++            {
++              title: "Contrato",
++              url: "https://dados.gov.br/1",
++              snippet: "Contrato 11222333000181",
++            },
++          ],
++        });
++
++      const resp = await handleIntelligenceEndpoint(
++        new Request("https://worker.example/intelligence", {
++          method: "POST",
++          body: JSON.stringify({
++            cnpj: "11222333000181",
++            provider: "perplexity",
++            max_results: 3,
++          }),
++        }),
++        {}
++      );
++
++      expect(resp.status).toBe(200);
++      expect(executeSpy).toHaveBeenCalledTimes(1);
++      const forwardedArgs = executeSpy.mock.calls[0]?.[1] as Record<string, unknown>;
++      expect(forwardedArgs).toEqual({
++        cnpj: "11222333000181",
++        provider: "perplexity",
++        max_results: 3,
++      });
++      expect(Object.keys(forwardedArgs).sort()).toEqual(["cnpj", "max_results", "provider"]);
++      expect(searchSpy).toHaveBeenCalled();
++      expect(searchSpy.mock.calls[0]?.[1]).toBe(3);
++
++      const payload = (await resp.json()) as { content: Array<{ text: string }> };
++      const parsed = JSON.parse(payload.content[0].text) as { provider_used: string };
++      expect(parsed.provider_used).toBe("perplexity");
++    });
++
+     it("handleThinkingEndpoint supports valid thoughts (200), schema failure (400), and invalid JSON (500)", async () => {
+       const okResp = await handleThinkingEndpoint(
+         new Request("https://worker.example/thinking", {
+@@ -425,7 +547,7 @@ describe("Workers REST API, Tokens, Worker Router & Cloudflare Adapter", () => {
+       expect(notFound.status).toBe(404);
+ 
+       // GET /cnpj/:cnpj and /cep/:cep with mocked fetch + env.TAVILY_API_KEY propagation
+-      vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
++      const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
+         jsonResponse({ cnpj: "11222333000181", cep: "01310100", ok: true })
+       );
+       const cnpjResp = await worker.fetch(
+@@ -436,6 +558,27 @@ describe("Workers REST API, Tokens, Worker Router & Cloudflare Adapter", () => {
+       expect(cnpjResp.status).toBe(200);
+       expect(process.env.TAVILY_API_KEY).toBe("tvly-worker");
+ 
++      // URL-encoded slash in formatted CNPJ (%2F) is decoded safely before lookup
++      const encodedCnpjResp = await worker.fetch(
++        new Request("https://worker.example/cnpj/11.222.333%2F0001-81"),
++        baseEnv,
++        ctx
++      );
++      expect(encodedCnpjResp.status).toBe(200);
++      expect(String(fetchSpy.mock.calls[1]?.[0])).toContain("11222333000181");
++
++      // Invalid URL encoding returns 400 Bad Request
++      const invalidEncodingResp = await worker.fetch(
++        new Request("https://worker.example/cnpj/%ZZ"),
++        baseEnv,
++        ctx
++      );
++      expect(invalidEncodingResp.status).toBe(400);
++      expect(await invalidEncodingResp.json()).toEqual({
++        error: "Bad Request",
++        message: "Invalid URL encoding in path parameter",
++      });
++
+       const cepResp = await worker.fetch(
+         new Request("https://worker.example/cep/01310100"),
+         baseEnv,

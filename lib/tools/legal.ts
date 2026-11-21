@@ -14,6 +14,8 @@ import {
     ProcuradosSchema,
 } from "../core/tool-schemas.js";
 import { createTimeoutController, isAbortOrTimeoutError } from "../shared/utils/timeout.js";
+import { sanitizeUntrustedText } from "../shared/agentic-guard.js";
+import { attachLgpdNotice, HOMONYM_HUMAN_REVIEW_NOTICE } from "../shared/compliance-notices.js";
 import { Cache, LookupResult } from "../types/index.js";
 
 // ─── Datajud / CNJ ──────────────────────────────────────────────────────────
@@ -40,7 +42,7 @@ async function executeDatajud(args: DatajudArgs, cache?: Cache): Promise<LookupR
     const cacheKey = `datajud:${apiName}:${tamanho}:${query.trim().toLowerCase()}`;
     if (cache) {
         const cached = await cache.get(cacheKey);
-        if (cached) return { ok: true, data: cached };
+        if (cached) return { ok: true, data: attachLgpdNotice(cached) };
     }
 
     const url = `${DATAJUD_BASE}/${apiName}/_search`;
@@ -55,7 +57,13 @@ async function executeDatajud(args: DatajudArgs, cache?: Cache): Promise<LookupR
         });
         if (!resp.ok) return { ok: false, error: `Datajud API error: HTTP ${resp.status}` };
         const data = await resp.json();
-        const payload = { query, tribunal, results: data, source: `Datajud — CNJ (${tribunal.toUpperCase()})` };
+        const payload = {
+            query,
+            tribunal,
+            results: data,
+            source: `Datajud — CNJ (${tribunal.toUpperCase()})`,
+            lgpd_notice: HOMONYM_HUMAN_REVIEW_NOTICE,
+        };
         if (cache) await cache.set(cacheKey, payload);
         return { ok: true, data: payload };
     } catch (err) {
@@ -139,7 +147,7 @@ async function executeBnmp(args: BnmpArgs, cache?: Cache): Promise<LookupResult>
     const cacheKey = `bnmp:${nome.trim().toLowerCase()}:${(orgaoJulgador || "").trim().toLowerCase()}`;
     if (cache) {
         const cached = await cache.get(cacheKey);
-        if (cached) return { ok: true, data: cached };
+        if (cached) return { ok: true, data: attachLgpdNotice(cached) };
     }
 
     const timeoutMs = TIMEOUTS.HTTP_REQUEST_MS;
@@ -156,7 +164,12 @@ async function executeBnmp(args: BnmpArgs, cache?: Cache): Promise<LookupResult>
         });
         if (resp.ok) {
             const data = await resp.json();
-            const payload = { query: nome, results: data, source: "BNMP — Banco Nacional de Mandados de Prisão (CNJ)" };
+            const payload = {
+                query: nome,
+                results: data,
+                source: "BNMP — Banco Nacional de Mandados de Prisão (CNJ)",
+                lgpd_notice: HOMONYM_HUMAN_REVIEW_NOTICE,
+            };
             if (cache) await cache.set(cacheKey, payload);
             return { ok: true, data: payload };
         }
@@ -176,6 +189,7 @@ async function executeBnmp(args: BnmpArgs, cache?: Cache): Promise<LookupResult>
                 ? "BNMP request timed out or requires CAPTCHA. Use the search portal."
                 : "BNMP requires CAPTCHA. Use the search portal.",
             manual_steps: ["1. Go to https://portalbnmp.cnj.jus.br/#/pesquisa-peca", `2. Enter name: "${nome}"`, "3. Complete CAPTCHA"],
+            lgpd_notice: HOMONYM_HUMAN_REVIEW_NOTICE,
         },
     };
 }
@@ -218,7 +232,7 @@ function normalizeProcuradosText(text: string): string {
     return text.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 }
 
-function parseProcuradosHtml(html: string): ProcuradosEntry[] {
+export function parseProcuradosHtml(html: string): ProcuradosEntry[] {
     const entries: ProcuradosEntry[] = [];
     const entryRegex = /lista-de-procurados\/([^/]+)\/view[^>]*>\s*\n?\s*([^<]+)\n\s*(\d{2}\/\d{2}\/\d{4})/g;
     let match;
@@ -226,8 +240,8 @@ function parseProcuradosHtml(html: string): ProcuradosEntry[] {
         const entryName = match[2].trim();
         const parts = entryName.split(" - ");
         entries.push({
-            name: parts[0]?.trim() || entryName,
-            state: parts[1]?.trim() || "N/A",
+            name: sanitizeUntrustedText(parts[0]?.trim() || entryName, 200),
+            state: sanitizeUntrustedText(parts[1]?.trim() || "N/A", 50),
             date: match[3].trim(),
             url: `${PROCURADOS_BASE_URL}/${match[1]}/view`,
             normalized: normalizeProcuradosText(entryName),
@@ -274,6 +288,7 @@ async function executeProcurados(args: ProcuradosArgs, cache?: Cache): Promise<L
                         pages_failed: 0,
                         list_url: PROCURADOS_BASE_URL,
                         note: `⚠️ "${nome}" matched ${matches.length} entry(ies).`,
+                        lgpd_notice: HOMONYM_HUMAN_REVIEW_NOTICE,
                     },
                 };
             }
@@ -292,6 +307,7 @@ async function executeProcurados(args: ProcuradosArgs, cache?: Cache): Promise<L
                     pages_failed: 0,
                     list_url: PROCURADOS_BASE_URL,
                     note: `"${nome}" was NOT found in the federal wanted persons list.`,
+                    lgpd_notice: HOMONYM_HUMAN_REVIEW_NOTICE,
                 },
             };
         }
@@ -397,6 +413,7 @@ async function executeProcurados(args: ProcuradosArgs, cache?: Cache): Promise<L
                 note: partial
                     ? `⚠️ "${nome}" matched ${matches.length} entry(ies) across ${pagesChecked}/${totalPages} checked page(s); ${pagesFailed.length} page(s) failed.`
                     : `⚠️ "${nome}" matched ${matches.length} entry(ies).`,
+                lgpd_notice: HOMONYM_HUMAN_REVIEW_NOTICE,
             },
         };
     }
@@ -417,6 +434,7 @@ async function executeProcurados(args: ProcuradosArgs, cache?: Cache): Promise<L
                 failed_pages: pagesFailed,
                 list_url: PROCURADOS_BASE_URL,
                 note: `INCONCLUSIVE: "${nome}" was not found in the ${pagesChecked}/${totalPages} checked page(s), but ${pagesFailed.length} page(s) failed to load. Manual verification is required.`,
+                lgpd_notice: HOMONYM_HUMAN_REVIEW_NOTICE,
             },
         };
     }
@@ -435,6 +453,7 @@ async function executeProcurados(args: ProcuradosArgs, cache?: Cache): Promise<L
             pages_failed: 0,
             list_url: PROCURADOS_BASE_URL,
             note: `"${nome}" was NOT found in the federal wanted persons list.`,
+            lgpd_notice: HOMONYM_HUMAN_REVIEW_NOTICE,
         },
     };
 }

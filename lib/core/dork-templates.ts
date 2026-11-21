@@ -516,25 +516,3 @@ export function buildDorks(cnpjData: CNPJData, categories?: DorkCategory[]): Dor
 
   return allDorks;
 }
-
-// Get dorks for specific category
-export function getDorksByCategory(cnpjData: CNPJData, category: DorkCategory): DorkTemplate[] {
-  return buildDorks(cnpjData, [category]);
-}
-
-// Get prioritized dorks (most important first)
-export function getPrioritizedDorks(cnpjData: CNPJData, maxDorks: number = 10): DorkTemplate[] {
-  const allDorks = buildDorks(cnpjData);
-
-  // Priority order
-  const priority: DorkCategory[] = ['government', 'legal', 'security', 'databases', 'infrastructure', 'documents', 'news', 'social', 'social_media', 'partners'];
-
-  const prioritized: DorkTemplate[] = [];
-  for (const cat of priority) {
-    const catDorks = allDorks.filter(d => d.category === cat);
-    prioritized.push(...catDorks);
-    if (prioritized.length >= maxDorks) break;
-  }
-
-  return prioritized.slice(0, maxDorks);
-}

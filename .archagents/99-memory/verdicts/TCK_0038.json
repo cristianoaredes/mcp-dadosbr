@@ -1,0 +1,74 @@
+{
+  "ticket": "TCK-0038",
+  "run": "RUN-20261121-141121-tck-0038",
+  "timestamp": "2026-11-21T14:29:01.962025+00:00",
+  "overall": "ACCEPTABLE",
+  "score": 81,
+  "low_confidence": false,
+  "verify_loaded": true,
+  "markdown_rejected": false,
+  "diff_scope": "executor_delta",
+  "diff_scope_note": null,
+  "dimensions": {
+    "spec_compliance": {
+      "score": 50,
+      "notes": "0/4 critérios identificados no diff"
+    },
+    "code_quality": {
+      "score": 95,
+      "notes": "Test files present (2 for 10 code file(s)); Large diff (1302 lines)"
+    },
+    "test_coverage": {
+      "score": 60,
+      "notes": "No test files detected in diff; 61 assertions/expectations"
+    },
+    "safety": {
+      "score": 100,
+      "notes": "No safety risks detected"
+    },
+    "documentation": {
+      "score": 50,
+      "notes": "No documentation changes (12 code file(s))"
+    },
+    "objective_alignment": {
+      "score": null,
+      "objective": null,
+      "notes": "null (no linked spec)"
+    }
+  },
+  "objective_alignment": null,
+  "what_went_right": [
+    "Todos os 1 critérios de aceitação passaram"
+  ],
+  "what_went_wrong": [
+    "Nenhuma falha significativa detectada"
+  ],
+  "root_causes": [],
+  "lessons": [],
+  "recommendations": [],
+  "iterations": 1,
+  "lesson_utility": {
+    "utility": 0.62,
+    "n_lessons": 1,
+    "lessons_consulted": [
+      "Precisou de 2 iterações (re-execução)"
+    ],
+    "signal": "computed"
+  },
+  "strategy_effectiveness": {
+    "strategy": "default",
+    "effectiveness": 0.352,
+    "n_runs": 35,
+    "n_pre_era_excluded": 0,
+    "n_unmeasured_excluded": 3
+  },
+  "decision_outcome_backfill": {
+    "outcome": "approved",
+    "updated": [
+      "DEC-20261121-140900728712",
+      "DEC-20261121-141121005846"
+    ],
+    "skipped_human_review": [],
+    "error": null
+  }
+}
