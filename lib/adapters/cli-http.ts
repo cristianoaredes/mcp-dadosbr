@@ -1,5 +1,6 @@
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 import express from "express";
+import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash, timingSafeEqual } from "node:crypto";
 import type http from "node:http";
 import { createMCPServer } from "../core/mcp-server.js";
@@ -14,6 +15,7 @@ import { maskSensitiveText } from "../shared/log-redaction.js";
 import { ApiConfig, Cache } from "../types/index.js";
 
 const cliHttpLogger = createLogger("cli-http");
+const requestContextStore = new AsyncLocalStorage<RequestContext>();
 import { TIMEOUTS } from "../config/timeouts.js";
 
 export const DEFAULT_CLI_HTTP_HOST = "127.0.0.1";
@@ -510,7 +512,11 @@ export function createCliHttpApp(options: CliHttpOptions): CliHttpContext {
         );
       };
 
-      const server = createMCPServer({ apiConfig: options.apiConfig, cache: options.cache });
+      const server = createMCPServer({
+        apiConfig: options.apiConfig,
+        cache: options.cache,
+        getRequestContext: () => requestContextStore.getStore(),
+      });
       await server.connect(transport);
       debug(`MCP server connected to SSE transport ${sessionId}`);
     } catch (error) {
@@ -567,7 +573,9 @@ export function createCliHttpApp(options: CliHttpOptions): CliHttpContext {
       }
 
       session.lastActivity = new Date();
-      await session.transport.handlePostMessage(req, res, req.body);
+      await requestContextStore.run(requestContext, () =>
+        session.transport.handlePostMessage(req, res, req.body)
+      );
     } catch (error) {
       debug("Error handling message:", error);
       cliHttpLogger.error(

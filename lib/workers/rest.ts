@@ -4,6 +4,7 @@
 
 import { corsHeaders, Env } from '../adapters/cloudflare.js';
 import { handleMCPRequest } from '../adapters/cloudflare.js';
+import type { RequestContext } from '../infrastructure/tracing.js';
 import { MCPRequest } from '../types/index.js';
 import {
   SearchRequestBody,
@@ -17,7 +18,8 @@ import {
 export async function handleLookupEndpoint(
   toolType: string,
   value: string,
-  env: Env
+  env: Env,
+  requestContext?: RequestContext
 ): Promise<Response> {
   try {
     const mcpRequest: MCPRequest = {
@@ -30,7 +32,7 @@ export async function handleLookupEndpoint(
       }
     };
 
-    const mcpResponse = await handleMCPRequest(mcpRequest, env);
+    const mcpResponse = await handleMCPRequest(mcpRequest, env, requestContext);
 
     if (mcpResponse.error) {
       const isNotFound =
@@ -82,7 +84,8 @@ export async function handleLookupEndpoint(
  */
 export async function handleSearchEndpoint(
   request: Request,
-  env: Env
+  env: Env,
+  requestContext?: RequestContext
 ): Promise<Response> {
   try {
     const body = await request.json() as SearchRequestBody;
@@ -108,7 +111,7 @@ export async function handleSearchEndpoint(
       }
     };
 
-    const mcpResponse = await handleMCPRequest(mcpRequest, env);
+    const mcpResponse = await handleMCPRequest(mcpRequest, env, requestContext);
 
     if (mcpResponse.error) {
       return new Response(
@@ -146,7 +149,8 @@ export async function handleSearchEndpoint(
  */
 export async function handleIntelligenceEndpoint(
   request: Request,
-  env: Env
+  env: Env,
+  requestContext?: RequestContext
 ): Promise<Response> {
   try {
     const body = await request.json() as IntelligenceRequestBody;
@@ -186,7 +190,7 @@ export async function handleIntelligenceEndpoint(
       }
     };
 
-    const mcpResponse = await handleMCPRequest(mcpRequest, env);
+    const mcpResponse = await handleMCPRequest(mcpRequest, env, requestContext);
 
     if (mcpResponse.error) {
       return new Response(
@@ -224,7 +228,8 @@ export async function handleIntelligenceEndpoint(
  */
 export async function handleThinkingEndpoint(
   request: Request,
-  env: Env
+  env: Env,
+  requestContext?: RequestContext
 ): Promise<Response> {
   try {
     const body = await request.json() as ThinkingRequestBody;
@@ -239,7 +244,7 @@ export async function handleThinkingEndpoint(
       }
     };
 
-    const mcpResponse = await handleMCPRequest(mcpRequest, env);
+    const mcpResponse = await handleMCPRequest(mcpRequest, env, requestContext);
 
     if (mcpResponse.error) {
       return new Response(
