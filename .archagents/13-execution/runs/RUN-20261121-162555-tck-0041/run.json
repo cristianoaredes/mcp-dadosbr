@@ -20,5 +20,15 @@
   "cost_source": "unknown",
   "loop_strategy": "default",
   "context_peak": 0,
-  "final_judge_delta": 0
+  "final_judge_delta": 22,
+  "warmup": false,
+  "final_judge_delta_source": "judge",
+  "lesson_utility": {
+    "utility": 0.44,
+    "n_lessons": 1,
+    "lessons_consulted": [
+      "Precisou de 2 iterações (re-execução)"
+    ],
+    "signal": "computed"
+  }
 }
