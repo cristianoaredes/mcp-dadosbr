@@ -199,7 +199,7 @@ describe("Workers REST API, OpenAPI, Worker Router & Cloudflare Adapter", () => 
       expect(errBody.error).toBe("Internal server error");
     });
 
-    it("handleSearchEndpoint validates query, returns 200 on provider hit, 400 on provider error, and 500 on malformed JSON", async () => {
+    it("handleSearchEndpoint validates query, returns 200 on provider hit, 400 on provider error, and 400 on malformed JSON", async () => {
       const missingResp = await handleSearchEndpoint(
         new Request("https://worker.example/search", {
           method: "POST",
@@ -240,7 +240,7 @@ describe("Workers REST API, OpenAPI, Worker Router & Cloudflare Adapter", () => 
       const okData = (await okResp.json()) as { content: Array<{ text: string }> };
       expect(okData.content[0].text).toContain("Empresa Teste S/A summary");
 
-      // Invalid JSON triggers 500
+      // Invalid JSON triggers 400
       const malformedResp = await handleSearchEndpoint(
         new Request("https://worker.example/search", {
           method: "POST",
@@ -248,10 +248,10 @@ describe("Workers REST API, OpenAPI, Worker Router & Cloudflare Adapter", () => 
         }),
         {}
       );
-      expect(malformedResp.status).toBe(500);
+      expect(malformedResp.status).toBe(400);
     });
 
-    it("handleIntelligenceEndpoint validates cnpj, handles 200 with mocked fetch, 400 on bad cnpj, and 500 on malformed JSON", async () => {
+    it("handleIntelligenceEndpoint validates cnpj, handles 200 with mocked fetch, 400 on bad cnpj, and 400 on malformed JSON", async () => {
       const missingResp = await handleIntelligenceEndpoint(
         new Request("https://worker.example/intelligence", {
           method: "POST",
@@ -312,7 +312,7 @@ describe("Workers REST API, OpenAPI, Worker Router & Cloudflare Adapter", () => 
         }),
         {}
       );
-      expect(malformedResp.status).toBe(500);
+      expect(malformedResp.status).toBe(400);
     });
 
     it("handleIntelligenceEndpoint forwards provider and max_results without injecting undefined keys", async () => {
@@ -369,7 +369,7 @@ describe("Workers REST API, OpenAPI, Worker Router & Cloudflare Adapter", () => 
       expect(parsed.provider_used).toBe("perplexity");
     });
 
-    it("handleThinkingEndpoint supports valid thoughts (200), schema failure (400), and invalid JSON (500)", async () => {
+    it("handleThinkingEndpoint supports valid thoughts (200), schema failure (400), and invalid JSON (400)", async () => {
       const okResp = await handleThinkingEndpoint(
         new Request("https://worker.example/thinking", {
           method: "POST",
@@ -402,7 +402,7 @@ describe("Workers REST API, OpenAPI, Worker Router & Cloudflare Adapter", () => 
         }),
         {}
       );
-      expect(badJsonResp.status).toBe(500);
+      expect(badJsonResp.status).toBe(400);
     });
   });
 

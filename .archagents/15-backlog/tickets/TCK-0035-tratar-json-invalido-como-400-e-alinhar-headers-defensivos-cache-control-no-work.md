@@ -5,8 +5,8 @@ title: "Tratar JSON invalido como 400 e alinhar headers defensivos/Cache-Control
 source: audit
 created_at: 2026-11-21T13:09:43Z
 created_by: ops
-updated_at: 2026-11-21T13:09:43Z
-status: raw
+updated_at: 2026-11-21T14:17:20Z
+status: verifying
 severity: low
 category: security
 effort: S
@@ -15,8 +15,10 @@ ceremony: full
 business_impact: ""
 linked_findings:
   - FND-0020
-linked_designs: []
-linked_runs: []
+linked_designs:
+  - DES-0033
+linked_runs:
+  - RUN-20261121-141008-tck-0035
 linked_verifications: []
 linked_docs:
   - .archagents/07-security-compliance.md
@@ -25,7 +27,19 @@ external_sync: []
 blocks: []
 blocked_by: []
 related: []
-acceptance: []
+acceptance:
+  - check: "npx vitest run test/unit/worker-security-headers.test.ts test/unit/worker-rest-cloudflare.test.ts && echo WORKER_SECURITY_HEADERS_OK"
+    expect: WORKER_SECURITY_HEADERS_OK
+  - check: "npm run test && echo FULL_UNIT_TESTS_OK"
+    expect: FULL_UNIT_TESTS_OK
+  - check: "npx tsc --noEmit && npx tsc -p tsconfig.worker.json --noEmit && echo TYPECHECK_OK"
+    expect: TYPECHECK_OK
+depth_decision:
+  workflow: inline
+  design: skip
+  verify: lightweight
+  source: routing-classifier
+  classified_at: 2026-11-21T14:09:30Z
 ---
 # TCK-0035 - Tratar JSON invalido como 400 e alinhar headers defensivos/Cache-Control no Worker REST
 
@@ -52,3 +66,7 @@ Antes do fix, `lib/workers/rest.ts:L59-L73,L84,L126-L137,L148,L190-L201,L212,L24
 ## Log de transicoes
 
 - 2026-11-21T13:09:43Z - **raw** - criado via scripts/ops/ticket/create.py.
+- 2026-11-21T14:09:30Z - **triaged** - triaged in wave 2 parallel remediation [depth_decision do routing-classifier: workflow inline, design skip, verify lightweight]
+- 2026-11-21T14:10:08Z - **designed** - DES-0033 created
+- 2026-11-21T14:10:15Z - **executing** - executing TCK-0035
+- 2026-11-21T14:17:20Z - **verifying** - implementation verified locally, ready for P10 verify

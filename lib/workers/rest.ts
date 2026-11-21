@@ -4,12 +4,80 @@
 
 import { corsHeaders, Env } from '../adapters/cloudflare.js';
 import { handleMCPRequest } from '../adapters/cloudflare.js';
+import { createLogger } from '../infrastructure/logger.js';
+import { maskSensitiveText } from '../shared/log-redaction.js';
 import { MCPRequest } from '../types/index.js';
 import {
   SearchRequestBody,
   IntelligenceRequestBody,
   ThinkingRequestBody
 } from './types.js';
+
+const restLogger = createLogger('worker-rest');
+
+function invalidJsonResponse(): { ok: false; response: Response } {
+  return {
+    ok: false,
+    response: new Response(
+      JSON.stringify({
+        error: 'Bad Request',
+        message: 'Invalid JSON payload',
+      }),
+      {
+        status: 400,
+        headers: {
+          'Content-Type': 'application/json',
+          ...corsHeaders,
+        },
+      }
+    ),
+  };
+}
+
+/**
+ * Parse a JSON object request body, returning a sanitized 400 response on malformed JSON.
+ */
+async function parseJsonBody<T>(
+  request: Request
+): Promise<{ ok: true; data: T } | { ok: false; response: Response }> {
+  let parsed: unknown;
+  try {
+    parsed = await request.json();
+  } catch (error: unknown) {
+    if (error instanceof SyntaxError || (error instanceof Error && error.name === 'SyntaxError')) {
+      return invalidJsonResponse();
+    }
+    throw error;
+  }
+
+  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return invalidJsonResponse();
+  }
+
+  return { ok: true, data: parsed as T };
+}
+
+/**
+ * Log a masked internal error and return a generic 500 response without leaking raw error details.
+ */
+function internalServerErrorResponse(endpoint: string, error: unknown): Response {
+  restLogger.error('rest.handler_error', {
+    endpoint,
+    error: maskSensitiveText(error instanceof Error ? error.message : String(error)),
+  });
+  return new Response(
+    JSON.stringify({
+      error: 'Internal server error',
+    }),
+    {
+      status: 500,
+      headers: {
+        'Content-Type': 'application/json',
+        ...corsHeaders,
+      },
+    }
+  );
+}
 
 /**
  * Handle /cnpj/{cnpj} and /cep/{cep} GET endpoints
@@ -61,18 +129,9 @@ export async function handleLookupEndpoint(
       },
     });
   } catch (error: unknown) {
-    return new Response(
-      JSON.stringify({
-        error: 'Internal server error',
-        message: error instanceof Error ? error.message : 'Unknown error'
-      }),
-      {
-        status: 500,
-        headers: {
-          'Content-Type': 'application/json',
-          ...corsHeaders,
-        },
-      }
+    return internalServerErrorResponse(
+      toolType === 'cnpj' || toolType === 'cep' ? `/${toolType}` : '/lookup',
+      error
     );
   }
 }
@@ -85,8 +144,12 @@ export async function handleSearchEndpoint(
   env: Env
 ): Promise<Response> {
   try {
-    const body = await request.json() as SearchRequestBody;
-    const { query, max_results = 5 } = body;
+    const parsedBody = await parseJsonBody<SearchRequestBody>(request);
+    if (!parsedBody.ok) {
+      return parsedBody.response;
+    }
+
+    const { query, max_results = 5 } = parsedBody.data;
 
     if (!query) {
       return new Response(
@@ -128,16 +191,7 @@ export async function handleSearchEndpoint(
       headers: { 'Content-Type': 'application/json', ...corsHeaders },
     });
   } catch (error: unknown) {
-    return new Response(
-      JSON.stringify({
-        error: 'Internal server error',
-        message: error instanceof Error ? error.message : 'Unknown error'
-      }),
-      {
-        status: 500,
-        headers: { 'Content-Type': 'application/json', ...corsHeaders },
-      }
-    );
+    return internalServerErrorResponse('/search', error);
   }
 }
 
@@ -149,7 +203,11 @@ export async function handleIntelligenceEndpoint(
   env: Env
 ): Promise<Response> {
   try {
-    const body = await request.json() as IntelligenceRequestBody;
+    const parsedBody = await parseJsonBody<IntelligenceRequestBody>(request);
+    if (!parsedBody.ok) {
+      return parsedBody.response;
+    }
+
     const {
       cnpj,
       categories,
@@ -157,7 +215,7 @@ export async function handleIntelligenceEndpoint(
       max_results_per_query,
       max_queries,
       max_results,
-    } = body;
+    } = parsedBody.data;
 
     if (!cnpj) {
       return new Response(
@@ -206,16 +264,7 @@ export async function handleIntelligenceEndpoint(
       headers: { 'Content-Type': 'application/json', ...corsHeaders },
     });
   } catch (error: unknown) {
-    return new Response(
-      JSON.stringify({
-        error: 'Internal server error',
-        message: error instanceof Error ? error.message : 'Unknown error'
-      }),
-      {
-        status: 500,
-        headers: { 'Content-Type': 'application/json', ...corsHeaders },
-      }
-    );
+    return internalServerErrorResponse('/intelligence', error);
   }
 }
 
@@ -227,7 +276,12 @@ export async function handleThinkingEndpoint(
   env: Env
 ): Promise<Response> {
   try {
-    const body = await request.json() as ThinkingRequestBody;
+    const parsedBody = await parseJsonBody<ThinkingRequestBody>(request);
+    if (!parsedBody.ok) {
+      return parsedBody.response;
+    }
+
+    const body = parsedBody.data;
 
     const mcpRequest: MCPRequest = {
       jsonrpc: '2.0',
@@ -259,15 +313,6 @@ export async function handleThinkingEndpoint(
       headers: { 'Content-Type': 'application/json', ...corsHeaders },
     });
   } catch (error: unknown) {
-    return new Response(
-      JSON.stringify({
-        error: 'Internal server error',
-        message: error instanceof Error ? error.message : 'Unknown error'
-      }),
-      {
-        status: 500,
-        headers: { 'Content-Type': 'application/json', ...corsHeaders },
-      }
-    );
+    return internalServerErrorResponse('/thinking', error);
   }
 }
