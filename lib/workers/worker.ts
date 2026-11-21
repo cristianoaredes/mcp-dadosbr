@@ -145,7 +145,16 @@ async function routeRequest(
       const pathMatch = url.pathname.match(/^\/(cnpj|cep)\/(.+)$/);
       if (pathMatch && request.method === 'GET') {
         const [, toolType, value] = pathMatch;
-        return await handleLookupEndpoint(toolType, value, env);
+        let decodedValue: string;
+        try {
+          decodedValue = decodeURIComponent(value);
+        } catch {
+          return new Response(
+            JSON.stringify({ error: 'Bad Request', message: 'Invalid URL encoding in path parameter' }),
+            { status: 400, headers: { 'Content-Type': 'application/json', ...corsHeaders } }
+          );
+        }
+        return await handleLookupEndpoint(toolType, decodedValue, env);
       }
 
       // Handle advanced REST endpoints
