@@ -174,10 +174,16 @@ interface DeepProfileArgs {
 
 // Import shared lookup service from core and sibling tool executors
 import { lookup } from "../core/lookup.js";
+import type { ToolExecutionContext } from "../core/registry.js";
 import { executeTransparencia } from "./government.js";
 import { executeDatajud, executeListaSuja } from "./legal.js";
 
-async function executeDeepProfile(args: DeepProfileArgs, apiConfig: ApiConfig, cache?: Cache): Promise<LookupResult> {
+async function executeDeepProfile(
+    args: DeepProfileArgs,
+    apiConfig: ApiConfig,
+    cache?: Cache,
+    context?: ToolExecutionContext,
+): Promise<LookupResult> {
     const { cnpj, include_news = true, include_legal = true, include_government = true, domain } = args;
     const cleanCnpj = cnpj.replace(/\D/g, "");
     const results: Record<string, unknown> = {};
@@ -200,7 +206,7 @@ async function executeDeepProfile(args: DeepProfileArgs, apiConfig: ApiConfig, c
     }
     tasks.push(executeListaSuja({ query: cleanCnpj }, cache).then(r => { results.lista_suja = r.ok ? r.data : null; }));
     if (include_news) {
-        tasks.push(executeSearch(cleanCnpj, 5, cache).then(r => { results.news_results = r.ok ? r.data : null; }));
+        tasks.push(executeSearch(cleanCnpj, 5, cache, context?.requestId).then(r => { results.news_results = r.ok ? r.data : null; }));
     }
     await Promise.allSettled(tasks);
 
@@ -231,7 +237,8 @@ This is the most powerful tool for company due diligence.`,
         required: ["cnpj"],
     },
     zodSchema: DeepProfileSchema,
-    execute: async (args, apiConfig, cache) => executeDeepProfile(args as DeepProfileArgs, apiConfig, cache),
+    execute: async (args, apiConfig, cache, context) =>
+        executeDeepProfile(args as DeepProfileArgs, apiConfig, cache, context),
 });
 
 export { executeWhois };
