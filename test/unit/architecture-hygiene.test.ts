@@ -127,7 +127,7 @@ describe("FND-0012 / TCK-0024: Architecture Hygiene, Contract Unification & Work
     expect((toolRes.data as { queries_executed: number }).queries_executed).toBe(1);
   });
 
-  it("synchronizes SERVER_VERSION, OpenAPI, HealthCheck, SSE events, and Worker / 23-tool catalogue with package.json", async () => {
+  it("synchronizes SERVER_VERSION, OpenAPI, HealthCheck, SSE events, and Worker / 29-tool catalogue with package.json", async () => {
     vi.useFakeTimers();
     const pkg = JSON.parse(readFileSync(resolve(ROOT, "package.json"), "utf8")) as {
       version: string;
@@ -159,7 +159,7 @@ describe("FND-0012 / TCK-0024: Architecture Hygiene, Contract Unification & Work
     const rootJson = (await rootResp.json()) as { version: string; tools: string[] };
     expect(rootJson.version).toBe(pkg.version);
     expect(rootJson.tools).toEqual(TOOL_DEFINITIONS.map((t) => t.name));
-    expect(rootJson.tools).toHaveLength(23);
+    expect(rootJson.tools).toHaveLength(29);
 
     // Check SSE initial events emit SERVER_VERSION
     const sseResp = await handleSSEEndpoint(

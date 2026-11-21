@@ -1,15 +1,16 @@
 # Integrações
 
-Base revisada: `79aa712` (`v0.5.0`; base inicial: `037dae4c`).
+Base revisada: `133dbd5` (`0.7.0`, `SPC-0001`; base inicial: `037dae4c`).
 
 - **CNPJ e CEP (configuráveis com allowlist SSRF):** padrão `https://api.opencnpj.org/` e `https://opencep.com/v1/`, com hosts adicionais permitidos em `lib/config/index.ts` (ReceitaWS, BrasilAPI, CNPJ.ws, Minha Receita, ViaCEP, AwesomeAPI).
-- **IBGE Localidades:** `https://servicodados.ibge.gov.br/api/v1/localidades` (sem chave). Em `TCK-0023` (`FND-0011`), `ibge_localidades` passou a cachear a lista bruta por URL (`ibge:${url}`), suportar filtros opcionais em memória (`id` e `nome` acento/case-insensitive) e paginação opcional (`page`/`limit`, retornando `{ items, pagination, filter? }` apenas quando `page`/`limit` são informados e mantendo array bruto legado + `structuredContent.source` para MCP Apps quando omitidos).
+- **IBGE Localidades & Indicadores:** `https://servicodados.ibge.gov.br/api/v1/localidades` (sem chave) para regiões/UFs/municípios (com filtro acento/case-insensitive e paginação opcional em `TCK-0023`); `https://servicodados.ibge.gov.br/api/v2/cnae` para hierarquia CNAE `v2` (`cnae_ncm_lookup`); e `https://servicodados.ibge.gov.br/api/v3/agregados` para População (`6579/9324`) e PIB (`5938/37`) por UF (`N3`) ou município (`N6`) em `ibge_indicadores`.
 - **PNCP (Publicações):** `https://pncp.gov.br/api/consulta/v1/contratacoes/publicacao` (sem chave), com HTTP 204 tratado como página vazia no modo filtrado (`options.noContent` em `lib/core/http-client.ts`) e cache apenas de respostas `ok: true` preservando `source`.
 - **Querido Diário (Open Knowledge Brasil):** `https://api.queridodiario.org.br/gazettes` (sem chave), com cache de sucessos preservando `source`.
-- **Banco Central (BCData/SGS):** `https://api.bcb.gov.br/dados/serie/bcdata.sgs` para séries 432, 433, 1, 21619 e 12 (sem chave), com cache de sucessos preservando `source`.
-- **FIPE (via BrasilAPI):** `https://brasilapi.com.br/api/fipe` (sem chave), com cache de sucessos em `fipe:preco:*` e `fipe:marcas:*`.
+- **Banco Central (BCData/SGS & Olinda OData):** `https://api.bcb.gov.br/dados/serie/bcdata.sgs` para séries 432, 433, 1, 21619 e 12 (`bacen_taxas`, sem chave); e `https://olinda.bcb.gov.br/olinda/servico/{PTAX,Expectativas}/versao/v1/odata` para cotações PTAX históricas e Expectativas Focus (`bcb_olinda`, sem chave).
+- **BrasilAPI (FIPE, NCM, SFN/Pix/Corretoras CVM, Feriados & DDD):** `https://brasilapi.com.br/api/{fipe,ncm/v1,banks/v1,pix/v1/participants,cvm/corretoras/v1,feriados/v1,ddd/v1}` (sem chave), com cache e paginação server-side nas listas extensas (`pix`, `corretoras`).
+- **TCU Certidões Consolidadas & MTE Lista Suja CSV:** `https://certidoes-apf.apps.tcu.gov.br/api/rest/publico/certidoes` (TCU Inidôneos, CNJ CNIA, CEIS, CNEP com timeout `10_000ms`, sem chave, integrada a `company_deep_profile`) e CSV oficial aberto do MTE `https://www.gov.br/trabalho-e-emprego/pt-br/assuntos/inspecao-do-trabalho/areas-de-atuacao/cadastro_de_empregadores.csv` (~76 KB, parse UTF-8/ISO-8859-1 em `lista_suja_lookup`).
 - **Portal da Transparência / CEIS / CNEP / CEPIM:** `https://api.portaldatransparencia.gov.br/api-de-dados` exige `TRANSPARENCIA_API_KEY` (com fallback para URLs manuais em `ceis_cnep_lookup`). A checagem de API key ocorre sempre antes da leitura do cache, as chaves de cache nunca incluem segredos e respostas com falhas parciais (`errors.length > 0`) ou fallbacks nunca são cacheadas.
-- **Reuso de `lookup()` e caching nas demais tools read-heavy (`TCK-0023`):** `company_deep_profile` (`lib/tools/company.ts`) reutiliza `lookup("cnpj", ...)` (`cache` + `deduplicate`) e propaga `cache` aos sub-lookups; `domain_whois`, `consumidor_reclamacoes`, `datajud_processos`, `oab_advogado`, `bnmp_mandados`, `lista_suja_lookup` e `cnes_saude` cacheiam apenas sucessos reais (`ok: true`, jamais fallbacks/CAPTCHAs/erros e com `DATAJUD_API_KEY` validada antes do cache).
+- **Reuso de `lookup()`, anti-bot e caching (`TCK-0023`, `SPC-0001`):** `company_deep_profile` (`lib/tools/company.ts`) reutiliza `lookup("cnpj", ...)` (`cache` + `deduplicate`) e aciona `executeTcuCertidoes` + sub-lookups com propagação de `cache`; `consumidor_reclamacoes` retorna fallback guiado sem chamadas `fetch` devido ao challenge anti-bot JS F5 do portal; `domain_whois`, `datajud_processos`, `oab_advogado`, `bnmp_mandados`, `lista_suja_lookup`, `tcu_certidoes`, `cnes_saude`, `cnae_ncm_lookup`, `sistema_financeiro_lookup`, `feriados_ddd_lookup`, `bcb_olinda` e `ibge_indicadores` cacheiam apenas sucessos reais (`ok: true`, jamais fallbacks/CAPTCHAs/erros/`[]`).
 
 ## Resiliência HTTP (`lib/core/http-client.ts`)
 
@@ -37,4 +38,9 @@ Disponibilidade, limites de taxa e cobertura efetiva de cada provedor ficam **a 
 - `lib/shared/utils/timeout.ts:L1-L138`
 - `lib/core/search-providers.ts:L1-L296`
 - `lib/core/intelligence.ts:L1-L523`
-- `lib/tools/legal.ts:L1-L504`
+- `lib/tools/legal.ts:L1-L563`
+- `lib/shared/mte-lista-suja.ts:L1-L301`
+- `lib/tools/tcu.ts:L1-L186`
+- `lib/tools/fiscal-banking.ts:L1-L915`
+- `lib/tools/olinda.ts:L1-L456`
+- `lib/tools/ibge-indicadores.ts:L1-L520`

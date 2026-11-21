@@ -50,8 +50,8 @@ describe("TCK-0042 / DES-0038: Fiscal, Banking, Calendar & DDD Tools", () => {
     vi.useRealTimers();
   });
 
-  describe("Isolation, Worker compatibility & idempotent registration", () => {
-    it("keeps zero node:* imports in schemas and tool module and preserves getToolCount() === 23 on import", () => {
+  describe("Wave-2 integrated registration, Worker compatibility & idempotency", () => {
+    it("keeps zero node:* imports in schemas and tool module and exposes 29 tools via barrel", () => {
       const schemasSrc = readFileSync(
         resolve(ROOT, "lib/shared/fiscal-banking-schemas.ts"),
         "utf8",
@@ -64,17 +64,17 @@ describe("TCK-0042 / DES-0038: Fiscal, Banking, Calendar & DDD Tools", () => {
       expect(schemasSrc).not.toMatch(/(?:from|import)\s+["']node:/);
       expect(schemasSrc).toMatch(/from ["']zod["']/);
       expect(toolsSrc).not.toMatch(/(?:from|import)\s+["']node:/);
-      expect(getToolCount()).toBe(23);
-      expect(hasTool("cnae_ncm_lookup")).toBe(false);
-      expect(hasTool("sistema_financeiro_lookup")).toBe(false);
-      expect(hasTool("feriados_ddd_lookup")).toBe(false);
+      expect(getToolCount()).toBe(29);
+      expect(hasTool("cnae_ncm_lookup")).toBe(true);
+      expect(hasTool("sistema_financeiro_lookup")).toBe(true);
+      expect(hasTool("feriados_ddd_lookup")).toBe(true);
     });
 
-    it("registers the 3 tools idempotently via registerFiscalBankingTools() with Zod schemas and zero api_key fields", async () => {
+    it("keeps registerFiscalBankingTools() idempotent with Zod schemas and zero api_key fields", async () => {
       const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 
       registerFiscalBankingTools();
-      expect(getToolCount()).toBe(26);
+      expect(getToolCount()).toBe(29);
       expect(hasTool("cnae_ncm_lookup")).toBe(true);
       expect(hasTool("sistema_financeiro_lookup")).toBe(true);
       expect(hasTool("feriados_ddd_lookup")).toBe(true);
@@ -82,9 +82,9 @@ describe("TCK-0042 / DES-0038: Fiscal, Banking, Calendar & DDD Tools", () => {
       expect(hasToolSchema("sistema_financeiro_lookup")).toBe(true);
       expect(hasToolSchema("feriados_ddd_lookup")).toBe(true);
 
-      // Second call must be a no-op (no overwrite warning, count unchanged)
+      // Subsequent calls must remain no-ops (no overwrite warning, count unchanged)
       registerFiscalBankingTools();
-      expect(getToolCount()).toBe(26);
+      expect(getToolCount()).toBe(29);
       expect(warnSpy).not.toHaveBeenCalled();
 
       for (const tool of [

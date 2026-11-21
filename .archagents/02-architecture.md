@@ -1,8 +1,8 @@
 # Arquitetura AS-IS
 
-Base revisada: `a7fd8e4` (`0.6.0`, branch `feature/audit-remediation-wave2` sobre `origin/main` `dae3ca0`; base inicial: `037dae4c`).
+Base revisada: `133dbd5` (`0.7.0`, branch `feature/SPC-0001-v0.7.0-transversal-sources` / `SPC-0001`; base inicial: `037dae4c`).
 
-O CLI conecta o servidor MCP por stdio ou HTTP/SSE (`lib/adapters/cli-http.ts`, com métricas de execução emitidas em `stderr` para manter `stdout` exclusivo de JSON-RPC no transporte stdio). Há um adapter separado no Cloudflare Worker. O servidor central consulta o registro unificado de 23 ferramentas por domínio (`lib/core/registry.ts`, `lib/core/tools.ts`) e expõe cinco recursos MCP Apps (`ui://dadosbr/*.html`) no runtime Node, enquanto a automação de produção/sandbox opcional vive isolada em `infra/runner/`.
+O CLI conecta o servidor MCP por stdio ou HTTP/SSE (`lib/adapters/cli-http.ts`, com métricas de execução emitidas em `stderr` para manter `stdout` exclusivo de JSON-RPC no transporte stdio). Há um adapter separado no Cloudflare Worker. O servidor central consulta o registro unificado de 29 ferramentas por domínio (`lib/core/registry.ts`, `lib/core/tools.ts`, barrel `lib/tools/index.ts`) e expõe cinco recursos MCP Apps (`ui://dadosbr/*.html`) no runtime Node, enquanto a automação de produção/sandbox opcional vive isolada em `infra/runner/`.
 
 ```mermaid
 flowchart LR
@@ -68,7 +68,7 @@ O servidor Node associa `cnpj_lookup` a `ui://dadosbr/ficha-cnpj.html`. A proje�
 ## Arquitetura em Camadas e Paridade Worker (`TCK-0024` / `FND-0012`)
 
 - **Separação acíclica `lib/core` <- `lib/tools` (`ADR-0001`)**: `lookup()`, `deduplicate()` e `getPendingRequestCount()` residem em `lib/core/lookup.ts` (`L1-L87`). `lib/core/intelligence.ts` e `lib/tools/company.ts` consomem `core/lookup.ts` diretamente, eliminando qualquer import de `lib/tools/` dentro de `lib/core/`. `lib/tools/core.ts` consome `...CNPJ_INTELLIGENCE_TOOL` e `executeIntelligence` estaticamente (sem schema duplicado) mantendo apenas re-exports de `lookup`/`deduplicate`/`getPendingRequestCount` em `L103` para retrocompatibilidade dos testes. `executeIntelligenceInternal` normaliza `options.cnpj` via `normalizeCnpj` antes de acessar/gravar chaves `cnpj:<baseUrl>:<digits>`.
-- **Paridade Node <-> Cloudflare Worker (`ADR-0002`)**: `SERVER.VERSION` em `lib/shared/utils/constants.ts:L37` e `SERVER_VERSION` em `lib/config/index.ts:L13` refletem `"0.6.0"` (mesma versão de `package.json`), propagada para `/`, `/health`, `/openapi.json` e eventos `/sse`. `GET /` em `lib/workers/worker.ts:L109` publica dinamicamente todas as 23 ferramentas de `TOOL_DEFINITIONS`. `syncWorkerEnv(env)` em `lib/adapters/cloudflare.ts:L40-L58` sincroniza a allowlist explícita (`TAVILY_API_KEY`, `PERPLEXITY_API_KEY`, `TRANSPARENCIA_API_KEY`, `DATAJUD_API_KEY`) para `process.env` no Worker sem vazar `MCP_API_KEY` ou bindings KV. Comportamento em runtime edge de produção no Cloudflare Workers fica *a confirmar*.
+- **Paridade Node <-> Cloudflare Worker (`ADR-0002`)**: `SERVER.VERSION` em `lib/shared/utils/constants.ts:L37` e `SERVER_VERSION` em `lib/config/index.ts:L13` refletem `"0.7.0"` (mesma versão de `package.json`), propagada para `/`, `/health`, `/openapi.json` e eventos `/sse`. `GET /` em `lib/workers/worker.ts:L120` publica dinamicamente todas as 29 ferramentas de `TOOL_DEFINITIONS`. `syncWorkerEnv(env)` em `lib/adapters/cloudflare.ts:L40-L58` sincroniza a allowlist explícita (`TAVILY_API_KEY`, `PERPLEXITY_API_KEY`, `TRANSPARENCIA_API_KEY`, `DATAJUD_API_KEY`) para `process.env` no Worker sem vazar `MCP_API_KEY` ou bindings KV. Comportamento em runtime edge de produção no Cloudflare Workers fica *a confirmar*.
 
 ## Consolidação Wave 2 (`TCK-0033`–`TCK-0039`)
 
