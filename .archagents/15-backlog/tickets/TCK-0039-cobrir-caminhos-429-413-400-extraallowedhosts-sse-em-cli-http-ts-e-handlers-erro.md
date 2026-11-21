@@ -5,8 +5,8 @@ title: "Cobrir caminhos 429/413/400/extraAllowedHosts/SSE em cli-http.ts e handl
 source: audit
 created_at: 2026-11-21T13:09:45Z
 created_by: ops
-updated_at: 2026-11-21T13:09:45Z
-status: raw
+updated_at: 2026-11-21T14:18:35Z
+status: verifying
 severity: medium
 category: test-coverage
 effort: S
@@ -15,8 +15,10 @@ ceremony: full
 business_impact: ""
 linked_findings:
   - FND-0024
-linked_designs: []
-linked_runs: []
+linked_designs:
+  - DES-0035
+linked_runs:
+  - RUN-20261121-140937-tck-0039
 linked_verifications: []
 linked_docs:
   - .archagents/02-architecture.md
@@ -25,7 +27,19 @@ external_sync: []
 blocks: []
 blocked_by: []
 related: []
-acceptance: []
+acceptance:
+  - check: "npx vitest run test/unit/cli-http-runtime-coverage.test.ts test/unit/mcp-server-handlers.test.ts && echo TCK_0039_UNIT_TESTS_OK"
+    expect: TCK_0039_UNIT_TESTS_OK
+  - check: "npm run test:coverage && echo COVERAGE_OK"
+    expect: COVERAGE_OK
+  - check: "npx tsc --noEmit && npx tsc -p tsconfig.worker.json --noEmit && echo TYPECHECK_OK"
+    expect: TYPECHECK_OK
+depth_decision:
+  workflow: inline
+  design: skip
+  verify: lightweight
+  source: routing-classifier
+  classified_at: 2026-11-21T14:09:09Z
 ---
 # TCK-0039 - Cobrir caminhos 429/413/400/extraAllowedHosts/SSE em cli-http.ts e handlers/erro em mcp-server.ts
 
@@ -50,3 +64,7 @@ Antes do fix, o relatório de cobertura V8 (`npm run test:coverage`) em `a3a2e12
 ## Log de transicoes
 
 - 2026-11-21T13:09:45Z - **raw** - criado via scripts/ops/ticket/create.py.
+- 2026-11-21T14:09:09Z - **triaged** - triaged in wave 2 parallel remediation [depth_decision do routing-classifier: workflow inline, design skip, verify lightweight]
+- 2026-11-21T14:09:37Z - **designed** - DES-0035 created
+- 2026-11-21T14:09:44Z - **executing** - executing TCK-0039
+- 2026-11-21T14:18:35Z - **verifying** - TCK-0039 tests and coverage verified in live run RUN-20261121-140937-tck-0039
