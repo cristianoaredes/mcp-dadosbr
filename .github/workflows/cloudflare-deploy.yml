@@ -92,6 +92,8 @@ jobs:
 
       - name: Test deployment
         if: success()
+        env:
+          MCP_API_KEY: ${{ secrets.MCP_API_KEY }}
         run: |
           WORKER_URL="${{ steps.get_url.outputs.worker_url }}"
 
@@ -112,20 +114,44 @@ jobs:
             sleep 5
           done
 
+          # Test OpenAPI endpoint (public)
+          echo "🧪 Testing OpenAPI endpoint..."
+          curl -sf "$WORKER_URL/openapi.json" | grep -q '"openapi"'
+          echo "✅ OpenAPI endpoint test passed"
+
           # Test MCP endpoint
           echo "🧪 Testing MCP endpoint..."
-          RESPONSE=$(curl -sf -X POST "$WORKER_URL/mcp" \
-            -H "Content-Type: application/json" \
-            -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}')
-
-          if echo "$RESPONSE" | grep -q "tools"; then
-            echo "✅ MCP endpoint test passed"
-            echo "📦 Available tools:"
-            echo "$RESPONSE" | jq -r '.result.tools[].name' 2>/dev/null || echo "$RESPONSE"
+          if [ -n "${MCP_API_KEY:-}" ]; then
+            RESPONSE=$(curl -sf -X POST "$WORKER_URL/mcp" \
+              -H "Content-Type: application/json" \
+              -H "Authorization: Bearer $MCP_API_KEY" \
+              -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}')
+            if echo "$RESPONSE" | grep -q "tools"; then
+              echo "✅ MCP endpoint test passed"
+              echo "📦 Available tools:"
+              echo "$RESPONSE" | jq -r '.result.tools[].name' 2>/dev/null || echo "$RESPONSE"
+            else
+              echo "❌ MCP endpoint test failed"
+              echo "Response: $RESPONSE"
+              exit 1
+            fi
           else
-            echo "❌ MCP endpoint test failed"
-            echo "Response: $RESPONSE"
-            exit 1
+            RAW=$(curl -s -w "\n%{http_code}" -X POST "$WORKER_URL/mcp" \
+              -H "Content-Type: application/json" \
+              -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}')
+            HTTP_STATUS="${RAW##*$'\n'}"
+            RESPONSE="${RAW%$'\n'*}"
+            if [ "$HTTP_STATUS" = "401" ]; then
+              echo "✅ MCP endpoint enforces authentication (401 without MCP_API_KEY secret)"
+            elif [ "$HTTP_STATUS" = "200" ] && echo "$RESPONSE" | grep -q "tools"; then
+              echo "✅ MCP endpoint test passed (demo mode without MCP_API_KEY)"
+              echo "📦 Available tools:"
+              echo "$RESPONSE" | jq -r '.result.tools[].name' 2>/dev/null || echo "$RESPONSE"
+            else
+              echo "❌ MCP endpoint test failed (HTTP $HTTP_STATUS)"
+              echo "Response: $RESPONSE"
+              exit 1
+            fi
           fi
 
           echo "✅ All deployment tests passed"

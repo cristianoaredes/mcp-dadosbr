@@ -10,6 +10,8 @@ import {
   type CliHttpOptions,
   isAllowedCliHost,
   isAllowedCliOrigin,
+  isLoopbackHost,
+  isValidApiKey,
   isValidSessionId,
   normalizeHostHeader,
 } from "../../lib/adapters/cli-http.js";
@@ -276,5 +278,220 @@ describe("TCK-0015 / FND-0003: CLI HTTP/SSE hardening & Cloudflare deploy workfl
     const workflow = readFileSync(workflowPath, "utf8");
     expect(workflow).toMatch(/^permissions:\s*\n\s+contents:\s*read\b/m);
     expect(workflow).toMatch(/uses:\s*actions\/checkout@v4\s*\n\s+with:\s*\n\s+persist-credentials:\s*false/);
+  });
+
+  describe("TCK-0034 / FND-0019: CLI HTTP/SSE MCP_API_KEY authentication & non-loopback fail-closed", () => {
+    it("isLoopbackHost accepts only loopback addresses and rejects non-loopback hosts", () => {
+      expect(isLoopbackHost("127.0.0.1")).toBe(true);
+      expect(isLoopbackHost("localhost")).toBe(true);
+      expect(isLoopbackHost("  LOCALHOST  ")).toBe(true);
+      expect(isLoopbackHost("::1")).toBe(true);
+      expect(isLoopbackHost("[::1]")).toBe(true);
+
+      expect(isLoopbackHost("0.0.0.0")).toBe(false);
+      expect(isLoopbackHost("::")).toBe(false);
+      expect(isLoopbackHost("10.0.0.1")).toBe(false);
+      expect(isLoopbackHost("example.com")).toBe(false);
+      expect(isLoopbackHost("")).toBe(false);
+      expect(isLoopbackHost(undefined as unknown as string)).toBe(false);
+    });
+
+    it("isValidApiKey matches identical keys and rejects mismatches, different lengths, and empty keys", () => {
+      expect(isValidApiKey("secret-key-123", "secret-key-123")).toBe(true);
+      expect(isValidApiKey("secret-key-123", "secret-key-124")).toBe(false);
+      expect(isValidApiKey("short", "much-longer-secret-key")).toBe(false);
+      expect(isValidApiKey("much-longer-secret-key", "short")).toBe(false);
+      expect(isValidApiKey("", "secret-key-123")).toBe(false);
+      expect(isValidApiKey("secret-key-123", "")).toBe(false);
+      expect(isValidApiKey("", "")).toBe(false);
+    });
+
+    it("fails closed when createCliHttpApp is configured on a non-loopback host without apiKey", () => {
+      const apiConfig = resolveApiConfig();
+      const cache = new MemoryCache(10, 60_000);
+
+      for (const nonLoopback of ["0.0.0.0", "::", "10.0.0.5", ""]) {
+        expect(() =>
+          createCliHttpApp({
+            apiConfig,
+            cache,
+            host: nonLoopback,
+          }),
+        ).toThrow(/Refusing to start HTTP\/SSE server on non-loopback host/);
+
+        expect(() =>
+          createCliHttpApp({
+            apiConfig,
+            cache,
+            host: nonLoopback,
+            apiKey: "   ",
+          }),
+        ).toThrow(/Refusing to start HTTP\/SSE server on non-loopback host/);
+      }
+    });
+
+    it("enforces Bearer / X-API-Key auth on non-loopback host, keeps CORS preflight open, and never logs raw secrets", async () => {
+      const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      const { port } = await startTestServer({
+        host: "0.0.0.0",
+        apiKey: "  super-secret-cli-key  ",
+      });
+
+      // CORS preflight OPTIONS must succeed (204) and advertise X-API-Key in Access-Control-Allow-Headers
+      const preflight = await sendRawHttpRequest(port, {
+        method: "OPTIONS",
+        path: "/mcp",
+        headers: { Origin: "http://localhost:6274" },
+      });
+      expect(preflight.status).toBe(204);
+      expect(preflight.headers["access-control-allow-headers"]).toBe(
+        "Content-Type, Authorization, X-API-Key",
+      );
+
+      // Missing credentials -> 401 + WWW-Authenticate: Bearer
+      const missingRes = await sendRawHttpRequest(port, {
+        method: "POST",
+        path: "/messages?sessionId=missing",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+      });
+      expect(missingRes.status).toBe(401);
+      expect(missingRes.headers["www-authenticate"]).toBe("Bearer");
+      expect(JSON.parse(missingRes.body)).toEqual({
+        error: "Unauthorized",
+        message: "Valid API key required",
+      });
+
+      // Empty Bearer / non-Bearer / conflicting headers -> 401
+      const emptyBearerRes = await sendRawHttpRequest(port, {
+        method: "POST",
+        path: "/messages?sessionId=missing",
+        headers: { Authorization: "Bearer   " },
+      });
+      expect(emptyBearerRes.status).toBe(401);
+
+      const basicAuthRes = await sendRawHttpRequest(port, {
+        method: "POST",
+        path: "/messages?sessionId=missing",
+        headers: { Authorization: "Basic dXNlcjpwYXNz" },
+      });
+      expect(basicAuthRes.status).toBe(401);
+
+      const wrongBearerWithValidApiKeyRes = await sendRawHttpRequest(port, {
+        method: "POST",
+        path: "/messages?sessionId=missing",
+        headers: {
+          Authorization: "Bearer wrong-secret-attempt-999",
+          "X-API-Key": "super-secret-cli-key",
+        },
+      });
+      expect(wrongBearerWithValidApiKeyRes.status).toBe(401);
+
+      // Wrong Bearer token -> 401
+      const wrongToken = "wrong-secret-attempt-999";
+      const wrongBearerRes = await sendRawHttpRequest(port, {
+        method: "GET",
+        path: "/mcp",
+        headers: { Authorization: `Bearer ${wrongToken}` },
+      });
+      expect(wrongBearerRes.status).toBe(401);
+      expect(wrongBearerRes.headers["www-authenticate"]).toBe("Bearer");
+
+      // Wrong X-API-Key -> 401
+      const wrongApiKeyRes = await sendRawHttpRequest(port, {
+        method: "POST",
+        path: "/messages?sessionId=missing",
+        headers: { "X-API-Key": wrongToken },
+      });
+      expect(wrongApiKeyRes.status).toBe(401);
+      expect(wrongApiKeyRes.headers["www-authenticate"]).toBe("Bearer");
+
+      // Duplicate X-API-Key headers -> 401
+      const duplicateHeaderRes = await sendRawHttpRequest(port, {
+        method: "POST",
+        path: "/messages?sessionId=missing",
+        headers: {
+          "X-API-Key": ["super-secret-cli-key", "super-secret-cli-key"] as unknown as string,
+        },
+      });
+      expect(duplicateHeaderRes.status).toBe(401);
+
+      // Verify auth.unauthorized was logged without raw token, expected secret, or raw IP
+      const loggedLines = errSpy.mock.calls.map((args) => args.join(" ")).join("\n");
+      expect(loggedLines).toContain("auth.unauthorized");
+      expect(loggedLines).not.toContain("super-secret-cli-key");
+      expect(loggedLines).not.toContain(wrongToken);
+      expect(loggedLines).not.toContain("127.0.0.1");
+
+      // Valid Authorization: Bearer (case-insensitive scheme) succeeds past auth middleware
+      const validBearerPost = await sendRawHttpRequest(port, {
+        method: "POST",
+        path: "/messages?sessionId=nonexistent",
+        headers: {
+          Authorization: "bearer super-secret-cli-key",
+          "Content-Type": "application/json",
+        },
+        body: "{}",
+      });
+      expect(validBearerPost.status).toBe(404);
+
+      // Valid X-API-Key succeeds past auth middleware (verify on GET /mcp hitting maxSessions 503)
+      const { port: cappedPort, ctx: cappedCtx } = await startTestServer({
+        host: "0.0.0.0",
+        apiKey: "super-secret-cli-key",
+        maxSessions: 1,
+      });
+      cappedCtx.transports.set("full", {
+        transport: { close: vi.fn() } as never,
+        createdAt: new Date(),
+        lastActivity: new Date(),
+      });
+
+      const validHeaderGet = await sendRawHttpRequest(cappedPort, {
+        method: "GET",
+        path: "/mcp",
+        headers: { "X-API-Key": "super-secret-cli-key" },
+      });
+      expect(validHeaderGet.status).toBe(503);
+
+      const validHeaderPost = await sendRawHttpRequest(port, {
+        method: "POST",
+        path: "/messages?sessionId=nonexistent",
+        headers: {
+          "X-API-Key": "super-secret-cli-key",
+          "Content-Type": "application/json",
+        },
+        body: "{}",
+      });
+      expect(validHeaderPost.status).toBe(404);
+    });
+
+    it("enforces auth on loopback when apiKey is set and preserves open local access when omitted", async () => {
+      const protectedLoopback = await startTestServer({
+        host: "127.0.0.1",
+        apiKey: "loopback-secret",
+      });
+
+      const unauthLoopback = await sendRawHttpRequest(protectedLoopback.port, {
+        method: "POST",
+        path: "/messages?sessionId=nonexistent",
+      });
+      expect(unauthLoopback.status).toBe(401);
+      expect(unauthLoopback.headers["www-authenticate"]).toBe("Bearer");
+
+      const authLoopback = await sendRawHttpRequest(protectedLoopback.port, {
+        method: "POST",
+        path: "/messages?sessionId=nonexistent",
+        headers: { Authorization: "Bearer loopback-secret" },
+      });
+      expect(authLoopback.status).toBe(404);
+
+      const openLoopback = await startTestServer({ host: "127.0.0.1" });
+      const openRes = await sendRawHttpRequest(openLoopback.port, {
+        method: "POST",
+        path: "/messages?sessionId=nonexistent",
+      });
+      expect(openRes.status).toBe(404);
+    });
   });
 });

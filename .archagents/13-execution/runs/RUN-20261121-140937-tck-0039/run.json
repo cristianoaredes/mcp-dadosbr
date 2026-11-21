@@ -1,0 +1,35 @@
+{
+  "id": "RUN-20261121-140937-tck-0039",
+  "design": "DES-0035",
+  "ticket": "TCK-0039",
+  "started_at": "2026-11-21T14:09:37Z",
+  "started_by": "ops",
+  "environment": "dev",
+  "mode": "live",
+  "status": "completed",
+  "current_step": 4,
+  "total_steps": 4,
+  "ended_at": "2026-11-21T14:18:10Z",
+  "result": "TCK-0039 completed: cli-http 99.66% stmts/100% funcs and mcp-server 100% stmts/100% funcs, 36 files / 491 tests PASS",
+  "loop_iterations": 0,
+  "attempt_count": 0,
+  "lessons_consulted": [
+    "Precisou de 2 iterações (re-execução)"
+  ],
+  "loop_cost_usd": null,
+  "cost_source": "unknown",
+  "loop_strategy": "default",
+  "context_peak": 0,
+  "final_judge_delta": 29,
+  "lesson_consult_attempted": true,
+  "warmup": false,
+  "final_judge_delta_source": "judge",
+  "lesson_utility": {
+    "utility": 0.58,
+    "n_lessons": 1,
+    "lessons_consulted": [
+      "Precisou de 2 iterações (re-execução)"
+    ],
+    "signal": "computed"
+  }
+}

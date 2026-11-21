@@ -8,6 +8,10 @@ import { CACHE } from "../shared/utils/constants.js";
 import { createLogger } from "../infrastructure/logger.js";
 import { RequestContext } from "../infrastructure/tracing.js";
 import { maskSensitiveText } from "../shared/log-redaction.js";
+import {
+  resolveMaxToolOutputChars,
+  serializeBoundedToolOutput,
+} from "../shared/agentic-guard.js";
 
 const cloudflareLogger = createLogger("cloudflare");
 const DEFAULT_HEALTH_KV_TIMEOUT_MS = 1000;
@@ -36,6 +40,7 @@ export interface Env {
   MCP_ALLOWED_ORIGINS?: string;
   MCP_DISABLE_RATE_LIMIT?: string;
   MCP_TRUST_X_FORWARDED_FOR?: string;
+  MCP_MAX_TOOL_OUTPUT_CHARS?: string;
   MCP_KV?: KVNamespace;
   TAVILY_API_KEY?: string; // Tavily search API key (secret)
   PERPLEXITY_API_KEY?: string; // Perplexity search API key (secret)
@@ -69,6 +74,9 @@ const BASE_CORS_HEADERS: Record<string, string> = {
   "Access-Control-Allow-Headers": "Content-Type, Accept, Authorization, X-API-Key",
   "Access-Control-Max-Age": "86400",
   "X-Content-Type-Options": "nosniff",
+  "X-Frame-Options": "DENY",
+  "Referrer-Policy": "no-referrer",
+  "Cache-Control": "no-store",
 };
 
 // Base CORS headers without wildcard origin
@@ -288,6 +296,9 @@ export async function handleMCPRequest(
           });
 
           if (result.ok) {
+            const maxOutputChars = env?.MCP_MAX_TOOL_OUTPUT_CHARS
+              ? resolveMaxToolOutputChars(env.MCP_MAX_TOOL_OUTPUT_CHARS)
+              : undefined;
             return {
               jsonrpc: "2.0",
               id: request.id,
@@ -295,7 +306,7 @@ export async function handleMCPRequest(
                 content: [
                   {
                     type: "text",
-                    text: JSON.stringify(result.data, null, 2),
+                    text: serializeBoundedToolOutput(result.data, maxOutputChars),
                   },
                 ],
               },

@@ -237,6 +237,8 @@ describe("TCK-0017: Session Isolation, Log Redaction & MCP Rate Limiting", () =>
       const res = await executeSearch("JOAO SILVA 123.456.789-00", 5, cache);
       expect(res.ok).toBe(true);
 
+      const entries = errSpy.mock.calls.map((c) => JSON.parse(String(c[0])) as Record<string, unknown>);
+      expect(entries.some((e) => e.module === "search" && e.level === "info")).toBe(true);
       const combinedLogs = errSpy.mock.calls.map((c) => String(c[0])).join("\n");
       expect(combinedLogs).toContain("query(len=25)");
       expect(combinedLogs).not.toContain("JOAO SILVA");
@@ -245,6 +247,7 @@ describe("TCK-0017: Session Isolation, Log Redaction & MCP Rate Limiting", () =>
 
     it("masks CNPJ, company name, and dorks in executeIntelligence stderr logs", async () => {
       process.env.TAVILY_API_KEY = "test-api-key";
+      process.env.LOG_LEVEL = "debug";
       const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
       const apiConfig = resolveApiConfig();
 
@@ -264,6 +267,9 @@ describe("TCK-0017: Session Isolation, Log Redaction & MCP Rate Limiting", () =>
       );
       expect(res.ok).toBe(true);
 
+      const entries = errSpy.mock.calls.map((c) => JSON.parse(String(c[0])) as Record<string, unknown>);
+      expect(entries.some((e) => e.module === "intelligence" && e.level === "info")).toBe(true);
+      expect(entries.some((e) => e.module === "intelligence" && e.level === "debug")).toBe(true);
       const combinedLogs = errSpy.mock.calls.map((c) => String(c[0])).join("\n");
       expect(combinedLogs).toContain("***0181");
       expect(combinedLogs).toContain("query(len=");

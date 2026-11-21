@@ -95,6 +95,11 @@ async function routeRequest(
 
     case '/': {
       // Root endpoint with basic info
+      const rawDpoContact = (env as { MCP_DPO_CONTACT?: unknown } | undefined)?.MCP_DPO_CONTACT;
+      const dpoContact =
+        typeof rawDpoContact === 'string' && rawDpoContact.trim().length > 0
+          ? rawDpoContact.trim()
+          : 'See PRIVACY.md (LGPD Art. 41)';
       const info = {
         service: 'MCP DadosBR',
         description:
@@ -114,6 +119,10 @@ async function routeRequest(
         },
         tools: TOOL_DEFINITIONS.map((tool) => tool.name),
         documentation: 'https://github.com/cristianoaredes/mcp-dadosbr',
+        privacy: {
+          policy: 'https://github.com/cristianoaredes/mcp-dadosbr/blob/main/PRIVACY.md',
+          dpo_contact: dpoContact,
+        },
         cloudflare_docs: {
           agents: 'https://developers.cloudflare.com/agents/',
           sse: 'https://developers.cloudflare.com/agents/api-reference/http-sse/',
@@ -136,20 +145,29 @@ async function routeRequest(
       const pathMatch = url.pathname.match(/^\/(cnpj|cep)\/(.+)$/);
       if (pathMatch && request.method === 'GET') {
         const [, toolType, value] = pathMatch;
-        return await handleLookupEndpoint(toolType, value, env);
+        let decodedValue: string;
+        try {
+          decodedValue = decodeURIComponent(value);
+        } catch {
+          return new Response(
+            JSON.stringify({ error: 'Bad Request', message: 'Invalid URL encoding in path parameter' }),
+            { status: 400, headers: { 'Content-Type': 'application/json', ...corsHeaders } }
+          );
+        }
+        return await handleLookupEndpoint(toolType, decodedValue, env, requestContext);
       }
 
       // Handle advanced REST endpoints
       if (url.pathname === '/search' && request.method === 'POST') {
-        return await handleSearchEndpoint(request, env);
+        return await handleSearchEndpoint(request, env, requestContext);
       }
 
       if (url.pathname === '/intelligence' && request.method === 'POST') {
-        return await handleIntelligenceEndpoint(request, env);
+        return await handleIntelligenceEndpoint(request, env, requestContext);
       }
 
       if (url.pathname === '/thinking' && request.method === 'POST') {
-        return await handleThinkingEndpoint(request, env);
+        return await handleThinkingEndpoint(request, env, requestContext);
       }
 
       return new Response('Not found', {
@@ -192,7 +210,7 @@ export default {
     }
 
     // Apply rate limiting
-    const rateLimitResult = await checkRateLimit(request, env);
+    const rateLimitResult = await checkRateLimit(request, env, requestContext);
     if (!rateLimitResult.allowed) {
       return withRequestId(
         withCorsHeaders(rateLimitResult.error!, request, env, { isPublic }),

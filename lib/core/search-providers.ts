@@ -11,11 +11,13 @@ import {
   isAbortOrTimeoutError,
   raceWithTimeoutAndSignal,
 } from "../shared/utils/timeout.js";
+import { sanitizeUntrustedText } from "../shared/agentic-guard.js";
 
 export interface SearchResult {
   title: string;
   url: string;
   snippet: string;
+  untrusted_source?: boolean;
 }
 
 export interface SearchOptions {
@@ -96,9 +98,10 @@ export class TavilyProvider implements SearchProvider {
       const mapped = response.results.map((r: unknown) => {
         const result = r as { title?: string; url?: string; content?: string };
         return {
-          title: result.title || "",
+          title: sanitizeUntrustedText(result.title || "", 300),
           url: result.url || "",
-          snippet: result.content || "",
+          snippet: sanitizeUntrustedText(result.content || "", 2000),
+          untrusted_source: true,
         };
       });
 
@@ -216,9 +219,10 @@ export class PerplexityProvider implements SearchProvider {
 
       return Result.ok([
         {
-          title: "Perplexity Output",
+          title: sanitizeUntrustedText("Perplexity Output", 300),
           url: url,
-          snippet: content
+          snippet: sanitizeUntrustedText(content, 2000),
+          untrusted_source: true,
         }
       ]);
     } catch (error: unknown) {

@@ -1,0 +1,1050 @@
+commit 0ab6b2cb810801d06d74465e65a4b39460e4ea15
+Author: Cristiano <cristiano@neositten.com>
+Date:   Sat Nov 21 11:19:15 2026 -0300
+
+    test(coverage): cover cli-http runtime/SSE/shutdown and mcp-server handlers (TCK-0039)
+
+diff --git a/test/unit/cli-http-runtime-coverage.test.ts b/test/unit/cli-http-runtime-coverage.test.ts
+new file mode 100644
+index 0000000..79a2ba7
+--- /dev/null
++++ b/test/unit/cli-http-runtime-coverage.test.ts
+@@ -0,0 +1,648 @@
++import http from "node:http";
++import type net from "node:net";
++import { afterEach, describe, expect, it, vi } from "vitest";
++import { Client } from "@modelcontextprotocol/sdk/client/index.js";
++import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
++import { Server } from "@modelcontextprotocol/sdk/server/index.js";
++import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
++import { resolveApiConfig } from "../../lib/config/index.js";
++import { MemoryCache } from "../../lib/core/cache.js";
++import {
++  createCliHttpApp,
++  createGracefulShutdown,
++  isAllowedCliHost,
++  isAllowedCliOrigin,
++  normalizeHostHeader,
++  parseCommaSeparatedList,
++  type CliHttpContext,
++  type CliHttpOptions,
++} from "../../lib/adapters/cli-http.js";
++
++interface HttpTestResponse {
++  status: number;
++  headers: http.IncomingHttpHeaders;
++  body: string;
++}
++
++function sendRawHttpRequest(
++  port: number,
++  options: {
++    method?: string;
++    path?: string;
++    headers?: Record<string, string>;
++    body?: string | Buffer;
++  } = {},
++): Promise<HttpTestResponse> {
++  return new Promise((resolvePromise, reject) => {
++    const req = http.request(
++      {
++        host: "127.0.0.1",
++        port,
++        method: options.method ?? "GET",
++        path: options.path ?? "/messages",
++        headers: {
++          Host: `127.0.0.1:${port}`,
++          ...(options.headers ?? {}),
++        },
++      },
++      (res) => {
++        const chunks: Buffer[] = [];
++        res.on("data", (chunk: Buffer) => chunks.push(chunk));
++        res.on("end", () => {
++          resolvePromise({
++            status: res.statusCode ?? 0,
++            headers: res.headers,
++            body: Buffer.concat(chunks).toString("utf8"),
++          });
++        });
++      },
++    );
++    req.on("error", reject);
++    if (options.body !== undefined) {
++      req.write(options.body);
++    }
++    req.end();
++  });
++}
++
++describe("TCK-0039 / FND-0024: CLI HTTP/SSE runtime, error paths & graceful shutdown", () => {
++  const originalEnv = { ...process.env };
++  const activeServers: Array<{ server: http.Server; ctx: CliHttpContext }> = [];
++
++  async function startTestServer(overrides: Partial<CliHttpOptions> = {}) {
++    const apiConfig = resolveApiConfig();
++    const cache = new MemoryCache(50, 60_000);
++    const ctx = createCliHttpApp({
++      apiConfig,
++      cache,
++      host: "127.0.0.1",
++      ...overrides,
++    });
++    const server = http.createServer(ctx.app);
++    await new Promise<void>((resolvePromise) => {
++      server.listen(0, "127.0.0.1", () => resolvePromise());
++    });
++    const addr = server.address();
++    if (!addr || typeof addr === "string") {
++      throw new Error("Unexpected server address");
++    }
++    activeServers.push({ server, ctx });
++    return { port: addr.port, ctx, server, cache };
++  }
++
++  afterEach(async () => {
++    while (activeServers.length > 0) {
++      const entry = activeServers.pop()!;
++      entry.ctx.closeAll();
++      entry.server.closeIdleConnections?.();
++      await new Promise<void>((resolvePromise) => {
++        entry.server.close(() => resolvePromise());
++      });
++    }
++    vi.restoreAllMocks();
++    vi.useRealTimers();
++    process.env = { ...originalEnv };
++  });
++
++  describe("Host/Origin parsing and extraAllowedHosts allowlist", () => {
++    it("parses comma-separated lists and trims/filters blank entries", () => {
++      expect(parseCommaSeparatedList(undefined)).toEqual([]);
++      expect(parseCommaSeparatedList("")).toEqual([]);
++      expect(parseCommaSeparatedList("  ,  ")).toEqual([]);
++      expect(
++        parseCommaSeparatedList("  app.internal , , api.internal:8443 , "),
++      ).toEqual(["app.internal", "api.internal:8443"]);
++    });
++
++    it("rejects malformed Host and Origin edge cases cleanly", () => {
++      expect(normalizeHostHeader("[not-ipv6]")).toBeNull();
++      expect(normalizeHostHeader("[::1]:0")).toBeNull();
++      expect(normalizeHostHeader("[::1]:65536")).toBeNull();
++      expect(normalizeHostHeader("::1")).toBeNull();
++      expect(normalizeHostHeader("example.com:abc")).toBeNull();
++      expect(normalizeHostHeader(":8080")).toBeNull();
++
++      expect(isAllowedCliOrigin(42 as unknown as string)).toEqual({ allowed: false });
++      expect(isAllowedCliOrigin("http://[invalid")).toEqual({ allowed: false });
++      expect(isAllowedCliOrigin("ftp://localhost:6274")).toEqual({ allowed: false });
++      expect(isAllowedCliOrigin("http://localhost:6274/path")).toEqual({ allowed: false });
++      expect(isAllowedCliOrigin("http://localhost:6274/")).toEqual({ allowed: false });
++      expect(isAllowedCliOrigin("http://localhost:6274?a=1")).toEqual({ allowed: false });
++      expect(isAllowedCliOrigin("http://localhost:6274#frag")).toEqual({ allowed: false });
++      expect(isAllowedCliOrigin(["http://u", "p@localhost:6274"].join(":"))).toEqual({
++        allowed: false,
++      });
++    });
++
++    it("allows explicit bindHost and extraAllowedHosts while rejecting wildcards and spoofed hosts", async () => {
++      expect(isAllowedCliHost("10.20.30.40:3000", "10.20.30.40")).toBe(true);
++      expect(isAllowedCliHost("0.0.0.0", "0.0.0.0")).toBe(false);
++      expect(
++        isAllowedCliHost("api.internal:8443", "127.0.0.1", [
++          "*",
++          "0.0.0.0",
++          "::",
++          "bad host/",
++          "api.internal",
++        ]),
++      ).toBe(true);
++      expect(
++        isAllowedCliHost("spoofed.internal", "127.0.0.1", ["api.internal"]),
++      ).toBe(false);
++
++      const { port } = await startTestServer({
++        allowedHosts: ["custom.local", "*", "0.0.0.0", "::"],
++      });
++
++      const allowedWithoutPort = await sendRawHttpRequest(port, {
++        method: "POST",
++        path: "/messages?sessionId=missing",
++        headers: { Host: "custom.local" },
++      });
++      expect(allowedWithoutPort.status).toBe(404);
++
++      const allowedWithPort = await sendRawHttpRequest(port, {
++        method: "POST",
++        path: "/messages?sessionId=missing",
++        headers: { Host: `custom.local:${port}` },
++      });
++      expect(allowedWithPort.status).toBe(404);
++
++      for (const rejectedHost of ["spoofed.local", "0.0.0.0", "custom.local.evil.com"]) {
++        const res = await sendRawHttpRequest(port, {
++          method: "POST",
++          path: "/messages?sessionId=missing",
++          headers: { Host: rejectedHost },
++        });
++        expect(res.status).toBe(403);
++        expect(JSON.parse(res.body)).toEqual({
++          error: "Forbidden",
++          message: "Invalid or disallowed Host header",
++        });
++      }
++    });
++
++    it("rejects array Origin headers with 403 Invalid Origin header", async () => {
++      const ctx = createCliHttpApp({
++        apiConfig: resolveApiConfig(),
++        cache: new MemoryCache(10, 60_000),
++        host: "127.0.0.1",
++      });
++      try {
++        const fakeReq = Object.assign(Object.create(http.IncomingMessage.prototype), {
++          method: "GET",
++          url: "/mcp",
++          headers: {
++            host: "127.0.0.1:3000",
++            origin: ["http://localhost:6274", "https://evil.example"],
++          },
++          socket: { remoteAddress: "127.0.0.1" } as net.Socket,
++        }) as http.IncomingMessage;
++
++        const chunks: Buffer[] = [];
++        let statusCode = 0;
++        const headers = new Map<string, string | string[]>();
++        const fakeRes = {
++          locals: {},
++          headersSent: false,
++          setHeader(name: string, value: string | string[]) {
++            headers.set(name.toLowerCase(), value);
++          },
++          getHeader(name: string) {
++            return headers.get(name.toLowerCase());
++          },
++          status(code: number) {
++            statusCode = code;
++            return this;
++          },
++          json(payload: unknown) {
++            this.headersSent = true;
++            chunks.push(Buffer.from(JSON.stringify(payload), "utf8"));
++            return this;
++          },
++          sendStatus(code: number) {
++            statusCode = code;
++            this.headersSent = true;
++            return this;
++          },
++        } as unknown as http.ServerResponse;
++
++        await new Promise<void>((resolvePromise) => {
++          (
++            ctx.app as unknown as (
++              req: http.IncomingMessage,
++              res: http.ServerResponse,
++              next: (err?: unknown) => void,
++            ) => void
++          )(fakeReq, fakeRes, () => resolvePromise());
++          setImmediate(resolvePromise);
++        });
++
++        expect(statusCode).toBe(403);
++        expect(JSON.parse(Buffer.concat(chunks).toString("utf8"))).toEqual({
++          error: "Forbidden",
++          message: "Invalid Origin header",
++        });
++      } finally {
++        ctx.closeAll();
++      }
++    });
++  });
++
++  describe("JSON body limits (413 / 400) and rate limiting (429)", () => {
++    it("returns 413 Payload Too Large above 1MB, 400 on malformed JSON, and passes non-JSON parser errors to Express", async () => {
++      const { port } = await startTestServer();
++
++      const oversizedPayload = JSON.stringify({ data: "a".repeat(1024 * 1024 + 512) });
++      const tooLargeRes = await sendRawHttpRequest(port, {
++        method: "POST",
++        path: "/messages?sessionId=abc",
++        headers: {
++          "Content-Type": "application/json",
++          "Content-Length": String(Buffer.byteLength(oversizedPayload)),
++        },
++        body: oversizedPayload,
++      });
++      expect(tooLargeRes.status).toBe(413);
++      expect(JSON.parse(tooLargeRes.body)).toEqual({
++        error: "Payload Too Large",
++        message: "Request body exceeds 1MB limit",
++      });
++
++      const badJsonRes = await sendRawHttpRequest(port, {
++        method: "POST",
++        path: "/messages?sessionId=abc",
++        headers: { "Content-Type": "application/json" },
++        body: "{not-valid-json",
++      });
++      expect(badJsonRes.status).toBe(400);
++      expect(JSON.parse(badJsonRes.body)).toEqual({
++        error: "Bad Request",
++        message: "Invalid JSON payload",
++      });
++
++      // Unsupported encoding triggers body-parser error forwarded via next(err)
++      const unsupportedEncodingRes = await sendRawHttpRequest(port, {
++        method: "POST",
++        path: "/messages?sessionId=abc",
++        headers: {
++          "Content-Type": "application/json",
++          "Content-Encoding": "unknown-enc",
++        },
++        body: "{}",
++      });
++      expect(unsupportedEncodingRes.status).toBe(415);
++    });
++
++    it("enforces rateLimitMiddleware with 429 JSON retryAfter and masks clientId in production logs", async () => {
++      const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
++      process.env.NODE_ENV = "test";
++
++      const { port: devPort } = await startTestServer({
++        rateLimitWindowMs: 30_000,
++        rateLimitMaxRequests: 2,
++      });
++
++      const first = await sendRawHttpRequest(devPort, {
++        method: "POST",
++        path: "/messages?sessionId=missing",
++      });
++      expect(first.status).toBe(404);
++      expect(first.headers["x-ratelimit-limit"]).toBe("2");
++      expect(first.headers["x-ratelimit-remaining"]).toBe("1");
++
++      const second = await sendRawHttpRequest(devPort, {
++        method: "POST",
++        path: "/messages?sessionId=missing",
++      });
++      expect(second.status).toBe(404);
++      expect(second.headers["x-ratelimit-remaining"]).toBe("0");
++
++      const blockedDev = await sendRawHttpRequest(devPort, {
++        method: "POST",
++        path: "/messages?sessionId=missing",
++      });
++      expect(blockedDev.status).toBe(429);
++      const blockedBody = JSON.parse(blockedDev.body) as {
++        error: string;
++        message: string;
++        retryAfter: number;
++      };
++      expect(blockedBody.error).toBe("Rate limit exceeded");
++      expect(blockedBody.retryAfter).toBeGreaterThanOrEqual(1);
++      expect(blockedBody.message).toContain(`${blockedBody.retryAfter} seconds`);
++
++      const devLogs = errSpy.mock.calls.map((c) => c.join(" ")).join("\n");
++      expect(devLogs).toContain("http.rate_limited");
++      expect(devLogs).toContain("127.0.0.1");
++
++      // In production, rate-limited client IP must be masked in stderr logs
++      errSpy.mockClear();
++      process.env.NODE_ENV = "production";
++      const { port: prodPort } = await startTestServer({
++        rateLimitWindowMs: 30_000,
++        rateLimitMaxRequests: 1,
++      });
++
++      await sendRawHttpRequest(prodPort, {
++        method: "POST",
++        path: "/messages?sessionId=missing",
++      });
++      const blockedProd = await sendRawHttpRequest(prodPort, {
++        method: "POST",
++        path: "/messages?sessionId=missing",
++      });
++      expect(blockedProd.status).toBe(429);
++
++      const prodLogs = errSpy.mock.calls.map((c) => c.join(" ")).join("\n");
++      expect(prodLogs).toContain("http.rate_limited");
++      expect(prodLogs).toContain('"[masked]"');
++      expect(prodLogs).not.toContain("127.0.0.1");
++    });
++  });
++
++  describe("Live HTTP SSE lifecycle, session cleanup & error paths", () => {
++    it("opens GET /mcp SSE stream, emits endpoint event, accepts POST /messages, enforces maxSessions 503, and deletes on close", async () => {
++      const { port, ctx } = await startTestServer({
++        maxSessions: 1,
++        apiKey: "test-key-123",
++      });
++
++      let sseReq: http.ClientRequest | undefined;
++      try {
++        const { sessionId, firstMessagePromise, closeStream } = await new Promise<{
++          sessionId: string;
++          firstMessagePromise: Promise<string>;
++          closeStream: () => void;
++        }>((resolvePromise, rejectPromise) => {
++          sseReq = http.get(
++            {
++              host: "127.0.0.1",
++              port,
++              path: "/mcp",
++              headers: {
++                Host: `127.0.0.1:${port}`,
++                "X-API-Key": "test-key-123",
++              },
++            },
++            (res) => {
++              expect(res.statusCode).toBe(200);
++              expect(res.headers["content-type"]).toContain("text/event-stream");
++
++              let buffer = "";
++              let resolvedEndpoint = false;
++              let resolveMsg: ((data: string) => void) | undefined;
++              const messagePromise = new Promise<string>((resMsg) => {
++                resolveMsg = resMsg;
++              });
++
++              res.on("data", (chunk: Buffer) => {
++                buffer += chunk.toString("utf8");
++                if (!resolvedEndpoint) {
++                  const match = /event: endpoint\ndata: \/messages\?sessionId=([^\n]+)/.exec(buffer);
++                  if (match) {
++                    resolvedEndpoint = true;
++                    resolvePromise({
++                      sessionId: match[1].trim(),
++                      firstMessagePromise: messagePromise,
++                      closeStream: () => {
++                        res.destroy();
++                        sseReq?.destroy();
++                      },
++                    });
++                  }
++                } else if (buffer.includes("event: message")) {
++                  resolveMsg?.(buffer);
++                }
++              });
++              res.on("error", () => {});
++            },
++          );
++          sseReq.on("error", rejectPromise);
++        });
++
++        try {
++          expect(ctx.transports.size).toBe(1);
++          const session = ctx.transports.get(sessionId);
++          expect(session).toBeDefined();
++          const initialActivity = session!.lastActivity.getTime();
++
++          // While 1 session is active (maxSessions: 1), a second GET /mcp returns 503
++          const overflowRes = await sendRawHttpRequest(port, {
++            method: "GET",
++            path: "/mcp",
++            headers: { Authorization: "Bearer test-key-123" },
++          });
++          expect(overflowRes.status).toBe(503);
++          expect(JSON.parse(overflowRes.body)).toEqual({
++            error: "Service Unavailable",
++            message: "Maximum active SSE sessions reached",
++          });
++
++          // Small delay to ensure lastActivity timestamp advances measurably
++          await new Promise((r) => setTimeout(r, 15));
++
++          const rpcPayload = JSON.stringify({
++            jsonrpc: "2.0",
++            id: 1,
++            method: "initialize",
++            params: {
++              protocolVersion: "2024-11-05",
++              capabilities: {},
++              clientInfo: { name: "sse-raw-test", version: "1.0.0" },
++            },
++          });
++
++          const postRes = await sendRawHttpRequest(port, {
++            method: "POST",
++            path: `/messages?sessionId=${encodeURIComponent(sessionId)}`,
++            headers: {
++              "Content-Type": "application/json",
++              "X-API-Key": "test-key-123",
++            },
++            body: rpcPayload,
++          });
++          expect(postRes.status).toBe(202);
++          expect(session!.lastActivity.getTime()).toBeGreaterThanOrEqual(initialActivity);
++
++          const sseOutput = await firstMessagePromise;
++          expect(sseOutput).toContain("event: message");
++          expect(sseOutput).toContain("mcp-dadosbr");
++        } finally {
++          closeStream();
++        }
++
++        await vi.waitFor(() => {
++          expect(ctx.transports.size).toBe(0);
++        });
++      } finally {
++        sseReq?.destroy();
++      }
++    });
++
++    it("supports an authenticated SDK Client over SSEClientTransport end-to-end", async () => {
++      const { port, ctx } = await startTestServer({
++        apiKey: "test-key-123",
++      });
++
++      const sseTransport = new SSEClientTransport(
++        new URL(`http://127.0.0.1:${port}/mcp`),
++        {
++          requestInit: {
++            headers: { "X-API-Key": "test-key-123" },
++          },
++        },
++      );
++      const client = new Client({ name: "cli-http-sse-sdk-test", version: "1.0.0" });
++
++      try {
++        await client.connect(sseTransport);
++        expect(ctx.transports.size).toBe(1);
++
++        const toolResult = await client.callTool({
++          name: "cpf_validate",
++          arguments: { cpf: "00000000000" },
++        });
++        expect(toolResult.isError).toBeUndefined();
++      } finally {
++        await client.close();
++        await vi.waitFor(() => {
++          expect(ctx.transports.size).toBe(0);
++        });
++      }
++    });
++
++    it("handles GET /mcp catch paths (before and after headersSent) and POST /messages catch paths", async () => {
++      const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
++      const { port, ctx } = await startTestServer();
++
++      // 1) GET /mcp fails BEFORE headersSent -> 500 "Error establishing SSE stream"
++      vi.spyOn(SSEServerTransport.prototype, "start").mockRejectedValueOnce(
++        new Error("sse handshake failed"),
++      );
++      const preHeaderSseErr = await sendRawHttpRequest(port, {
++        method: "GET",
++        path: "/mcp",
++      });
++      expect(preHeaderSseErr.status).toBe(500);
++      expect(preHeaderSseErr.body).toBe("Error establishing SSE stream");
++
++      // 2) GET /mcp fails AFTER headersSent -> catch skips res.status(500), logs sse.connection_error
++      vi.spyOn(Server.prototype, "connect").mockImplementationOnce(async (transport) => {
++        await transport.start();
++        await transport.close();
++        throw new Error("post-header connect failure");
++      });
++      const postHeaderSseErr = await sendRawHttpRequest(port, {
++        method: "GET",
++        path: "/mcp",
++      });
++      expect(postHeaderSseErr.status).toBe(200);
++
++      // 3) POST /messages handlePostMessage throws BEFORE headersSent -> 500 "Error handling request"
++      ctx.transports.set("err-pre", {
++        transport: {
++          handlePostMessage: vi.fn().mockRejectedValue(new Error("boom before headers")),
++          close: vi.fn(),
++        } as never,
++        createdAt: new Date(),
++        lastActivity: new Date(),
++      });
++      const postPreHeaderErr = await sendRawHttpRequest(port, {
++        method: "POST",
++        path: "/messages?sessionId=err-pre",
++        headers: { "Content-Type": "application/json" },
++        body: "{}",
++      });
++      expect(postPreHeaderErr.status).toBe(500);
++      expect(postPreHeaderErr.body).toBe("Error handling request");
++
++      // 4) POST /messages handlePostMessage throws AFTER sending 500 headers (unstarted SSEServerTransport)
++      const unstartedTransport = new SSEServerTransport("/messages", {} as http.ServerResponse);
++      ctx.transports.set("err-post", {
++        transport: unstartedTransport,
++        createdAt: new Date(),
++        lastActivity: new Date(),
++      });
++      const postAfterHeaderErr = await sendRawHttpRequest(port, {
++        method: "POST",
++        path: "/messages?sessionId=err-post",
++        headers: { "Content-Type": "application/json" },
++        body: "{}",
++      });
++      expect(postAfterHeaderErr.status).toBe(500);
++      expect(postAfterHeaderErr.body).toBe("SSE connection not established");
++
++      const logs = errSpy.mock.calls.map((c) => c.join(" ")).join("\n");
++      expect(logs).toContain("sse.connection_error");
++      expect(logs).toContain("http.message_error");
++    });
++  });
++
++  describe("createGracefulShutdown edge cases & timeout", () => {
++    it("continues best-effort cleanup when closeAll/server.close/mcpServer.close/cache.clear fail", async () => {
++      const onExit = vi.fn();
++      const logger = vi.fn();
++
++      const shutdown = createGracefulShutdown({
++        httpContext: {
++          closeAll: () => {
++            throw new Error("closeAll failed");
++          },
++        },
++        server: {
++          listening: true,
++          close: () => {
++            throw new Error("server close failed");
++          },
++        } as unknown as http.Server,
++        mcpServer: {
++          close: async () => {
++            throw new Error("mcp close failed");
++          },
++        },
++        cache: {
++          clear: async () => {
++            throw new Error("cache clear failed");
++          },
++        },
++        timeoutMs: -1, // falls back to default 5000ms
++        logger,
++        onExit,
++      });
++
++      await shutdown();
++
++      expect(logger).toHaveBeenCalledWith("Shutting down gracefully...");
++      expect(onExit).toHaveBeenCalledTimes(1);
++      expect(onExit).toHaveBeenCalledWith(0);
++    });
++
++    it("exits with code 1 when shutdown timeout expires while server.close stalls", async () => {
++      vi.useFakeTimers();
++
++      const onExit = vi.fn();
++      const closeIdleConnections = vi.fn();
++      const close = vi.fn(); // never invokes callback -> stalls
++
++      const shutdown = createGracefulShutdown({
++        server: {
++          listening: true,
++          close,
++          closeIdleConnections,
++        } as unknown as http.Server,
++        timeoutMs: 50,
++        onExit,
++      });
++
++      const pending = shutdown("SIGINT");
++      await vi.advanceTimersByTimeAsync(50);
++      await pending;
++
++      expect(close).toHaveBeenCalledTimes(1);
++      expect(closeIdleConnections).toHaveBeenCalledTimes(1);
++      expect(onExit).toHaveBeenCalledTimes(1);
++      expect(onExit).toHaveBeenCalledWith(1);
++    });
++  });
++});
+diff --git a/test/unit/mcp-server-handlers.test.ts b/test/unit/mcp-server-handlers.test.ts
+new file mode 100644
+index 0000000..2ab013e
+--- /dev/null
++++ b/test/unit/mcp-server-handlers.test.ts
+@@ -0,0 +1,384 @@
++import { afterEach, describe, expect, it, vi } from "vitest";
++import { Client } from "@modelcontextprotocol/sdk/client/index.js";
++import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
++import { ErrorCode as SdkErrorCode } from "@modelcontextprotocol/sdk/types.js";
++import { resolveApiConfig } from "../../lib/config/index.js";
++import { createMCPServer, type MCPServerOptions } from "../../lib/core/mcp-server.js";
++import { TOOL_DEFINITIONS } from "../../lib/core/tools.js";
++import { ErrorCode } from "../../lib/shared/errors.js";
++import type { Cache } from "../../lib/types/index.js";
++
++const readAppHtmlSpy = vi.hoisted(() => vi.fn());
++
++vi.mock("node:fs/promises", async (importOriginal) => {
++  const actual = await importOriginal<typeof import("node:fs/promises")>();
++  return {
++    ...actual,
++    readFile: async (
++      target: Parameters<typeof actual.readFile>[0],
++      options?: Parameters<typeof actual.readFile>[1],
++    ) => {
++      const targetStr = String(target);
++      if (targetStr.includes("/build/lib/apps/") && targetStr.endsWith(".html")) {
++        readAppHtmlSpy(targetStr, options);
++        const filename = targetStr.split("/").pop() ?? "app.html";
++        return `<!doctype html><html><head><title>${filename}</title></head><body>stub</body></html>`;
++      }
++      return actual.readFile(target, options as never);
++    },
++  };
++});
++
++const APP_MIME_TYPE = "text/html;profile=mcp-app";
++const EXPECTED_APPS = [
++  {
++    tool: "ibge_localidades",
++    file: "ibge.html",
++    uri: "ui://dadosbr/ibge-localidades.html",
++    name: "Explorador de localidades do IBGE",
++  },
++  {
++    tool: "querido_diario",
++    file: "querido-diario.html",
++    uri: "ui://dadosbr/querido-diario.html",
++    name: "Querido Diário",
++  },
++  {
++    tool: "bacen_taxas",
++    file: "bacen.html",
++    uri: "ui://dadosbr/banco-central.html",
++    name: "Indicadores do Banco Central",
++  },
++  {
++    tool: "pncp_licitacoes",
++    file: "pncp.html",
++    uri: "ui://dadosbr/editais-pncp.html",
++    name: "Editais do PNCP",
++  },
++  {
++    tool: "cnpj_lookup",
++    file: "cnpj.html",
++    uri: "ui://dadosbr/ficha-cnpj.html",
++    name: "Ficha por CNPJ",
++  },
++] as const;
++
++async function withMcpClient<T>(
++  options: Partial<MCPServerOptions> & { withUiCapability?: boolean } = {},
++  fn: (client: Client) => Promise<T>,
++): Promise<T> {
++  const { withUiCapability = false, ...serverOpts } = options;
++  const server = createMCPServer({
++    apiConfig: resolveApiConfig(),
++    ...serverOpts,
++  });
++  const client = new Client(
++    { name: "mcp-server-handlers-test", version: "1.0.0" },
++    {
++      capabilities: withUiCapability
++        ? { extensions: { "io.modelcontextprotocol/ui": { mimeTypes: [APP_MIME_TYPE] } } }
++        : {},
++    },
++  );
++  const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
++  await server.connect(serverSide);
++  await client.connect(clientSide);
++  try {
++    return await fn(client);
++  } finally {
++    await client.close();
++    await server.close();
++  }
++}
++
++describe("TCK-0039 / FND-0024: createMCPServer handlers, MCP Apps & unexpected error catch", () => {
++  const originalEnv = { ...process.env };
++
++  afterEach(() => {
++    vi.restoreAllMocks();
++    vi.unstubAllGlobals();
++    readAppHtmlSpy.mockReset();
++    process.env = { ...originalEnv };
++  });
++
++  describe("ListTools, ListResources & ReadResource handlers", () => {
++    it("lists all 23 tools and attaches _meta.ui.resourceUri exclusively to the 5 MCP App tools", async () => {
++      await withMcpClient({}, async (client) => {
++        const { tools } = await client.listTools();
++
++        expect(tools).toHaveLength(23);
++        expect(tools).toHaveLength(TOOL_DEFINITIONS.length);
++
++        const toolsWithUi = tools.filter((t) => t._meta?.ui !== undefined);
++        expect(toolsWithUi).toHaveLength(5);
++
++        for (const app of EXPECTED_APPS) {
++          const found = tools.find((t) => t.name === app.tool);
++          expect(found).toBeDefined();
++          expect(found?._meta).toEqual({ ui: { resourceUri: app.uri } });
++        }
++
++        const nonAppTool = tools.find((t) => t.name === "cpf_validate");
++        expect(nonAppTool).toBeDefined();
++        expect(nonAppTool?._meta).toBeUndefined();
++      });
++    });
++
++    it("lists all 5 bundled MCP App resources with ui:// URIs and prefersBorder metadata", async () => {
++      await withMcpClient({}, async (client) => {
++        const { resources } = await client.listResources();
++
++        expect(resources).toHaveLength(5);
++        for (const app of EXPECTED_APPS) {
++          expect(resources).toContainEqual(
++            expect.objectContaining({
++              uri: app.uri,
++              name: app.name,
++              mimeType: APP_MIME_TYPE,
++              _meta: { ui: { prefersBorder: true } },
++            }),
++          );
++        }
++      });
++    });
++
++    it("reads bundled MCP App HTML content and _meta for valid URIs and rejects unknown URIs with InvalidParams", async () => {
++      await withMcpClient({}, async (client) => {
++        for (const app of EXPECTED_APPS) {
++          const res = await client.readResource({ uri: app.uri });
++          expect(res.contents).toEqual([
++            {
++              uri: app.uri,
++              mimeType: APP_MIME_TYPE,
++              text: `<!doctype html><html><head><title>${app.file}</title></head><body>stub</body></html>`,
++              _meta: { ui: { prefersBorder: true } },
++            },
++          ]);
++          expect(readAppHtmlSpy).toHaveBeenCalledWith(
++            expect.stringContaining(`/build/lib/apps/${app.file}`),
++            "utf8",
++          );
++        }
++
++        await expect(
++          client.readResource({ uri: "ui://dadosbr/nonexistent.html" }),
++        ).rejects.toMatchObject({
++          code: SdkErrorCode.InvalidParams,
++          message: expect.stringContaining("Unknown resource URI"),
++        });
++      });
++    });
++  });
++
++  describe("CallTool handler (MCP Apps structuredContent, rate limit, tool failure & unexpected catch)", () => {
++    it("returns structuredContent for MCP App tools when io.modelcontextprotocol/ui capability is enabled", async () => {
++      vi.stubGlobal(
++        "fetch",
++        vi.fn(async (input: string | URL) => {
++          const url = String(input);
++          if (url.includes("opencnpj.org") || url.includes("minhareceita") || url.includes("brasilapi")) {
++            return Response.json({
++              cnpj: "00394460000141",
++              razao_social: "ORGAO PUBLICO TESTE",
++              situacao_cadastral: "Ativa",
++              cnae_principal: "8411600",
++            });
++          }
++          if (url.includes("servicodados.ibge.gov.br")) {
++            return Response.json([
++              { id: 2304400, nome: "Fortaleza" },
++              { id: 2312908, nome: "Sobral" },
++            ]);
++          }
++          if (url.includes("api.bcb.gov.br")) {
++            return Response.json([{ data: "16/11/2026", valor: "11.25" }]);
++          }
++          if (url.includes("api.queridodiario.org.br")) {
++            return Response.json({ total_gazettes: 0, gazettes: [] });
++          }
++          if (url.includes("pncp.gov.br")) {
++            return Response.json({ data: [], totalRegistros: 0 });
++          }
++          return new Response(null, { status: 404 });
++        }),
++      );
++
++      await withMcpClient({ withUiCapability: true, rateLimit: false }, async (client) => {
++        const cnpjRes = await client.callTool({
++          name: "cnpj_lookup",
++          arguments: { cnpj: "00.394.460/0001-41" },
++        });
++        expect(cnpjRes.isError).toBeUndefined();
++        expect(cnpjRes.structuredContent).toEqual({
++          profile: expect.objectContaining({
++            cnpj: "00394460000141",
++            name: "ORGAO PUBLICO TESTE",
++          }),
++        });
++
++        const ibgeArrayRes = await client.callTool({
++          name: "ibge_localidades",
++          arguments: { tipo: "municipios_por_uf", uf: "CE" },
++        });
++        expect(ibgeArrayRes.structuredContent).toEqual({
++          items: [
++            { id: 2304400, nome: "Fortaleza" },
++            { id: 2312908, nome: "Sobral" },
++          ],
++          source: { url: expect.stringContaining("estados/CE/municipios"), fetchedAt: expect.any(String) },
++        });
++
++        const ibgePagedRes = await client.callTool({
++          name: "ibge_localidades",
++          arguments: { tipo: "municipios_por_uf", uf: "CE", page: 1, limit: 1 },
++        });
++        expect(ibgePagedRes.structuredContent).toEqual({
++          items: [{ id: 2304400, nome: "Fortaleza" }],
++          pagination: { page: 1, limit: 1, total: 2, total_pages: 2, has_more: true },
++          source: { url: expect.stringContaining("estados/CE/municipios"), fetchedAt: expect.any(String) },
++        });
++
++        const bacenRes = await client.callTool({
++          name: "bacen_taxas",
++          arguments: { indicador: "selic" },
++        });
++        expect(bacenRes.structuredContent).toMatchObject({
++          indicador: "selic",
++          provenance: { url: expect.stringContaining("api.bcb.gov.br"), fetchedAt: expect.any(String) },
++        });
++
++        const qdRes = await client.callTool({
++          name: "querido_diario",
++          arguments: { query: "educacao" },
++        });
++        expect(qdRes.structuredContent).toMatchObject({
++          query: "educacao",
++          provenance: { url: expect.stringContaining("api.queridodiario.org.br"), fetchedAt: expect.any(String) },
++        });
++
++        const pncpRes = await client.callTool({
++          name: "pncp_licitacoes",
++          arguments: {
++            query: "",
++            data_inicial: "2026-11-16",
++            data_final: "2026-11-17",
++            modalidade_id: 6,
++            pagina: 1,
++          },
++        });
++        expect(pncpRes.structuredContent).toMatchObject({
++          query: "",
++          provenance: { url: expect.stringContaining("pncp.gov.br"), fetchedAt: expect.any(String) },
++        });
++      });
++    });
++
++    it("ignores non-positive or non-numeric MCP_TOOL_RATE_LIMIT_MAX and enforces rateLimit error response", async () => {
++      const warnSpy = vi.spyOn(console, "error").mockImplementation(() => {});
++
++      for (const badEnv of ["0", "-5", "abc"]) {
++        process.env.MCP_TOOL_RATE_LIMIT_MAX = badEnv;
++        await withMcpClient({}, async (client) => {
++          const ok = await client.callTool({
++            name: "cpf_validate",
++            arguments: { cpf: "00000000000" },
++          });
++          expect(ok.isError).toBeUndefined();
++        });
++      }
++
++      delete process.env.MCP_TOOL_RATE_LIMIT_MAX;
++      await withMcpClient(
++        { rateLimit: { windowMs: 60_000, maxRequests: 1 } },
++        async (client) => {
++          const allowed = await client.callTool({
++            name: "cpf_validate",
++            arguments: { cpf: "00000000000" },
++          });
++          expect(allowed.isError).toBeUndefined();
++
++          const blocked = await client.callTool({
++            name: "cpf_validate",
++            arguments: { cpf: "00000000000" },
++          });
++          expect(blocked.isError).toBe(true);
++          const payload = JSON.parse(
++            (blocked.content as Array<{ text: string }>)[0].text,
++          ) as { error: string; code: number; details?: { retryAfter?: number } };
++          expect(payload.code).toBe(ErrorCode.RATE_LIMIT_ERROR);
++          expect(payload.error).toMatch(/Rate limit exceeded/i);
++          expect(payload.details?.retryAfter).toBeGreaterThanOrEqual(1);
++        },
++      );
++
++      expect(warnSpy.mock.calls.map((c) => c.join(" ")).join("\n")).toContain("mcp.rate_limited");
++    });
++
++    it("returns isError structured JSON when tool returns ok: false or validation fails", async () => {
++      await withMcpClient({ rateLimit: false }, async (client) => {
++        const res = await client.callTool({
++          name: "cnpj_lookup",
++          arguments: { cnpj: "invalid-cnpj" },
++        });
++        expect(res.isError).toBe(true);
++        const payload = JSON.parse(
++          (res.content as Array<{ text: string }>)[0].text,
++        ) as { error: string; code: number };
++        expect(payload.code).toBe(ErrorCode.VALIDATION_ERROR);
++        expect(payload.error).toBeTruthy();
++      });
++    });
++
++    it("catches unexpected thrown exceptions from executeTool (with and without error details)", async () => {
++      vi.spyOn(console, "error").mockImplementation(() => {});
++
++      const throwingCacheWithDetails: Cache = {
++        get: async () => {
++          throw new Error("unexpected cache boom");
++        },
++        set: async () => {},
++      };
++
++      await withMcpClient(
++        { cache: throwingCacheWithDetails, rateLimit: false },
++        async (client) => {
++          const res = await client.callTool({
++            name: "cnpj_lookup",
++            arguments: { cnpj: "00394460000141" },
++          });
++          expect(res.isError).toBe(true);
++          const payload = JSON.parse(
++            (res.content as Array<{ text: string }>)[0].text,
++          ) as { error: string; code: number; details?: unknown };
++          expect(payload.code).toBe(ErrorCode.EXTERNAL_API_ERROR);
++          expect(payload.error).toBe("unexpected cache boom");
++          expect(payload.details).toBeDefined();
++        },
++      );
++
++      const throwingCacheNetwork: Cache = {
++        get: async () => {
++          throw new Error("unexpected network connection failure");
++        },
++        set: async () => {},
++      };
++
++      await withMcpClient(
++        { cache: throwingCacheNetwork, rateLimit: false },
++        async (client) => {
++          const res = await client.callTool({
++            name: "cnpj_lookup",
++            arguments: { cnpj: "00394460000141" },
++          });
++          expect(res.isError).toBe(true);
++          const payload = JSON.parse(
++            (res.content as Array<{ text: string }>)[0].text,
++          ) as { error: string; code: number; details?: unknown };
++          expect(payload.code).toBe(ErrorCode.NETWORK_ERROR);
++          expect(payload.error).toBe("unexpected network connection failure");
++          expect(payload.details).toBeUndefined();
++        },
++      );
++    });
++  });
++});
