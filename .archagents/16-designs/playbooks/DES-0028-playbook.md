@@ -45,7 +45,7 @@ commit_message_format: "[TCK-0025] passo N/5: <titulo>"
 
 - [x] Todos os 4 critérios de aceite em `TCK-0025` passam (`4/4`).
 - [x] `npm run test:coverage` passa no novo ratchet (`85/85/80/85`) + `npm run test:transport` limpo em `stdout`.
-- [ ] `ops/validate.py` (`8/8 ok: true`) após commit no worktree.
+- [x] `ops/validate.py` (`8/8 ok: true`) após commit no worktree.
 
 ## Log de execucoes
 
