@@ -1,6 +1,6 @@
 /**
  * Structured logging system with levels
- * Provides consistent logging across the application
+ * Always writes to stderr (console.error) so stdio MCP JSON-RPC framing on stdout is never corrupted.
  */
 
 export enum LogLevel {
@@ -15,16 +15,17 @@ export interface LogContext {
 }
 
 export class Logger {
-  private level: LogLevel;
+  private explicitLevel?: LogLevel;
   private module: string;
 
   constructor(module: string = 'app', level?: LogLevel) {
     this.module = module;
-    this.level = level ?? this.getLogLevelFromEnv();
+    this.explicitLevel = level;
   }
 
   private getLogLevelFromEnv(): LogLevel {
-    const envLevel = process.env.LOG_LEVEL?.toLowerCase();
+    const env = typeof process !== 'undefined' && process.env ? process.env : undefined;
+    const envLevel = env?.LOG_LEVEL?.toLowerCase();
     switch (envLevel) {
       case 'debug':
         return LogLevel.DEBUG;
@@ -35,12 +36,20 @@ export class Logger {
       case 'error':
         return LogLevel.ERROR;
       default:
-        return process.env.NODE_ENV === 'production' ? LogLevel.INFO : LogLevel.DEBUG;
+        return env?.NODE_ENV === 'development' ? LogLevel.DEBUG : LogLevel.INFO;
     }
   }
 
+  getLevel(): LogLevel {
+    return this.explicitLevel ?? this.getLogLevelFromEnv();
+  }
+
+  setLevel(level: LogLevel): void {
+    this.explicitLevel = level;
+  }
+
   private shouldLog(level: LogLevel): boolean {
-    return level >= this.level;
+    return level >= this.getLevel();
   }
 
   private formatMessage(level: string, message: string, context?: LogContext, requestId?: string): string {
@@ -56,28 +65,39 @@ export class Logger {
       logObject.requestId = requestId;
     }
 
-    if (context) {
+    if (context !== undefined) {
       logObject.context = context;
     }
 
-    return JSON.stringify(logObject);
+    try {
+      return JSON.stringify(logObject);
+    } catch {
+      return JSON.stringify({
+        timestamp,
+        level,
+        module: this.module,
+        message,
+        ...(requestId ? { requestId } : {}),
+        contextUnserializable: true,
+      });
+    }
   }
 
   debug(message: string, context?: LogContext, requestId?: string): void {
     if (this.shouldLog(LogLevel.DEBUG)) {
-      console.log(this.formatMessage('debug', message, context, requestId));
+      console.error(this.formatMessage('debug', message, context, requestId));
     }
   }
 
   info(message: string, context?: LogContext, requestId?: string): void {
     if (this.shouldLog(LogLevel.INFO)) {
-      console.log(this.formatMessage('info', message, context, requestId));
+      console.error(this.formatMessage('info', message, context, requestId));
     }
   }
 
   warn(message: string, context?: LogContext, requestId?: string): void {
     if (this.shouldLog(LogLevel.WARN)) {
-      console.warn(this.formatMessage('warn', message, context, requestId));
+      console.error(this.formatMessage('warn', message, context, requestId));
     }
   }
 
@@ -97,6 +117,6 @@ export class Logger {
 export const logger = new Logger('mcp-dadosbr');
 
 // Create logger for specific module
-export function createLogger(module: string): Logger {
-  return new Logger(module);
+export function createLogger(module: string, level?: LogLevel): Logger {
+  return new Logger(module, level);
 }

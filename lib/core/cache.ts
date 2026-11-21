@@ -1,12 +1,20 @@
 import { CacheEntry, Cache } from "../types/index.js";
 import { CACHE } from "../shared/utils/constants.js";
 
+export const MIN_KV_EXPIRATION_TTL_SECONDS = 60;
+
+export interface KVPutOptions {
+  expiration?: number;
+  expirationTtl?: number;
+  metadata?: unknown;
+}
+
 /**
  * Interface for Cloudflare KV storage
  */
 interface KVNamespace {
   get(key: string): Promise<string | null>;
-  put(key: string, value: string): Promise<void>;
+  put(key: string, value: string, options?: KVPutOptions): Promise<void>;
   delete(key: string): Promise<void>;
 }
 
@@ -127,22 +135,43 @@ export class KVCache implements Cache {
 
   async get<T = unknown>(key: string): Promise<T | null> {
     const cached = await this.kv.get(key);
-    if (cached) {
-      const parsed = JSON.parse(cached);
-      if (Date.now() < parsed.expires) {
-        return parsed.data;
-      }
+    if (!cached) {
+      return null;
     }
+
+    try {
+      const parsed = JSON.parse(cached) as { expires?: unknown; data?: T } | null;
+      if (!parsed || typeof parsed !== "object" || typeof parsed.expires !== "number") {
+        return null;
+      }
+      if (Date.now() < parsed.expires) {
+        return parsed.data ?? null;
+      }
+    } catch {
+      return null;
+    }
+
     return null;
   }
 
   async set<T = unknown>(key: string, data: T): Promise<void> {
+    const effectiveTtlMs =
+      Number.isFinite(this.ttl) && this.ttl > 0
+        ? this.ttl
+        : MIN_KV_EXPIRATION_TTL_SECONDS * 1000;
+    // Cloudflare KV rejects expirationTtl values below 60 seconds
+    const expirationTtl = Math.max(
+      MIN_KV_EXPIRATION_TTL_SECONDS,
+      Math.ceil(effectiveTtlMs / 1000)
+    );
+
     await this.kv.put(
       key,
       JSON.stringify({
         data,
-        expires: Date.now() + this.ttl,
-      })
+        expires: Date.now() + effectiveTtlMs,
+      }),
+      { expirationTtl }
     );
   }
 

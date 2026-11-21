@@ -4,7 +4,8 @@
 
 import { registerTool } from "../core/registry.js";
 import { httpJson } from "../core/http-client.js";
-import { LookupResult } from "../types/index.js";
+import { BacenSchema, FipeSchema } from "../core/tool-schemas.js";
+import { Cache, LookupResult } from "../types/index.js";
 import { BACEN_PERIODS, BACEN_SERIES, bacenWindow, isBacenIndicator, isBacenPeriod } from "../shared/bacen.js";
 import type { BacenIndicator, BacenPeriod } from "../shared/bacen.js";
 
@@ -13,7 +14,7 @@ import type { BacenIndicator, BacenPeriod } from "../shared/bacen.js";
 const BACEN_API = "https://api.bcb.gov.br/dados/serie/bcdata.sgs";
 interface BacenArgs { indicador: BacenIndicator; ultimos?: number; periodo_dias?: BacenPeriod; }
 
-async function executeBacen(args: BacenArgs): Promise<LookupResult> {
+async function executeBacen(args: BacenArgs, cache?: Cache): Promise<LookupResult> {
     const { indicador, ultimos = 10, periodo_dias } = args;
     if (!isBacenIndicator(indicador)) return { ok: false, error: `Unknown indicator: ${indicador}. Valid: selic, ipca, dolar, euro, cdi` };
     if (periodo_dias !== undefined && !isBacenPeriod(periodo_dias)) {
@@ -28,18 +29,30 @@ async function executeBacen(args: BacenArgs): Promise<LookupResult> {
     }
     const path = window ? "dados" : `dados/ultimos/${encodeURIComponent(ultimos)}`;
     const url = `${BACEN_API}.${serieId}/${path}?${query}`;
+    const cacheKey = `bacen:${url}`;
     try {
+        if (cache) {
+            const cached = await cache.get<{ data: unknown; source: { url: string; fetchedAt: string } }>(cacheKey);
+            if (cached && typeof cached === "object" && "data" in cached && cached.source) {
+                return { ok: true, data: cached.data, source: cached.source };
+            }
+        }
         const result = await httpJson(url);
-        if (result.ok) return {
-            ok: true,
-            data: {
+        if (result.ok) {
+            const source = { url, fetchedAt: new Date().toISOString() };
+            const payload = {
                 indicador, serie_id: serieId,
                 ...(window ? { periodo_dias, data_inicial: window.start, data_final: window.end } : { ultimos }),
                 results: result.data,
                 source: "Banco Central do Brasil — SGS",
-            },
-            source: { url, fetchedAt: new Date().toISOString() },
-        };
+            };
+            if (cache) await cache.set(cacheKey, { data: payload, source });
+            return {
+                ok: true,
+                data: payload,
+                source,
+            };
+        }
         return { ok: false, error: `Banco Central API error: ${result.error}` };
     } catch (err) {
         return { ok: false, error: `Banco Central error: ${err instanceof Error ? err.message : String(err)}` };
@@ -55,33 +68,64 @@ No API key required. Returns time series data.`,
         type: "object",
         properties: {
             indicador: { type: "string", enum: Object.keys(BACEN_SERIES), description: "Financial indicator" },
-            ultimos: { type: "number", description: "Number of recent data points (default: 10)", default: 10 },
+            ultimos: { type: "number", description: "Number of recent data points (default: 10)", minimum: 1, maximum: 1000, default: 10 },
             periodo_dias: { type: "integer", enum: [...BACEN_PERIODS], description: "Calendar-day window through today in São Paulo. Overrides ultimos when supplied." },
         },
         required: ["indicador"],
     },
-    execute: async (args) => executeBacen(args as BacenArgs),
+    zodSchema: BacenSchema,
+    execute: async (args, _apiConfig, cache) => executeBacen(args as BacenArgs, cache),
 });
 
 // ─── FIPE ───────────────────────────────────────────────────────────────────
 
 const FIPE_API = "https://brasilapi.com.br/api/fipe";
+const ALLOWED_FIPE_TYPES = new Set<string>(["carros", "motos", "caminhoes"]);
+const FIPE_CODE_REGEX = /^[0-9]+(?:-[0-9]+)?$/;
 
 interface FipeArgs { codigo_fipe?: string; tipo?: "carros" | "motos" | "caminhoes"; }
 
-async function executeFipe(args: FipeArgs): Promise<LookupResult> {
-    const { codigo_fipe, tipo } = args;
-    if (codigo_fipe) {
+async function executeFipe(args: FipeArgs, cache?: Cache): Promise<LookupResult> {
+    const { codigo_fipe, tipo } = args ?? {};
+    if (codigo_fipe !== undefined) {
+        if (typeof codigo_fipe !== "string") {
+            return { ok: false, error: "Invalid codigo_fipe format (expected e.g. '001004-9')." };
+        }
+        const trimmed = codigo_fipe.trim();
+        if (!trimmed || !FIPE_CODE_REGEX.test(trimmed)) {
+            return { ok: false, error: "Invalid codigo_fipe format (expected e.g. '001004-9')." };
+        }
+        const cacheKey = `fipe:preco:${trimmed}`;
         try {
-            const result = await httpJson(`${FIPE_API}/preco/v1/${encodeURIComponent(codigo_fipe)}`);
-            if (result.ok) return { ok: true, data: { codigo_fipe, results: result.data, source: "Tabela FIPE via BrasilAPI" } };
+            if (cache) {
+                const cached = await cache.get(cacheKey);
+                if (cached) return { ok: true, data: cached };
+            }
+            const result = await httpJson(`${FIPE_API}/preco/v1/${encodeURIComponent(trimmed)}`);
+            if (result.ok) {
+                const payload = { codigo_fipe: trimmed, results: result.data, source: "Tabela FIPE via BrasilAPI" };
+                if (cache) await cache.set(cacheKey, payload);
+                return { ok: true, data: payload };
+            }
             return { ok: false, error: result.error || "FIPE lookup failed" };
         } catch (err) { return { ok: false, error: `FIPE error: ${err instanceof Error ? err.message : String(err)}` }; }
     }
-    if (tipo) {
+    if (tipo !== undefined) {
+        if (typeof tipo !== "string" || !ALLOWED_FIPE_TYPES.has(tipo)) {
+            return { ok: false, error: "Invalid FIPE vehicle type. Valid: carros, motos, caminhoes." };
+        }
+        const cacheKey = `fipe:marcas:${tipo}`;
         try {
-            const result = await httpJson(`${FIPE_API}/marcas/v1/${tipo}`);
-            if (result.ok) return { ok: true, data: { tipo, brands: result.data, source: "Tabela FIPE via BrasilAPI", note: "Use the FIPE code to get prices." } };
+            if (cache) {
+                const cached = await cache.get(cacheKey);
+                if (cached) return { ok: true, data: cached };
+            }
+            const result = await httpJson(`${FIPE_API}/marcas/v1/${encodeURIComponent(tipo)}`);
+            if (result.ok) {
+                const payload = { tipo, brands: result.data, source: "Tabela FIPE via BrasilAPI", note: "Use the FIPE code to get prices." };
+                if (cache) await cache.set(cacheKey, payload);
+                return { ok: true, data: payload };
+            }
             return { ok: false, error: result.error || "FIPE brands lookup failed" };
         } catch (err) { return { ok: false, error: `FIPE error: ${err instanceof Error ? err.message : String(err)}` }; }
     }
@@ -100,5 +144,6 @@ Via BrasilAPI. No API key required.`,
             tipo: { type: "string", enum: ["carros", "motos", "caminhoes"], description: "Vehicle type to list brands" },
         },
     },
-    execute: async (args) => executeFipe(args as FipeArgs),
+    zodSchema: FipeSchema,
+    execute: async (args, _apiConfig, cache) => executeFipe(args as FipeArgs, cache),
 });

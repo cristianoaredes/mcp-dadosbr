@@ -112,3 +112,7 @@ __pycache__/
 .archagents/.cache/
 .archagents/.index.db
 .archagents/_orchestration-events.jsonl
+
+# codebase-ops derived SQLite index (SPC-0026)
+.archagents/.index.db-wal
+.archagents/.index.db-shm

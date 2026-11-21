@@ -97,5 +97,158 @@
     "tree": "2ebfb7a133202df2405baa9271a2ecc203dd0ce7",
     "updated_at": "2026-11-19T18:09:07Z",
     "updated_by": "criteria-check"
+  },
+  "TCK-0013": {
+    "content_digest": null,
+    "criteria_digest": null,
+    "head": null,
+    "passes": true,
+    "tree": null,
+    "updated_at": "2026-11-20T16:25:33Z",
+    "updated_by": "criteria-check"
+  },
+  "TCK-0014": {
+    "content_digest": null,
+    "criteria_digest": null,
+    "head": null,
+    "passes": true,
+    "tree": null,
+    "updated_at": "2026-11-20T16:33:36Z",
+    "updated_by": "criteria-check"
+  },
+  "TCK-0015": {
+    "content_digest": "sha256:58c009bdeec8b6714a8cc4186714c9325a577f4f84732a0d1a8a7fd778cb9de8",
+    "criteria_digest": "sha256:cb35010e07fe2c64f06f4c094e09ec04b8d12c373bccadd6c77194ce0acb9521",
+    "head": "c4bbd4f2b862ab65c38c683ab3ad704a8be7c967",
+    "passes": true,
+    "tree": "4d0e50bdbf293fbddb6acc3c877e50cb91473399",
+    "updated_at": "2026-11-20T18:35:02Z",
+    "updated_by": "criteria-check"
+  },
+  "TCK-0016": {
+    "content_digest": null,
+    "criteria_digest": null,
+    "head": null,
+    "passes": true,
+    "tree": null,
+    "updated_at": "2026-11-20T16:53:44Z",
+    "updated_by": "criteria-check"
+  },
+  "TCK-0017": {
+    "content_digest": null,
+    "criteria_digest": null,
+    "head": null,
+    "passes": true,
+    "tree": null,
+    "updated_at": "2026-11-20T17:10:48Z",
+    "updated_by": "criteria-check"
+  },
+  "TCK-0018": {
+    "content_digest": null,
+    "criteria_digest": null,
+    "head": null,
+    "passes": true,
+    "tree": null,
+    "updated_at": "2026-11-20T17:29:24Z",
+    "updated_by": "criteria-check"
+  },
+  "TCK-0019": {
+    "content_digest": null,
+    "criteria_digest": null,
+    "head": null,
+    "passes": true,
+    "tree": null,
+    "updated_at": "2026-11-20T17:44:36Z",
+    "updated_by": "criteria-check"
+  },
+  "TCK-0020": {
+    "content_digest": "sha256:9a4c9994642d1e7d0f7125f58dc49b42368792d74aa443c3fe4e3ec65ff92f3a",
+    "criteria_digest": "sha256:e0116d1d33424ad405838c97784d8538d046a5b529dea0bb912c62cc0465ef47",
+    "head": "ddc867a2658ab26f4f95a1335b92ea6e9cfbf04a",
+    "passes": true,
+    "tree": "582239dfc6e5d6729de6b71e5bbbfe71e84fe067",
+    "updated_at": "2026-11-20T19:02:36Z",
+    "updated_by": "criteria-check"
+  },
+  "TCK-0021": {
+    "content_digest": "sha256:28e6f184a486a68a620d4ce922a6a74804acdddb98fb2b9af49acc2bb9e51b4c",
+    "criteria_digest": "sha256:ba129d2dffff92b5d5843379994f3eba2db1c642c059aa3351e1aa6604a3e893",
+    "head": "2f0e25c6f2c50115e57c3af4774860ea9debfdd4",
+    "passes": true,
+    "tree": "b95135bd3d37b2eb0e7e74d514bd957aeab9e273",
+    "updated_at": "2026-11-20T17:59:00Z",
+    "updated_by": "criteria-check"
+  },
+  "TCK-0022": {
+    "content_digest": "sha256:1e115ba191c398229891d0b9ef9bf059cbf8920152e9e8cb8daba0f997fffaaf",
+    "criteria_digest": "sha256:4a57f85cd347f29a536c4d5a5d38c3f9d28ec6fe4a01819c74fef178ee79ecad",
+    "head": "08ce71fcb61ce87ce7d20d84e5931e34df0970a7",
+    "passes": true,
+    "tree": "07a9f996ca982a1ac4bf4eb87498d5a2943831eb",
+    "updated_at": "2026-11-20T19:13:48Z",
+    "updated_by": "criteria-check"
+  },
+  "TCK-0023": {
+    "content_digest": "sha256:190bf0ff2622282b9ddf5be5e9c84dd70689248fe9b04da824dc998f361e2cd2",
+    "criteria_digest": "sha256:f2764fc273d7ef8568630d3e4ec27b849f97add77c41c0eb840335ad218e2639",
+    "head": "88a1caab890eba5684d4d7f943b5d3e0d3f8a968",
+    "passes": true,
+    "tree": "8294d2619036a4208d69a9300c41fa0b39f673a7",
+    "updated_at": "2026-11-20T20:31:18Z",
+    "updated_by": "criteria-check"
+  },
+  "TCK-0024": {
+    "content_digest": "sha256:6803224a71e3ad7d29a998c22347a131b0c8493dba90492b6c1b1b205c59047e",
+    "criteria_digest": "sha256:7ef914b3411e4ecde5ad0e96d8c91e3d5fb7af37cf870ea472d65b357654504f",
+    "head": "c83d626e6f76e431afabc42b9d22ab0082d766bb",
+    "passes": true,
+    "tree": "db094b707b06d96045b6919c73cd306aee7b6f83",
+    "updated_at": "2026-11-20T21:02:50Z",
+    "updated_by": "criteria-check"
+  },
+  "TCK-0025": {
+    "content_digest": "sha256:e053751f4bb384a28da653c251256a3450402ed1eac2f69e4f03719d0c27e456",
+    "criteria_digest": "sha256:30dcd4215d47d7998768ecae375353181b110b2577609851cb376504092458d8",
+    "head": "786d7ed613fb537985c49aae09896b1476482edf",
+    "passes": true,
+    "tree": "318cf4c04ff874569741e233310176708c15ba25",
+    "updated_at": "2026-11-20T21:17:25Z",
+    "updated_by": "criteria-check"
+  },
+  "TCK-0026": {
+    "content_digest": "sha256:79061db72d16bcbf14583fc85fc1d211fd22692b92b665c64ed23de1fe4c609f",
+    "criteria_digest": "sha256:b396b52dddddd0211821c83378e1e417dff0b72b03567c1c6330b94b4df6f995",
+    "head": "a277a1a7a6a76ada8a98fa9c68fefba0cd18d665",
+    "passes": true,
+    "tree": "d53e40c6e1ea193d68ee45c76c41b03ef093bff0",
+    "updated_at": "2026-11-20T20:06:08Z",
+    "updated_by": "criteria-check"
+  },
+  "TCK-0027": {
+    "content_digest": "sha256:3000a7744cedb2110632458113542221abba6b3ab1c196266d6ea5e460394261",
+    "criteria_digest": "sha256:17e20f483a3bee2d7ce43081f29fa1a136e4a00b5b24dc648ea9218f25f7f4b8",
+    "head": "ef0dad9205335a7ffffa72f0ce1fa92197741c1f",
+    "passes": true,
+    "tree": "3280847500b5728ff68e8bdba0b3cc36f24e5f34",
+    "updated_at": "2026-11-20T19:25:16Z",
+    "updated_by": "criteria-check"
+  },
+  "TCK-0028": {
+    "content_digest": "sha256:bbc27ff0cdb509294df5caba36e30c6b1c9e38d0d8783f2eccdc1e5f86fd19d0",
+    "criteria_digest": "sha256:8b2705b0ac121133444aeec350a8d26a63491c8fe771d0111701bc78e4ea2dee",
+    "head": "e2d76c0b6379eb9abce2713433da272a32f74588",
+    "passes": true,
+    "tree": "513031d0c0ea4f289cb6c88c62349734e83e1ee5",
+    "updated_at": "2026-11-20T19:37:50Z",
+    "updated_by": "criteria-check"
+  },
+  "TCK-0029": {
+    "content_digest": "sha256:79061db72d16bcbf14583fc85fc1d211fd22692b92b665c64ed23de1fe4c609f",
+    "criteria_digest": "sha256:a49bcdb8f4bbb7ee7c8310e3d563ad529ee152d4bd9cad2a8ec559fdfd624a11",
+    "head": "a4cd423a7c76f275490a4415c06bf34fab58a25c",
+    "passes": true,
+    "tree": "7c887015e9062d36354a6fc52570ef7365849715",
+    "updated_at": "2026-11-20T20:01:33Z",
+    "updated_by": "criteria-check"
   }
 }

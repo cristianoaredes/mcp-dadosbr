@@ -1,0 +1,74 @@
+{
+  "ticket": "TCK-0022",
+  "run": "RUN-20261120-191159-tck-0022",
+  "timestamp": "2026-11-20T19:17:29.186887+00:00",
+  "overall": "ACCEPTABLE",
+  "score": 83,
+  "low_confidence": false,
+  "verify_loaded": true,
+  "markdown_rejected": false,
+  "diff_scope": "run_artifact",
+  "diff_scope_note": null,
+  "dimensions": {
+    "spec_compliance": {
+      "score": 66,
+      "notes": "1/3 critérios identificados no diff"
+    },
+    "code_quality": {
+      "score": 90,
+      "notes": "Test files present (1)"
+    },
+    "test_coverage": {
+      "score": 60,
+      "notes": "No test files detected in diff; 18 assertions/expectations"
+    },
+    "safety": {
+      "score": 100,
+      "notes": "No safety risks detected"
+    },
+    "documentation": {
+      "score": 50,
+      "notes": "No documentation changes (1 code file(s))"
+    },
+    "objective_alignment": {
+      "score": null,
+      "objective": null,
+      "notes": "null (no linked spec)"
+    }
+  },
+  "objective_alignment": null,
+  "what_went_right": [
+    "Todos os 1 critérios de aceitação passaram"
+  ],
+  "what_went_wrong": [
+    "Nenhuma falha significativa detectada"
+  ],
+  "root_causes": [],
+  "lessons": [],
+  "recommendations": [],
+  "iterations": 1,
+  "lesson_utility": {
+    "utility": 0.66,
+    "n_lessons": 1,
+    "lessons_consulted": [
+      "Precisou de 2 iterações (re-execução)"
+    ],
+    "signal": "computed"
+  },
+  "strategy_effectiveness": {
+    "strategy": "default",
+    "effectiveness": 0.353,
+    "n_runs": 22,
+    "n_pre_era_excluded": 0,
+    "n_unmeasured_excluded": 1
+  },
+  "decision_outcome_backfill": {
+    "outcome": "approved",
+    "updated": [
+      "DEC-20261120-191130895912",
+      "DEC-20261120-191159309148"
+    ],
+    "skipped_human_review": [],
+    "error": null
+  }
+}

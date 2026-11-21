@@ -8,6 +8,7 @@ export interface ApiConfig {
 export interface ServerConfig {
   transport: string;
   httpPort: number;
+  httpHost?: string;
   cacheSize: number;
   cacheTTL: number;
   apiTimeout: number;
@@ -47,6 +48,15 @@ export interface Metrics {
   errors: number;
   totalTime: number;
   startTime: number;
+}
+
+export interface ToolMetrics {
+  requests: number;
+  errors: number;
+  cacheHits: number;
+  totalTimeMs: number;
+  avgTimeMs: number;
+  maxTimeMs: number;
 }
 
 // Cache interfaces

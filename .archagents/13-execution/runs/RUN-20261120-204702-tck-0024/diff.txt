@@ -1,0 +1,1187 @@
+diff --git a/.archagents/00-overview.md b/.archagents/00-overview.md
+index 8cb2b8d..ae86eb2 100644
+--- a/.archagents/00-overview.md
++++ b/.archagents/00-overview.md
+@@ -1,12 +1,14 @@
+ # Visão geral
+ 
+-Base revisada: `9e74ba5` (candidata `0.6.0` sob `AGPL-3.0-only`; base inicial: `037dae4c`).
++Base revisada: `c83d626` (`0.6.0`, worktree `audit-remediation`; base inicial: `037dae4c`).
+ 
+-Servidor MCP em TypeScript (`@aredes.me/mcp-dadosbr`, licença `AGPL-3.0-only`, atribuições em `NOTICE.md`) para consulta de dados públicos brasileiros. O pacote declara a versão `0.6.0`, expõe 23 ferramentas MCP e 5 recursos MCP Apps (`ui://dadosbr/*.html`) em Node.js (`^22.12.0 || ^24.0.0 || ^26.0.0`), além de um adapter separado para Cloudflare Workers. O build compila o servidor com `tsc` e empacota os 5 apps HTML autônomos com `scripts/build-apps.mjs`.
++Servidor MCP em TypeScript (`@aredes.me/mcp-dadosbr`, licença `AGPL-3.0-only`, atribuições em `NOTICE.md`) para consulta de dados públicos brasileiros. O pacote declara e propaga a versão `0.6.0` (`package.json`, `lib/shared/utils/constants.ts`, Worker `/`, `/health`, `/openapi.json` e `/sse`), expõe 23 ferramentas MCP e 5 recursos MCP Apps (`ui://dadosbr/*.html`) em Node.js (`^22.12.0 || ^24.0.0 || ^26.0.0`), além de um adapter separado para Cloudflare Workers (`lib/adapters/cloudflare.ts` + `lib/workers/*`) e documentação operacional de runner Linux isolado em `infra/runner/`. O build compila o servidor com `tsc` e empacota os 5 apps HTML autônomos com `scripts/build-apps.mjs`.
+ 
+ ## Fontes
+ 
+ - `package.json:L1-L48`
+ - `package.json:L72-L74`
+-- `package.json:L109-L114`
+-- `lib/core/mcp-server.ts:L17-L64`
++- `package.json:L109-L111`
++- `lib/core/mcp-server.ts:L17-L66`
++- `lib/shared/utils/constants.ts:L32-L44`
++- `lib/core/tools.ts:L1-L60`
+diff --git a/.archagents/02-architecture.md b/.archagents/02-architecture.md
+index 2c6f5be..7e11920 100644
+--- a/.archagents/02-architecture.md
++++ b/.archagents/02-architecture.md
+@@ -1,8 +1,8 @@
+ # Arquitetura AS-IS
+ 
+-Base revisada: `79aa712` (`v0.5.0`; base inicial: `037dae4c`).
++Base revisada: `c83d626` (`0.6.0`, worktree `audit-remediation`; base inicial: `037dae4c`).
+ 
+-O CLI conecta o servidor MCP por stdio ou HTTP/SSE (com métricas de execução emitidas em `stderr` para manter `stdout` exclusivo de JSON-RPC no transporte stdio). Há um adapter separado no Cloudflare Worker. O servidor central consulta um registro de ferramentas por domínio e expõe cinco recursos MCP Apps (`ui://dadosbr/*.html`) no runtime Node.
++O CLI conecta o servidor MCP por stdio ou HTTP/SSE (`lib/adapters/cli-http.ts`, com métricas de execução emitidas em `stderr` para manter `stdout` exclusivo de JSON-RPC no transporte stdio). Há um adapter separado no Cloudflare Worker. O servidor central consulta o registro unificado de 23 ferramentas por domínio (`lib/core/registry.ts`, `lib/core/tools.ts`) e expõe cinco recursos MCP Apps (`ui://dadosbr/*.html`) no runtime Node, enquanto a automação de produção/sandbox opcional vive isolada em `infra/runner/`.
+ 
+ ```mermaid
+ flowchart LR
+@@ -29,7 +29,13 @@ sequenceDiagram
+ - `lib/adapters/cli.ts:L166-L245`
+ - `lib/core/mcp-server.ts:L17-L143`
+ - `lib/core/tools.ts:L27-L47`
+-- `lib/workers/worker.ts:L68-L92`
++- `lib/core/lookup.ts:L1-L87`
++- `lib/core/intelligence.ts:L5,L219-L253,L458-L525`
++- `lib/tools/core.ts:L6-L103`
++- `lib/adapters/cloudflare.ts:L23-L58,L163,L184,L280`
++- `lib/workers/worker.ts:L12-L115,L166`
++- `lib/workers/sse.ts:L155-L185`
++- `lib/workers/openapi.ts:L6,L14-L20`
+ - `lib/tools/government.ts:L12-L38`
+ - `scripts/build-apps.mjs:L1-L42`
+ 
+@@ -58,3 +64,8 @@ O servidor Node associa `cnpj_lookup` a `ui://dadosbr/ficha-cnpj.html`. A proje
+ - **Worker SSE (`lib/workers/sse.ts`, `lib/workers/worker.ts`)**: `handleSSEEndpoint` usa `ReadableStream<Uint8Array>` (`highWaterMark: 16`) com `timeout` (`TIMEOUTS.SSE_CONNECTION_MS`) e heartbeat (`TIMEOUTS.PING_INTERVAL_MS`) sem limpeza prematura em `finally`, coordenando encerramento síncrono e idempotente (`cleanup(reason)` + `finally { resolveDone(); }`) via `request.signal` abort, `cancel()` do consumidor, erro ou timeout, descartando pings com `desiredSize <= 0` sob backpressure e propagando `ctx.waitUntil(donePromise)`. Comportamento em runtime edge de produção no Cloudflare Workers fica *a confirmar*.
+ - **KV TTL e Rate Limit (`lib/core/cache.ts`, `lib/workers/rate-limit.ts`, `wrangler.toml`)**: `KVCache.set` e `checkRateLimit` gravam com `expirationTtl` mínimo de `60` segundos (`MIN_KV_EXPIRATION_TTL_SECONDS`, requisito da API Cloudflare KV) e tratamento defensivo de JSON corrompido. `checkRateLimit` lê `TIMEOUTS.RATE_LIMIT_WINDOW_MS` dinamicamente, usa chaves em janela fixa (`rate_limit:<ip>:<bucket>`), prioriza `CF-Connecting-IP` e ignora `X-Forwarded-For` salvo opt-in `MCP_TRUST_X_FORWARDED_FOR="true"`. `wrangler.toml` mantém `MCP_CACHE` e `MCP_KV` no mesmo namespace ID separados por prefixo de chave; como o Cloudflare KV possui consistência eventual e não provê incremento atômico global entre POPs (*a confirmar* em tráfego distribuído), bursts simultâneos são best-effort até eventual adoção de binding nativo de Rate Limiting ou Durable Objects.
+ - **Timers e Graceful Shutdown no Node CLI (`lib/infrastructure/rate-limiter.ts`, `lib/adapters/cli-http.ts`, `lib/adapters/cli.ts`)**: `RateLimiter` utiliza `.unref?.()` no timer de limpeza e expõe `destroy()` + alias `dispose()`. O servidor HTTP+SSE do CLI aplica headers defensivos e validação `Host`/`Origin` antes do parser `express.json({ limit: "1mb" })`, captura o `http.Server` retornado por `app.listen` e unifica `SIGINT`/`SIGTERM` em `createGracefulShutdown` (drenando sessões SSE, conexões ociosas do servidor HTTP, `mcpServer.close()` e `cache.clear()` dentro de timeout limitado).
++
++## Arquitetura em Camadas e Paridade Worker (`TCK-0024` / `FND-0012`)
++
++- **Separação acíclica `lib/core` <- `lib/tools` (`ADR-0001`)**: `lookup()`, `deduplicate()` e `getPendingRequestCount()` residem em `lib/core/lookup.ts` (`L1-L87`). `lib/core/intelligence.ts` e `lib/tools/company.ts` consomem `core/lookup.ts` diretamente, eliminando qualquer import de `lib/tools/` dentro de `lib/core/`. `lib/tools/core.ts` consome `...CNPJ_INTELLIGENCE_TOOL` e `executeIntelligence` estaticamente (sem schema duplicado) mantendo apenas re-exports de `lookup`/`deduplicate`/`getPendingRequestCount` em `L103` para retrocompatibilidade dos testes. `executeIntelligenceInternal` normaliza `options.cnpj` via `normalizeCnpj` antes de acessar/gravar chaves `cnpj:<baseUrl>:<digits>`.
++- **Paridade Node <-> Cloudflare Worker (`ADR-0002`)**: `SERVER.VERSION` em `lib/shared/utils/constants.ts:L37` e `SERVER_VERSION` em `lib/config/index.ts:L13` refletem `"0.6.0"` (mesma versão de `package.json`), propagada para `/`, `/health`, `/openapi.json` e eventos `/sse`. `GET /` em `lib/workers/worker.ts:L109` publica dinamicamente todas as 23 ferramentas de `TOOL_DEFINITIONS`. `syncWorkerEnv(env)` em `lib/adapters/cloudflare.ts:L40-L58` sincroniza a allowlist explícita (`TAVILY_API_KEY`, `PERPLEXITY_API_KEY`, `TRANSPARENCIA_API_KEY`, `DATAJUD_API_KEY`) para `process.env` no Worker sem vazar `MCP_API_KEY` ou bindings KV. Comportamento em runtime edge de produção no Cloudflare Workers fica *a confirmar*.
+diff --git a/.archagents/03-modules.md b/.archagents/03-modules.md
+index 0acb5e5..2ac9b03 100644
+--- a/.archagents/03-modules.md
++++ b/.archagents/03-modules.md
+@@ -1,20 +1,25 @@
+ # Mapa de módulos
+ 
+-Base revisada: `79aa712` (`v0.5.0`; base inicial: `037dae4c`).
++Base revisada: `c83d626` (`0.6.0`, worktree `audit-remediation`; base inicial: `037dae4c`).
+ 
+-- `lib/core`: servidor MCP (`mcp-server.ts`), registro (`registry.ts`), orquestração e métricas (`tools.ts`), cliente HTTP com retry/circuit breaker (`http-client.ts`), cache, busca, inteligência e validação.
+-- `lib/tools`: módulos de domínio auto-registrados via barrel `index.ts` (`core`, `government`, `legal`, `company`, `financial`, `health`, `osint`).
+-- `lib/shared`: contratos e projeções compartilhadas entre servidor e apps (`bacen.ts`, `pncp.ts`, `cnpj-profile.ts`, `errors.ts`).
+-- `lib/adapters` e `lib/bin`: adaptadores do CLI (`cli.ts` em stdio e HTTP/SSE), Cloudflare (`cloudflare.ts`), Smithery (`smithery.ts`) e binário `mcp-dadosbr.ts`.
+-- `lib/workers`: ponto de entrada, rotas REST/SSE, autenticação/OAuth e rate limit do Cloudflare Worker.
++- `lib/core`: servidor MCP (`mcp-server.ts`), registro (`registry.ts`), orquestração e métricas (`tools.ts`), serviço acíclico de lookup/deduplicação (`lookup.ts`), cliente HTTP com retry/circuit breaker e proteção SSRF (`http-client.ts`), cache (`cache.ts`), schemas compartilhados (`tool-schemas.ts`), busca (`search.ts`, `search-providers.ts`, `dork-templates.ts`), inteligência CNPJ (`intelligence.ts`), pensamento sequencial (`sequential-thinking.ts`) e validação Zod (`validation.ts`). Decisões estruturais registradas em `.archagents/09-decisions/ADR-0001-*.md` e `ADR-0002-*.md`.
++- `lib/tools`: módulos de domínio auto-registrados via barrel `index.ts` (`core`, `government`, `legal`, `company`, `financial`, `health`, `osint`). Não são importados por `lib/core/` (fluxo acíclico `tools -> core`).
++- `lib/shared`: contratos e projeções compartilhadas entre servidor e apps (`bacen.ts`, `pncp.ts`, `cnpj-profile.ts`, `errors.ts`, `log-redaction.ts`, `types/`, `utils/constants.ts`, `utils/timeout.ts`).
++- `lib/adapters` e `lib/bin`: adaptadores do CLI (`cli.ts` em stdio/HTTP, `cli-http.ts` com servidor Express, headers e `createGracefulShutdown`), Cloudflare (`cloudflare.ts` com `syncWorkerEnv`), Smithery (`smithery.ts`) e binário `mcp-dadosbr.ts`.
++- `lib/workers`: ponto de entrada (`worker.ts`), rotas REST (`rest.ts`), SSE (`sse.ts`), OpenAPI (`openapi.ts`), autenticação/OAuth (`auth.ts`, `oauth.ts`, `tokens.ts`, `crypto.ts`, `types.ts`) e rate limit (`rate-limit.ts`) do Cloudflare Worker.
+ - `apps/` e `scripts/build-apps.mjs`: cinco interfaces MCP Apps (`apps/ibge`, `apps/querido-diario`, `apps/bacen`, `apps/pncp`, `apps/cnpj`), empacotadas via `esbuild` em HTML autônomo sob `build/lib/apps/*.html`.
++- `infra/runner/`: supervisor systemd/Docker isolado (`supervisor.py`, `setup-network-isolation.sh`, `Dockerfile`, `dadosbr-runner-supervisor.service`, `test_supervisor.py`) documentado em `.archagents/06-infra-devops.md`.
+ 
+ ## Fontes
+ 
+ - `lib/tools/index.ts:L1-L25`
+ - `lib/core/registry.ts:L8-L46`
++- `lib/core/lookup.ts:L1-L87`
++- `lib/core/intelligence.ts:L1-L35`
++- `lib/tools/core.ts:L1-L103`
+ - `lib/adapters/cli.ts:L1-L18`
+-- `lib/workers/worker.ts:L63-L92`
++- `lib/adapters/cloudflare.ts:L23-L58`
++- `lib/workers/worker.ts:L12-L115`
+ - `scripts/build-apps.mjs:L1-L42`
+ - `lib/shared/bacen.ts:L1-L37`
+ - `lib/shared/pncp.ts:L1-L56`
+diff --git a/.archagents/09-decisions/ADR-0001-extrair-lib-core-lookup-ts-para-eliminar-ciclo-core-tools-e-unificar-contrato-cn.md b/.archagents/09-decisions/ADR-0001-extrair-lib-core-lookup-ts-para-eliminar-ciclo-core-tools-e-unificar-contrato-cn.md
+new file mode 100644
+index 0000000..5bfc267
+--- /dev/null
++++ b/.archagents/09-decisions/ADR-0001-extrair-lib-core-lookup-ts-para-eliminar-ciclo-core-tools-e-unificar-contrato-cn.md
+@@ -0,0 +1,41 @@
++---
++id: ADR-0001
++title: "Extrair lib/core/lookup.ts para eliminar ciclo core-tools e unificar contrato cnpj_intelligence"
++status: accepted
++date: 2026-11-20
++deciders: codex
++tickets:
++  - TCK-0024
++supersedes: []
++---
++# ADR-0001 - Extrair lib/core/lookup.ts para eliminar ciclo core-tools e unificar contrato cnpj_intelligence
++
++## Contexto
++
++Na auditoria arquitetural (`FND-0012` / `TCK-0024`), foram identificadas duas fragilidades estruturais na camada central:
++
++1. **Ciclo de dependência `lib/core/` <-> `lib/tools/`:** `lib/core/intelligence.ts` importava `lookup` de `lib/tools/core.ts`, enquanto `lib/tools/core.ts` importava `executeIntelligence` e `CNPJ_INTELLIGENCE_TOOL` de `lib/core/intelligence.ts` (com import dinâmico e schema duplicado inline). Além de violar a direção de dependência (`tools -> core`), `lib/tools/company.ts` também dependia de `lib/tools/core.ts` apenas para `lookup`.
++2. **Deriva e duplicação do contrato `cnpj_intelligence`:** `lib/tools/core.ts` definia uma cópia própria de `inputSchema` (apenas provider `tavily`, limite `max_queries` divergente) diferente de `CNPJ_INTELLIGENCE_TOOL` em `lib/core/intelligence.ts` (`L458-L525`), e `executeIntelligenceInternal` não normalizava o CNPJ antes de consultar a chave de cache `cnpj:${baseUrl}:${cnpj}`, causando cache miss quando o CNPJ entrava formatado enquanto `lookup()` gravava com dígitos normalizados (ou vice-versa).
++
++## Decisao
++
++1. **Extrair serviço compartilhado em `lib/core/lookup.ts` (`L1-L87`):** mover `PendingRequest`, `getPendingRequestCount()`, `deduplicate()` e `lookup()` para a camada `core`, dependendo apenas de `./http-client.js`, `../config/timeouts.js` e `../types/index.js`.
++2. **Inverter imports para fluxo acíclico:** `lib/core/intelligence.ts:L5` e `lib/tools/company.ts` passam a importar `lookup` diretamente de `core/lookup.js`. `lib/tools/core.ts:L6` importa `{ deduplicate, getPendingRequestCount, lookup }` de `../core/lookup.js` e re-exporta os símbolos (`L103`) apenas para compatibilidade retroativa com testes unitários existentes.
++3. **Fonte única do contrato `cnpj_intelligence`:** `lib/tools/core.ts:L16,L66-L90` importa estaticamente `CNPJ_INTELLIGENCE_TOOL` e `executeIntelligence` de `../core/intelligence.js`, usa `...CNPJ_INTELLIGENCE_TOOL` e `CnpjIntelligenceSchema` de `../core/tool-schemas.js` (`L9,L68`), encaminhando `max_results_per_query ?? max_results` e `max_queries` (`L83-L84`). Em `lib/core/intelligence.ts:L219-L242`, `executeIntelligenceInternal` passa a normalizar `normalizedCnpj = normalizeCnpj(options.cnpj)` antes da leitura de cache e do fallback para `lookup('cnpj', normalizedCnpj, ...)`, e `CNPJ_INTELLIGENCE_TOOL` documenta ambos os provedores `tavily` e `perplexity` (`L471-L475`, `L504`).
++
++## Alternativas descartadas
++
++- **Manter `lookup()` em `lib/tools/core.ts` usando lazy import contínuo:** manteria acoplamento circular bidirecional entre `core` e `tools` e impediria verificação estática limpa do grafo de imports.
++- **Duplicar `lookup()` dentro de `intelligence.ts`:** multiplicaria o mapa `pendingRequests` de deduplicação em voo e reintroduziria inconsistência de TTL/timeout/chaves de cache.
++
++## Consequencias
++
++- **Positivas:** grafo `lib/core/` -> `lib/tools/` estritamente acíclico (nenhum arquivo em `lib/core/` importa de `lib/tools/`), zero duplicação de lógica de deduplicação ou schema de `cnpj_intelligence`, alinhamento de cache hits em CNPJs formatados/não-formatados, garantido em build (`tsc`, `tsconfig.worker.json`) e teste unitário (`test/unit/architecture-hygiene.test.ts`).
++- **Custos / Trade-offs:** `lib/tools/core.ts:L103` mantém re-export de compatibilidade para suites antigas; remoções futuras exigem atualizar esses imports nos testes. Comportamento com Cloudflare KV em produção permanece *a confirmar*.
++
++## Evidencias
++
++- `lib/core/lookup.ts:L1-L87`
++- `lib/core/intelligence.ts:L5,L219-L253,L458-L525`
++- `lib/tools/core.ts:L6-L17,L66-L90,L103`
++- `test/unit/architecture-hygiene.test.ts`
+diff --git a/.archagents/09-decisions/ADR-0002-paridade-de-versao-catalogo-de-23-tools-e-injecao-de-env-vars-entre-cli-node-e-c.md b/.archagents/09-decisions/ADR-0002-paridade-de-versao-catalogo-de-23-tools-e-injecao-de-env-vars-entre-cli-node-e-c.md
+new file mode 100644
+index 0000000..e92db44
+--- /dev/null
++++ b/.archagents/09-decisions/ADR-0002-paridade-de-versao-catalogo-de-23-tools-e-injecao-de-env-vars-entre-cli-node-e-c.md
+@@ -0,0 +1,45 @@
++---
++id: ADR-0002
++title: "Paridade de versao, catalogo de 23 tools e injecao de env vars entre CLI Node e Cloudflare Worker"
++status: accepted
++date: 2026-11-20
++deciders: codex
++tickets:
++  - TCK-0024
++supersedes: []
++---
++# ADR-0002 - Paridade de versao, catalogo de 23 tools e injecao de env vars entre CLI Node e Cloudflare Worker
++
++## Contexto
++
++Na auditoria (`FND-0012` / `TCK-0024`), detectaram-se desvios entre o runtime Node CLI (`package.json` versão `0.6.0`, 23 tools registradas via `lib/tools/index.ts`, configuração por `process.env`) e o runtime Cloudflare Workers (`lib/adapters/cloudflare.ts`, `lib/workers/worker.ts`, `lib/workers/sse.ts`, `lib/workers/openapi.ts`):
++
++1. **Versão divergente (`1.0.0` vs `0.6.0`):** `SERVER.VERSION` em `lib/shared/utils/constants.ts` e literais `"1.0.0"` em `worker.ts`, `sse.ts` e `openapi.ts` divergiam de `package.json` (`"0.6.0"`).
++2. **Catálogo incompleto na rota raiz `/` do Worker:** `worker.ts` listava apenas 5 strings hardcoded no endpoint `GET /`, enquanto `tools/list` (`TOOL_DEFINITIONS`) expõe 23 ferramentas.
++3. **Propagação parcial de secrets no Cloudflare Worker:** apenas `TAVILY_API_KEY` era copiada de `env` para `process.env`, deixando ferramentas OSINT/legais/governamentais no Worker sem acesso a `PERPLEXITY_API_KEY`, `TRANSPARENCIA_API_KEY` e `DATAJUD_API_KEY`. Além disso havia blocos `if (env.TAVILY_API_KEY)` duplicados em `cloudflare.ts` e `worker.ts`.
++
++## Decisao
++
++1. **Fonte única de versão (`0.6.0`):** alinhar `SERVER.VERSION` em `lib/shared/utils/constants.ts:L37` para `'0.6.0'`; `lib/config/index.ts:L13` re-exporta `SERVER_VERSION = SERVER.VERSION`, e `lib/adapters/cloudflare.ts:L163`, `lib/workers/worker.ts:L16,L96`, `lib/workers/sse.ts:L159,L182` e `lib/workers/openapi.ts:L6,L19` consomem `SERVER_VERSION` em vez de strings hardcoded.
++2. **Catálogo dinâmico em `GET /`:** `lib/workers/worker.ts:L17,L109` importa `TOOL_DEFINITIONS` e publica `TOOL_DEFINITIONS.map((tool) => tool.name)` (todas as 23 ferramentas ativas).
++3. **Helper centralizado com allowlist explícita de secrets (`syncWorkerEnv`):** `Env` em `lib/adapters/cloudflare.ts:L34-L37` declara explicitamente `TAVILY_API_KEY`, `PERPLEXITY_API_KEY`, `TRANSPARENCIA_API_KEY` e `DATAJUD_API_KEY`, e `syncWorkerEnv(env)` (`L40-L58`) propaga somente essa allowlist não-vazia para `process.env`, chamado em `cloudflare.ts:L184,L280` e `worker.ts:L166` sem copiar chaves arbitrárias de `env` (como `MCP_API_KEY` ou bindings KV) e sem logar valores.
++
++## Alternativas descartadas
++
++- **Copiar `Object.entries(env)` inteiro para `process.env`:** rejeitada por segurança, pois vazaria segredos de controle (`MCP_API_KEY`) ou tentaria serializar bindings não-string (`KVNamespace`) em `process.env`.
++- **Manter strings hardcoded por arquivo de Worker:** rejeitada pela alta probabilidade de nova deriva entre `package.json`, OpenAPI, SSE e MCP `initialize`.
++
++## Consequencias
++
++- **Positivas:** paridade verificada em testes unitários para versão (`0.6.0`), lista de 23 ferramentas e propagação restrita das 4 API keys de provedores; redução de código duplicado entre `worker.ts` e `cloudflare.ts`.
++- **Custos / Trade-offs:** inclusão futura de uma nova chave de API externa para tools exige adicioná-la intencionalmente em `WORKER_ENV_KEYS` (`lib/adapters/cloudflare.ts:L40-L45`) e `Env`. Execução real no edge Cloudflare Workers (secrets via `wrangler secret put` e comportamento global de isolados) permanece *a confirmar* em ambiente remoto.
++
++## Evidencias
++
++- `lib/shared/utils/constants.ts:L32-L44`
++- `lib/config/index.ts:L12-L13`
++- `lib/adapters/cloudflare.ts:L23-L58,L163,L184,L280`
++- `lib/workers/worker.ts:L12-L17,L92-L110,L166`
++- `lib/workers/sse.ts:L155-L185`
++- `lib/workers/openapi.ts:L6,L14-L20`
++- `test/unit/architecture-hygiene.test.ts`
+diff --git a/.archagents/13-execution/acceptance-lock.json b/.archagents/13-execution/acceptance-lock.json
+index 8f3e001..d3ab901 100644
+--- a/.archagents/13-execution/acceptance-lock.json
++++ b/.archagents/13-execution/acceptance-lock.json
+@@ -197,6 +197,15 @@
+     "updated_at": "2026-11-20T20:31:18Z",
+     "updated_by": "criteria-check"
+   },
++  "TCK-0024": {
++    "content_digest": "sha256:6803224a71e3ad7d29a998c22347a131b0c8493dba90492b6c1b1b205c59047e",
++    "criteria_digest": "sha256:7ef914b3411e4ecde5ad0e96d8c91e3d5fb7af37cf870ea472d65b357654504f",
++    "head": "c83d626e6f76e431afabc42b9d22ab0082d766bb",
++    "passes": true,
++    "tree": "db094b707b06d96045b6919c73cd306aee7b6f83",
++    "updated_at": "2026-11-20T21:02:50Z",
++    "updated_by": "criteria-check"
++  },
+   "TCK-0026": {
+     "content_digest": "sha256:79061db72d16bcbf14583fc85fc1d211fd22692b92b665c64ed23de1fe4c609f",
+     "criteria_digest": "sha256:b396b52dddddd0211821c83378e1e417dff0b72b03567c1c6330b94b4df6f995",
+diff --git a/.archagents/13-execution/criteria-attempts.jsonl b/.archagents/13-execution/criteria-attempts.jsonl
+index faa00a6..e3076a8 100644
+--- a/.archagents/13-execution/criteria-attempts.jsonl
++++ b/.archagents/13-execution/criteria-attempts.jsonl
+@@ -40,3 +40,6 @@
+ {"ts": "2026-11-20T20:06:08Z", "ticket": "TCK-0026", "verdict": "pass", "passed": 2, "total": 2}
+ {"ts": "2026-11-20T20:17:07Z", "ticket": "TCK-0023", "verdict": "pass", "passed": 4, "total": 4}
+ {"ts": "2026-11-20T20:31:18Z", "ticket": "TCK-0023", "verdict": "pass", "passed": 4, "total": 4}
++{"ts": "2026-11-20T20:52:07Z", "ticket": "TCK-0024", "verdict": "pass", "passed": 4, "total": 4}
++{"ts": "2026-11-20T20:56:00Z", "ticket": "TCK-0024", "verdict": "pass", "passed": 4, "total": 4}
++{"ts": "2026-11-20T21:02:50Z", "ticket": "TCK-0024", "verdict": "pass", "passed": 4, "total": 4}
+diff --git a/.archagents/15-backlog/tickets/TCK-0024-resolver-ciclo-core-tools-alinhar-contrato-de-cnpj-intelligence-remover-codigo-a.md b/.archagents/15-backlog/tickets/TCK-0024-resolver-ciclo-core-tools-alinhar-contrato-de-cnpj-intelligence-remover-codigo-a.md
+index dde8015..a9a59fd 100644
+--- a/.archagents/15-backlog/tickets/TCK-0024-resolver-ciclo-core-tools-alinhar-contrato-de-cnpj-intelligence-remover-codigo-a.md
++++ b/.archagents/15-backlog/tickets/TCK-0024-resolver-ciclo-core-tools-alinhar-contrato-de-cnpj-intelligence-remover-codigo-a.md
+@@ -5,8 +5,8 @@ title: "Resolver ciclo core-tools, alinhar contrato de cnpj_intelligence, remove
+ source: audit
+ created_at: 2026-11-20T15:16:21Z
+ created_by: ops
+-updated_at: 2026-11-20T15:16:21Z
+-status: raw
++updated_at: 2026-11-20T20:53:00Z
++status: verifying
+ severity: medium
+ category: architecture
+ effort: M
+@@ -15,8 +15,10 @@ ceremony: full
+ business_impact: ""
+ linked_findings:
+   - FND-0012
+-linked_designs: []
+-linked_runs: []
++linked_designs:
++  - DES-0027
++linked_runs:
++  - RUN-20261120-204702-tck-0024
+ linked_verifications: []
+ linked_docs:
+   - .archagents/02-architecture.md
+@@ -25,7 +27,21 @@ external_sync: []
+ blocks: []
+ blocked_by: []
+ related: []
+-acceptance: []
++acceptance:
++  - check: "npx vitest run test/unit/architecture-hygiene.test.ts test/unit/worker-rest-cloudflare.test.ts test/unit/deduplication.test.ts test/unit/dependency-hygiene.test.ts && echo ARCH_TESTS_OK"
++    expect: ARCH_TESTS_OK
++  - check: "npm run test:coverage && npm test && echo TESTS_COVERAGE_OK"
++    expect: TESTS_COVERAGE_OK
++  - check: "npx tsc --noEmit && npx tsc -p tsconfig.worker.json --noEmit && echo TYPECHECK_OK"
++    expect: TYPECHECK_OK
++  - check: "npm run build && npm run build:worker && npm run test:transport && echo BUILD_TRANSPORT_OK"
++    expect: BUILD_TRANSPORT_OK
++depth_decision:
++  workflow: lightweight
++  design: lightweight
++  verify: completo
++  source: routing-classifier
++  classified_at: 2026-11-20T20:46:26Z
+ ---
+ # TCK-0024 - Resolver ciclo core-tools, alinhar contrato de cnpj_intelligence, remover codigo/artefatos orfaos e atualizar cobertura AS-IS/ADRs
+ 
+@@ -39,9 +55,20 @@ Originado por **FND-0012** (`architecture` / `medium`, auditoria na revisão `6c
+ 
+ ## Falsificador
+ 
+-<!-- O que reprova ANTES do fix: o comando que fica vermelho hoje, ou
+-     `arquivo:linha` da evidência. Sem isto o ticket não fecha. -->
++Evidências pré-fix de **FND-0012** observadas na revisão `c83d626`:
++
++- Ciclo `core ↔ tools`: `lib/core/intelligence.ts:5` importa `lookup` de `lib/tools/core.ts`, enquanto `lib/tools/core.ts:152` importa dinamicamente `../core/intelligence.js`.
++- Divergência de contrato em `cnpj_intelligence`: `lib/tools/core.ts:128-141` duplica a definição em vez de reutilizar `CNPJ_INTELLIGENCE_TOOL` (`lib/core/intelligence.ts:457-523`), e `lib/core/intelligence.ts:233,241` usa `options.cnpj` sem normalização na chave de cache e no lookup.
++- Versão divergente (`"1.0.0"` vs `package.json:3` `"0.6.0"`): `lib/config/index.ts:13`, `lib/shared/utils/constants.ts:37`, `lib/workers/worker.ts:93`, `lib/workers/sse.ts:158,181` e `lib/workers/openapi.ts:18`.
++- Paridade incompleta no Worker: `lib/adapters/cloudflare.ts:34,163-165,263-265` e `lib/workers/worker.ts:165-167` injetam apenas `TAVILY_API_KEY` (omitindo `PERPLEXITY_API_KEY`, `TRANSPARENCIA_API_KEY`, `DATAJUD_API_KEY`), e `lib/workers/worker.ts:106` lista apenas 5 de 23 tools em `GET /`.
++- Artefatos órfãos/quebrados: `test/unit/search.test.ts.patch` e script `"test:sse": "node examples/sse-client.js"` em `package.json:39` apontando para arquivo inexistente.
++- Governança AS-IS: `.archagents/03-modules.md` desatualizado segundo `audit-measure.py`, `.archagents/_meta.json:8` fixado em `baseline_commit` antigo e `.archagents/09-decisions/` sem ADRs (`elo-de-supersede-de-adr` não medido).
+ 
+ ## Log de transicoes
+ 
+ - 2026-11-20T15:16:21Z - **raw** - criado via scripts/ops/ticket/create.py.
++- 2026-11-20T20:46:26Z - **noted** - body:falsifier (replace): Registrar evidencias FND-0012 pre-fix na revisao c83d626
++- 2026-11-20T20:46:26Z - **triaged** - Falsificador FND-0012 e criterios mecanicos de aceite registrados para TCK-0024 [aceite reescrito: 4 critério(s)] [depth_decision do routing-classifier: workflow lightweight, design lightweight, verify completo]
++- 2026-11-20T20:47:02Z - **designed** - DES-0027 aprovado para remediacao arquitetural FND-0012 (TCK-0024)
++- 2026-11-20T20:47:02Z - **executing** - Iniciando execucao de DES-0027 (RUN-20261120-204702-tck-0024)
++- 2026-11-20T20:53:00Z - **verifying** - Execucao completa: ciclo core-tools resolvido via lib/core/lookup.ts, cnpj_intelligence unificado e normalizado, SERVER_VERSION=0.6.0, 23 tools em GET /, syncWorkerEnv (4 chaves), orfaos removidos, ADR-0001/0002 e AS-IS atualizados; criteria-check 4/4 pass
+diff --git a/.archagents/99-memory/decisions/decisions.jsonl b/.archagents/99-memory/decisions/decisions.jsonl
+index 41701af..86e8bfe 100644
+--- a/.archagents/99-memory/decisions/decisions.jsonl
++++ b/.archagents/99-memory/decisions/decisions.jsonl
+@@ -79,3 +79,5 @@
+ {"id": "DEC-20261120-201226997369", "ts": "2026-11-20T20:12:26Z", "classe": "triage", "decision": "TCK-0023: raw->triaged", "confidence": 0.8, "outcome": "approved", "outcome_ts": "2026-11-20T20:41:42Z", "human_review": null, "metadata": {"ticket_id": "TCK-0023", "from": "raw", "to": "triaged", "forced": false, "ver_required": null}}
+ {"id": "DEC-20261120-201302202464", "ts": "2026-11-20T20:13:02Z", "classe": "design-approval", "decision": "TCK-0023: triaged->designed", "confidence": 0.7, "outcome": "approved", "outcome_ts": "2026-11-20T20:41:42Z", "human_review": null, "metadata": {"ticket_id": "TCK-0023", "from": "triaged", "to": "designed", "forced": false, "ver_required": null}}
+ {"id": "DEC-20261120-204142767717", "ts": "2026-11-20T20:41:42Z", "classe": "done-closure", "decision": "TCK-0023: verifying->done", "confidence": 0.9, "outcome": "rejected", "outcome_ts": "2026-11-20T20:41:42Z", "human_review": {"reviewer": "observed-from-verify-sequence", "verdict": "rejected"}, "metadata": {"ticket_id": "TCK-0023", "from": "verifying", "to": "done", "forced": false, "ver_required": true}}
++{"id": "DEC-20261120-204626457256", "ts": "2026-11-20T20:46:26Z", "classe": "triage", "decision": "TCK-0024: raw->triaged", "confidence": 0.8, "outcome": null, "outcome_ts": null, "human_review": null, "metadata": {"ticket_id": "TCK-0024", "from": "raw", "to": "triaged", "forced": false, "ver_required": null}}
++{"id": "DEC-20261120-204702633460", "ts": "2026-11-20T20:47:02Z", "classe": "design-approval", "decision": "TCK-0024: triaged->designed", "confidence": 0.7, "outcome": null, "outcome_ts": null, "human_review": null, "metadata": {"ticket_id": "TCK-0024", "from": "triaged", "to": "designed", "forced": false, "ver_required": null}}
+diff --git a/.archagents/_meta.json b/.archagents/_meta.json
+index 580787d..79e4b91 100644
+--- a/.archagents/_meta.json
++++ b/.archagents/_meta.json
+@@ -22,12 +22,12 @@
+       {
+         "path": "package.json",
+         "sha1": "ecf86b08666fef537ffe4cc35c313937a2abe29e",
+-        "lines_cited": "L109-L114"
++        "lines_cited": "L109-L111"
+       },
+       {
+         "path": "lib/core/mcp-server.ts",
+         "sha1": "ca2fd0fa21c7c18bc08f972684f31ce1dbf9f85d",
+-        "lines_cited": "L17-L64"
++        "lines_cited": "L17-L66"
+       }
+     ],
+     ".archagents/01-business-domain.md": [
+@@ -270,50 +270,58 @@
+     ]
+   },
+   "metrics": {
+-    "total_tickets": 12,
+-    "done_tickets": 12,
++    "total_tickets": 29,
++    "done_tickets": 27,
+     "archived_tickets": 0,
+-    "avg_cycle_time": 0.24,
++    "avg_cycle_time": 1.47,
+     "avg_cycle_time_coverage": {
+-      "measured": 12,
+-      "total": 12,
++      "measured": 27,
++      "total": 27,
+       "ratio": 1.0
+     },
+     "success_rate": 0.0,
+     "success_rate_coverage": {
+       "measured": 0,
+-      "total": 7,
+-      "discarded_non_outcome": 7,
++      "total": 8,
++      "discarded_non_outcome": 8,
+       "ratio": 0.0,
+       "source": "learning_log + taxonomia TCK-0820"
+     },
+     "status_breakdown": {
+-      "done": 12
++      "done": 27,
++      "executing": 1,
++      "raw": 1
+     }
+   },
+-  "active_runs": [],
++  "active_runs": [
++    {
++      "run_id": "RUN-20261120-204702-tck-0024",
++      "status": "running",
++      "path": ".archagents/13-execution/runs/RUN-20261120-204702-tck-0024"
++    }
++  ],
+   "malformed_runs": [],
+   "noncanonical_runs": [],
+   "zombie_runs": [],
+   "zombie_runs_coverage": "ok",
+-  "health_score": 60.0,
++  "health_score": 57.24,
+   "health_score_coverage": {
+     "formula": "ad-hoc: 0.4*backlog + 0.4*recent_success + 0.2*drift - zombie_debt_penalty (cap 20, ver TCK-2693)",
+     "approved_alternative": "lib/health_rubric (SPC-0086) — zero chamadores; trocar exige ADR",
+     "components": {
+       "backlog_health": {
+-        "value": 100.0,
++        "value": 93.1,
+         "weight": 0.4,
+-        "measured": 12,
+-        "total": 12,
+-        "ratio": 1.0
++        "measured": 27,
++        "total": 29,
++        "ratio": 0.931
+       },
+       "recent_success": {
+         "value": 0.0,
+         "weight": 0.4,
+         "measured": 0,
+-        "total": 7,
+-        "discarded_non_outcome": 7,
++        "total": 8,
++        "discarded_non_outcome": 8,
+         "ratio": 0.0,
+         "source": "learning_log (últimos 10) + taxonomia TCK-0820"
+       },
+@@ -333,7 +341,7 @@
+       "source": "zombie-run-scan.py (TCK-1447/TCK-2477) via .archagents/.zombie-runs-baseline.json"
+     }
+   },
+-  "last_updated": "2026-11-19T18:12:46.343321Z",
++  "last_updated": "2026-11-20T20:51:40.586823Z",
+   "learning_log": [
+     {
+       "run": "RUN-20261117-224844-querido-diario",
+diff --git a/lib/adapters/cloudflare.ts b/lib/adapters/cloudflare.ts
+index af62d3a..76c6bb4 100644
+--- a/lib/adapters/cloudflare.ts
++++ b/lib/adapters/cloudflare.ts
+@@ -32,6 +32,29 @@ export interface Env {
+   MCP_TRUST_X_FORWARDED_FOR?: string;
+   MCP_KV?: KVNamespace;
+   TAVILY_API_KEY?: string; // Tavily search API key (secret)
++  PERPLEXITY_API_KEY?: string; // Perplexity search API key (secret)
++  TRANSPARENCIA_API_KEY?: string; // Portal da Transparência API key (secret)
++  DATAJUD_API_KEY?: string; // CNJ Datajud API key (secret)
++}
++
++const WORKER_ENV_KEYS = [
++  "TAVILY_API_KEY",
++  "PERPLEXITY_API_KEY",
++  "TRANSPARENCIA_API_KEY",
++  "DATAJUD_API_KEY",
++] as const;
++
++/**
++ * Propagate allowlisted Worker secret bindings into process.env for tool execution.
++ */
++export function syncWorkerEnv(env?: Env): void {
++  if (!env || typeof process === "undefined" || !process.env) return;
++  for (const key of WORKER_ENV_KEYS) {
++    const value = env[key];
++    if (typeof value === "string" && value.length > 0) {
++      process.env[key] = value;
++    }
++  }
+ }
+ 
+ 
+@@ -158,11 +181,7 @@ export async function handleMCPRequest(
+   request: MCPRequest,
+   env: Env
+ ): Promise<MCPResponse> {
+-  // Inject Cloudflare Workers environment variables into process.env
+-  // This allows tools to access secrets like TAVILY_API_KEY
+-  if (env.TAVILY_API_KEY) {
+-    process.env.TAVILY_API_KEY = env.TAVILY_API_KEY;
+-  }
++  syncWorkerEnv(env);
+ 
+   const serverConfig: ServerConfig = {
+     transport: env.MCP_TRANSPORT || "http",
+@@ -258,11 +277,7 @@ export async function handleMCPEndpoint(
+   request: Request,
+   env: Env
+ ): Promise<Response> {
+-  // Inject Cloudflare Workers environment variables into process.env
+-  // This allows tools to access secrets like TAVILY_API_KEY
+-  if (env.TAVILY_API_KEY) {
+-    process.env.TAVILY_API_KEY = env.TAVILY_API_KEY;
+-  }
++  syncWorkerEnv(env);
+ 
+   try {
+     const body = await request.text();
+diff --git a/lib/config/index.ts b/lib/config/index.ts
+index 7a49776..8845c4d 100644
+--- a/lib/config/index.ts
++++ b/lib/config/index.ts
+@@ -2,15 +2,15 @@ import { readFileSync } from "node:fs";
+ import { resolve } from "node:path";
+ import { ApiConfig, ServerConfig, ConfigFile } from "../types/index.js";
+ import { TIMEOUTS } from "./timeouts.js";
+-import { CACHE } from "../shared/utils/constants.js";
++import { CACHE, SERVER } from "../shared/utils/constants.js";
+ 
+ // Default API URLs
+ export const DEFAULT_CNPJ_URL = "https://api.opencnpj.org/";
+ export const DEFAULT_CEP_URL = "https://opencep.com/v1/";
+ 
+ // Constants
+-export const SERVER_NAME = "mcp-dadosbr";
+-export const SERVER_VERSION = "1.0.0";
++export const SERVER_NAME = SERVER.NAME;
++export const SERVER_VERSION = SERVER.VERSION;
+ 
+ // Allowed API hosts (SSRF protection)
+ // Only these production hosts can be used for CNPJ and CEP APIs
+diff --git a/lib/core/intelligence.ts b/lib/core/intelligence.ts
+index ec2f861..36f99e6 100644
+--- a/lib/core/intelligence.ts
++++ b/lib/core/intelligence.ts
+@@ -2,7 +2,7 @@
+  * CNPJ Intelligence - Automatic intelligent search based on CNPJ data
+  */
+ 
+-import { lookup } from '../tools/core.js';
++import { lookup } from './lookup.js';
+ import { ApiConfig, Cache, LookupResult } from '../types/index.js';
+ import { getAvailableProvider, SearchProvider, SearchResult, ProviderType } from './search-providers.js';
+ import { buildDorks, DorkCategory, CNPJData } from './dork-templates.js';
+@@ -216,7 +216,8 @@ async function executeIntelligenceInternal(
+   signal: AbortSignal
+ ): Promise<LookupResult> {
+   const startTime = Date.now();
+-  const maskedCnpj = maskCnpj(options.cnpj);
++  const normalizedCnpj = normalizeCnpj(options.cnpj);
++  const maskedCnpj = maskCnpj(normalizedCnpj);
+ 
+   try {
+     // Step 1: Get company data (reuse cached if provided)
+@@ -229,8 +230,8 @@ async function executeIntelligenceInternal(
+       companyData = options.cachedCompanyData;
+       console.error(`[intelligence] [${maskedCnpj}] Using cached company data`);
+     } else {
+-      // Try to get from cache first
+-      const cacheKey = `cnpj:${apiConfig.cnpjBaseUrl}:${options.cnpj}`;
++      // Try to get from cache first using normalized CNPJ key (matching lookup())
++      const cacheKey = `cnpj:${apiConfig.cnpjBaseUrl}:${normalizedCnpj}`;
+       const cachedData = cache ? await cache.get<CNPJData>(cacheKey) : null;
+ 
+       if (cachedData) {
+@@ -238,7 +239,7 @@ async function executeIntelligenceInternal(
+         console.error(`[intelligence] [${maskedCnpj}] Using cache hit for company data`);
+       } else {
+         // Fetch from API only if not in cache
+-        const cnpjResult = await lookup('cnpj', options.cnpj, apiConfig, cache);
++        const cnpjResult = await lookup('cnpj', normalizedCnpj, apiConfig, cache);
+ 
+         if (!cnpjResult.ok) {
+           return {
+@@ -323,7 +324,7 @@ async function executeIntelligenceInternal(
+ 
+           if (searchResult.ok) {
+             // Filter results to ensure they contain the CNPJ
+-            const filteredResults = filterResultsByCnpj(searchResult.value, options.cnpj);
++            const filteredResults = filterResultsByCnpj(searchResult.value, normalizedCnpj);
+ 
+             const resultsWithMeta: SearchResultWithMeta[] = filteredResults.map(r => ({
+               ...r,
+@@ -469,8 +470,9 @@ Perfect for: Due diligence, company research, background checks, investigations.
+ 
+ Provider options:
+ - tavily (requires TAVILY_API_KEY env var)
++- perplexity (requires PERPLEXITY_API_KEY env var)
+ 
+-Note: You must set TAVILY_API_KEY to enable web search queries.`,
++Note: Set TAVILY_API_KEY or PERPLEXITY_API_KEY on the server to enable web search queries.`,
+   inputSchema: {
+     type: "object",
+     properties: {
+diff --git a/lib/core/lookup.ts b/lib/core/lookup.ts
+new file mode 100644
+index 0000000..f6b711f
+--- /dev/null
++++ b/lib/core/lookup.ts
+@@ -0,0 +1,87 @@
++/**
++ * Shared cached & deduplicated lookup service for core entities (CNPJ, CEP).
++ * Extracted into lib/core/ so core modules (intelligence) do not depend on lib/tools/.
++ */
++
++import { httpJson } from "./http-client.js";
++import { TIMEOUTS } from "../config/timeouts.js";
++import { ApiConfig, Cache, LookupResult } from "../types/index.js";
++
++interface PendingRequest {
++  promise: Promise<unknown>;
++  timestamp: number;
++  timeoutId: ReturnType<typeof setTimeout>;
++}
++
++const pendingRequests = new Map<string, PendingRequest>();
++
++export function getPendingRequestCount(): number {
++  return pendingRequests.size;
++}
++
++export async function deduplicate<T>(key: string, fn: () => Promise<T>): Promise<T> {
++  const timeoutMs = TIMEOUTS.DEDUP_TIMEOUT_MS;
++  const existing = pendingRequests.get(key);
++  if (existing) {
++    if (Date.now() - existing.timestamp < timeoutMs) {
++      return existing.promise as Promise<T>;
++    }
++    clearTimeout(existing.timeoutId);
++  }
++
++  const promise = fn();
++  const timeoutId = setTimeout(() => {
++    if (pendingRequests.get(key)?.promise === promise) {
++      pendingRequests.delete(key);
++    }
++  }, timeoutMs);
++  (timeoutId as { unref?: () => void }).unref?.();
++
++  pendingRequests.set(key, {
++    promise,
++    timestamp: Date.now(),
++    timeoutId,
++  });
++
++  try {
++    return await promise;
++  } finally {
++    clearTimeout(timeoutId);
++    if (pendingRequests.get(key)?.promise === promise) {
++      pendingRequests.delete(key);
++    }
++  }
++}
++
++export async function lookup(
++  type: "cnpj" | "cep",
++  input: string,
++  apiConfig: ApiConfig,
++  cache?: Cache
++): Promise<LookupResult> {
++  const baseUrl = type === "cnpj" ? apiConfig.cnpjBaseUrl : apiConfig.cepBaseUrl;
++  const cacheKey = `${type}:${baseUrl}:${input}`;
++  if (cache) {
++    const cached = await cache.get(cacheKey);
++    if (cached) return { ok: true, data: cached };
++  }
++  return await deduplicate(cacheKey, async () => {
++    const result = await httpJson(`${baseUrl}${input}`, apiConfig.authHeaders);
++    if (result.ok && result.data) {
++      const responseData = {
++        ...result.data,
++        source: result.source,
++        fetchedAt: new Date().toISOString(),
++      };
++      if (cache) await cache.set(cacheKey, responseData);
++      return { ok: true, data: responseData };
++    }
++    return {
++      ok: false,
++      error:
++        result.error === "not found"
++          ? `${type.toUpperCase()} not found`
++          : result.error || "unknown error",
++    };
++  });
++}
+diff --git a/lib/shared/utils/constants.ts b/lib/shared/utils/constants.ts
+index 8af3262..4de4199 100644
+--- a/lib/shared/utils/constants.ts
++++ b/lib/shared/utils/constants.ts
+@@ -33,8 +33,8 @@ export const SERVER = {
+   /** Server name */
+   NAME: 'mcp-dadosbr',
+   
+-  /** Server version */
+-  VERSION: '1.0.0',
++  /** Server version (aligned with package.json) */
++  VERSION: '0.6.0',
+   
+   /** Default transport mode */
+   DEFAULT_TRANSPORT: 'stdio',
+diff --git a/lib/tools/company.ts b/lib/tools/company.ts
+index a282031..4ed6eaa 100644
+--- a/lib/tools/company.ts
++++ b/lib/tools/company.ts
+@@ -172,8 +172,8 @@ interface DeepProfileArgs {
+     domain?: string;
+ }
+ 
+-// Import sibling tool execute functions (need to avoid circular — import from typed exports)
+-import { lookup } from "./core.js";
++// Import shared lookup service from core and sibling tool executors
++import { lookup } from "../core/lookup.js";
+ import { executeTransparencia } from "./government.js";
+ import { executeDatajud, executeListaSuja } from "./legal.js";
+ 
+diff --git a/lib/tools/core.ts b/lib/tools/core.ts
+index 0ba182b..c483353 100644
+--- a/lib/tools/core.ts
++++ b/lib/tools/core.ts
+@@ -1,9 +1,9 @@
+ /**
+- * Core tools — CNPJ lookup, CEP lookup, search, intelligence
++ * Core tools — CNPJ lookup, CEP lookup, search, intelligence, thinking
+  */
+ 
+ import { registerTool } from "../core/registry.js";
+-import { httpJson } from "../core/http-client.js";
++import { deduplicate, getPendingRequestCount, lookup } from "../core/lookup.js";
+ import { CnpjSchema, CepSchema } from "../core/validation.js";
+ import {
+     CnpjIntelligenceSchema,
+@@ -12,71 +12,9 @@ import {
+     SEARCH_PROVIDERS,
+     SequentialThinkingSchema,
+ } from "../core/tool-schemas.js";
+-import { Cache, LookupResult, ApiConfig } from "../types/index.js";
+ import { SEARCH_TOOL, executeSearch } from "../core/search.js";
+-import { TIMEOUTS } from "../config/timeouts.js";
+-
+-// ─── Shared lookup with caching and deduplication ───────────────────────────
+-
+-interface PendingRequest {
+-    promise: Promise<unknown>;
+-    timestamp: number;
+-    timeoutId: ReturnType<typeof setTimeout>;
+-}
+-const pendingRequests = new Map<string, PendingRequest>();
+-
+-export function getPendingRequestCount(): number {
+-    return pendingRequests.size;
+-}
+-
+-export async function deduplicate<T>(key: string, fn: () => Promise<T>): Promise<T> {
+-    const timeoutMs = TIMEOUTS.DEDUP_TIMEOUT_MS;
+-    const existing = pendingRequests.get(key);
+-    if (existing) {
+-        if (Date.now() - existing.timestamp < timeoutMs) {
+-            return existing.promise as Promise<T>;
+-        }
+-        clearTimeout(existing.timeoutId);
+-    }
+-    const promise = fn();
+-    const timeoutId = setTimeout(() => {
+-        if (pendingRequests.get(key)?.promise === promise) {
+-            pendingRequests.delete(key);
+-        }
+-    }, timeoutMs);
+-    (timeoutId as { unref?: () => void }).unref?.();
+-    pendingRequests.set(key, {
+-        promise,
+-        timestamp: Date.now(),
+-        timeoutId,
+-    });
+-    try {
+-        return await promise;
+-    } finally {
+-        clearTimeout(timeoutId);
+-        if (pendingRequests.get(key)?.promise === promise) {
+-            pendingRequests.delete(key);
+-        }
+-    }
+-}
+-
+-async function lookup(type: "cnpj" | "cep", input: string, apiConfig: ApiConfig, cache?: Cache): Promise<LookupResult> {
+-    const baseUrl = type === "cnpj" ? apiConfig.cnpjBaseUrl : apiConfig.cepBaseUrl;
+-    const cacheKey = `${type}:${baseUrl}:${input}`;
+-    if (cache) {
+-        const cached = await cache.get(cacheKey);
+-        if (cached) return { ok: true, data: cached };
+-    }
+-    return await deduplicate(cacheKey, async () => {
+-        const result = await httpJson(`${baseUrl}${input}`, apiConfig.authHeaders);
+-        if (result.ok && result.data) {
+-            const responseData = { ...result.data, source: result.source, fetchedAt: new Date().toISOString() };
+-            if (cache) await cache.set(cacheKey, responseData);
+-            return { ok: true, data: responseData };
+-        }
+-        return { ok: false, error: result.error === "not found" ? `${type.toUpperCase()} not found` : result.error || "unknown error" };
+-    });
+-}
++import { CNPJ_INTELLIGENCE_TOOL, executeIntelligence } from "../core/intelligence.js";
++import { SequentialThinkingProcessor, SEQUENTIAL_THINKING_TOOL } from "../core/sequential-thinking.js";
+ 
+ // ─── CNPJ Lookup ────────────────────────────────────────────────────────────
+ 
+@@ -126,19 +64,7 @@ registerTool({
+ // ─── CNPJ Intelligence ──────────────────────────────────────────────────────
+ 
+ registerTool({
+-    name: "cnpj_intelligence",
+-    description: "Intelligent automatic search about a Brazilian company using CNPJ.",
+-    inputSchema: {
+-        type: "object",
+-        properties: {
+-            cnpj: { type: "string", description: "Brazilian CNPJ number (with or without formatting)" },
+-            categories: { type: "array", items: { type: "string", enum: [...DORK_CATEGORIES] }, description: "Categories to search" },
+-            provider: { type: "string", enum: [...SEARCH_PROVIDERS], description: "Search provider to use (server-configured API key required)", default: "tavily" },
+-            max_results_per_query: { type: "number", description: "Maximum results per query", minimum: 1, maximum: 10, default: 5 },
+-            max_queries: { type: "number", description: "Maximum number of search queries", minimum: 1, maximum: 20, default: 10 },
+-        },
+-        required: ["cnpj"],
+-    },
++    ...CNPJ_INTELLIGENCE_TOOL,
+     zodSchema: CnpjIntelligenceSchema,
+     execute: async (args, apiConfig, cache) => {
+         const parsed = args as {
+@@ -149,8 +75,7 @@ registerTool({
+             max_results?: number;
+             max_queries?: number;
+         };
+-        const mod = await import("../core/intelligence.js");
+-        return await mod.executeIntelligence(
++        return await executeIntelligence(
+             {
+                 cnpj: parsed.cnpj,
+                 categories: parsed.categories,
+@@ -166,8 +91,6 @@ registerTool({
+ 
+ // ─── Sequential Thinking ────────────────────────────────────────────────────
+ 
+-import { SequentialThinkingProcessor, SEQUENTIAL_THINKING_TOOL } from "../core/sequential-thinking.js";
+-
+ registerTool({
+     ...SEQUENTIAL_THINKING_TOOL,
+     zodSchema: SequentialThinkingSchema,
+@@ -177,4 +100,4 @@ registerTool({
+     },
+ });
+ 
+-export { lookup };
++export { deduplicate, getPendingRequestCount, lookup };
+diff --git a/lib/workers/openapi.ts b/lib/workers/openapi.ts
+index bccc767..18223fb 100644
+--- a/lib/workers/openapi.ts
++++ b/lib/workers/openapi.ts
+@@ -3,6 +3,7 @@
+  */
+ 
+ import { Env, getCorsHeaders } from '../adapters/cloudflare.js';
++import { SERVER_VERSION } from '../config/index.js';
+ 
+ /**
+  * Generate OpenAPI 3.0 schema for the API
+@@ -15,7 +16,7 @@ export function generateOpenAPISchema(requestUrl: string): unknown {
+     info: {
+       title: 'MCP DadosBR API',
+       description: 'Brazilian public data lookup API for CNPJ (companies) and CEP (postal codes) with advanced search capabilities',
+-      version: '1.0.0'
++      version: SERVER_VERSION
+     },
+     servers: [{ url: origin }],
+     security: [
+diff --git a/lib/workers/sse.ts b/lib/workers/sse.ts
+index b36525a..48c4743 100644
+--- a/lib/workers/sse.ts
++++ b/lib/workers/sse.ts
+@@ -4,6 +4,7 @@
+  */
+ 
+ import { Env, handleMCPRequest, corsHeaders } from "../adapters/cloudflare.js";
++import { SERVER_VERSION } from "../config/index.js";
+ import { MCPRequest } from "../types/index.js";
+ import { TIMEOUTS } from "../config/timeouts.js";
+ import "./types.js";
+@@ -155,7 +156,7 @@ export async function handleSSEEndpoint(
+               type: "connection",
+               status: "connected",
+               server: "mcp-dadosbr",
+-              version: "1.0.0",
++              version: SERVER_VERSION,
+               timestamp: new Date().toISOString(),
+             },
+             "connection"
+@@ -178,7 +179,7 @@ export async function handleSSEEndpoint(
+                 },
+                 serverInfo: {
+                   name: "mcp-dadosbr",
+-                  version: "1.0.0",
++                  version: SERVER_VERSION,
+                 },
+               },
+             },
+diff --git a/lib/workers/worker.ts b/lib/workers/worker.ts
+index 0c9793f..d22db20 100644
+--- a/lib/workers/worker.ts
++++ b/lib/workers/worker.ts
+@@ -9,9 +9,12 @@ import {
+   handleCORS,
+   handleHealthCheck,
+   withCorsHeaders,
++  syncWorkerEnv,
+   corsHeaders,
+   Env
+ } from '../adapters/cloudflare.js';
++import { SERVER_VERSION } from '../config/index.js';
++import { TOOL_DEFINITIONS } from '../core/tools.js';
+ import { authenticateRequest, isPublicPath } from './auth.js';
+ import { checkRateLimit } from './rate-limit.js';
+ import { handleSSEEndpoint } from './sse.js';
+@@ -90,7 +93,7 @@ async function routeRequest(
+         service: 'MCP DadosBR',
+         description:
+           'Model Context Protocol server for Brazilian public data',
+-        version: '1.0.0',
++        version: SERVER_VERSION,
+         runtime: 'cloudflare-workers',
+         free_tier: {
+           workers: '100,000 requests/day',
+@@ -103,7 +106,7 @@ async function routeRequest(
+           health: '/health',
+           openapi: '/openapi.json',
+         },
+-        tools: ['cnpj_lookup', 'cep_lookup', 'cnpj_search', 'sequentialthinking', 'cnpj_intelligence'],
++        tools: TOOL_DEFINITIONS.map((tool) => tool.name),
+         documentation: 'https://github.com/cristianoaredes/mcp-dadosbr',
+         cloudflare_docs: {
+           agents: 'https://developers.cloudflare.com/agents/',
+@@ -160,11 +163,7 @@ export default {
+     env: Env,
+     ctx: ExecutionContext
+   ): Promise<Response> {
+-    // Inject Cloudflare Workers environment variables into process.env
+-    // This allows tools to access secrets like TAVILY_API_KEY
+-    if (env.TAVILY_API_KEY) {
+-      process.env.TAVILY_API_KEY = env.TAVILY_API_KEY;
+-    }
++    syncWorkerEnv(env);
+ 
+     const url = new URL(request.url);
+     const isPublic = isPublicPath(url.pathname);
+diff --git a/package.json b/package.json
+index 8c7aeba..6814246 100644
+--- a/package.json
++++ b/package.json
+@@ -36,7 +36,6 @@
+     "cf:logs": "wrangler tail",
+     "cf:kv:create": "wrangler kv:namespace create MCP_CACHE",
+     "cf:kv:create:preview": "wrangler kv:namespace create MCP_CACHE --preview",
+-    "test:sse": "node examples/sse-client.js",
+     "release": "standard-version",
+     "release:minor": "standard-version --release-as minor",
+     "release:major": "standard-version --release-as major",
+diff --git a/test/unit/architecture-hygiene.test.ts b/test/unit/architecture-hygiene.test.ts
+new file mode 100644
+index 0000000..53ec881
+--- /dev/null
++++ b/test/unit/architecture-hygiene.test.ts
+@@ -0,0 +1,229 @@
++import { existsSync, readFileSync } from "node:fs";
++import { resolve } from "node:path";
++import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
++import { MemoryCache } from "../../lib/core/cache.js";
++import { resolveApiConfig, SERVER_NAME, SERVER_VERSION } from "../../lib/config/index.js";
++import { CNPJ_INTELLIGENCE_TOOL, executeIntelligence } from "../../lib/core/intelligence.js";
++import { lookup } from "../../lib/core/lookup.js";
++import { executeTool, resetMetrics, TOOL_DEFINITIONS } from "../../lib/core/tools.js";
++import { SERVER } from "../../lib/shared/utils/constants.js";
++import { handleHealthCheck, syncWorkerEnv } from "../../lib/adapters/cloudflare.js";
++import { generateOpenAPISchema } from "../../lib/workers/openapi.js";
++import { handleSSEEndpoint } from "../../lib/workers/sse.js";
++import worker from "../../lib/workers/worker.js";
++import { resetCircuitBreakers } from "../../lib/core/http-client.js";
++
++const ROOT = resolve(import.meta.dirname, "../..");
++
++function jsonResponse(body: unknown, status = 200): Response {
++  return new Response(JSON.stringify(body), {
++    status,
++    headers: { "Content-Type": "application/json" },
++  });
++}
++
++describe("FND-0012 / TCK-0024: Architecture Hygiene, Contract Unification & Worker Parity", () => {
++  const apiConfig = resolveApiConfig();
++  const originalEnv = { ...process.env };
++
++  beforeEach(() => {
++    delete process.env.TAVILY_API_KEY;
++    delete process.env.PERPLEXITY_API_KEY;
++    delete process.env.TRANSPARENCIA_API_KEY;
++    delete process.env.DATAJUD_API_KEY;
++    delete process.env.MCP_API_KEY;
++    delete process.env.MCP_KV;
++    resetMetrics();
++    resetCircuitBreakers();
++  });
++
++  afterEach(() => {
++    process.env = { ...originalEnv };
++    resetMetrics();
++    resetCircuitBreakers();
++    vi.restoreAllMocks();
++    vi.useRealTimers();
++  });
++
++  it("eliminates circular core <-> tools dependency and unifies cnpj_intelligence definition", () => {
++    const intelligenceSrc = readFileSync(resolve(ROOT, "lib/core/intelligence.ts"), "utf8");
++    const lookupSrc = readFileSync(resolve(ROOT, "lib/core/lookup.ts"), "utf8");
++    const toolsCoreSrc = readFileSync(resolve(ROOT, "lib/tools/core.ts"), "utf8");
++    const companySrc = readFileSync(resolve(ROOT, "lib/tools/company.ts"), "utf8");
++
++    expect(intelligenceSrc).toContain("./lookup.js");
++    expect(intelligenceSrc).not.toMatch(/\.\.\/tools\//);
++    expect(lookupSrc).not.toMatch(/\.\.\/tools\//);
++
++    expect(toolsCoreSrc).toContain("CNPJ_INTELLIGENCE_TOOL");
++    expect(toolsCoreSrc).not.toMatch(/await import\(["']\.\.\/core\/intelligence\.js["']\)/);
++    expect(toolsCoreSrc).toContain("...CNPJ_INTELLIGENCE_TOOL");
++    expect(companySrc).toContain("../core/lookup.js");
++
++    const registered = TOOL_DEFINITIONS.find((t) => t.name === "cnpj_intelligence");
++    expect(registered?.inputSchema).toEqual(CNPJ_INTELLIGENCE_TOOL.inputSchema);
++  });
++
++  it("normalizes CNPJ in executeIntelligence cache/lookup and forwards max_queries + max_results_per_query", async () => {
++    const cache = new MemoryCache(20, 60_000);
++    process.env.PERPLEXITY_API_KEY = "pplx-test-key";
++
++    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
++      const url = String(input);
++      if (url.includes("api.opencnpj.org")) {
++        return jsonResponse({
++          cnpj: "11222333000181",
++          razao_social: "EMPRESA NORMALIZADA LTDA",
++          nome_fantasia: "NORMALIZADA",
++          uf: "SP",
++          municipio: "SAO PAULO",
++        });
++      }
++      if (url.includes("perplexity.ai")) {
++        return jsonResponse({
++          choices: [{ message: { content: "Resultado para CNPJ 11.222.333/0001-81" } }],
++          citations: ["https://dados.gov.br/doc/1"],
++        });
++      }
++      return jsonResponse({}, 404);
++    });
++
++    // Populate cache using unformatted digits via lookup()
++    const baseLookup = await lookup("cnpj", "11222333000181", apiConfig, cache);
++    expect(baseLookup.ok).toBe(true);
++    expect(
++      fetchSpy.mock.calls.filter(([u]) => String(u).includes("api.opencnpj.org"))
++    ).toHaveLength(1);
++
++    // Call executeIntelligence with formatted CNPJ -> must hit normalized cache with 0 extra CNPJ fetches
++    const intel = await executeIntelligence(
++      {
++        cnpj: "11.222.333/0001-81",
++        categories: ["government"],
++        maxQueries: 1,
++        maxResultsPerQuery: 2,
++      },
++      apiConfig,
++      cache
++    );
++    expect(intel.ok).toBe(true);
++    expect(
++      fetchSpy.mock.calls.filter(([u]) => String(u).includes("api.opencnpj.org"))
++    ).toHaveLength(1);
++
++    // Execute via executeTool using snake_case parameters from MCP schema
++    const toolRes = await executeTool(
++      "cnpj_intelligence",
++      {
++        cnpj: "11.222.333/0001-81",
++        categories: ["government"],
++        max_queries: 1,
++        max_results_per_query: 2,
++      },
++      apiConfig,
++      cache
++    );
++    expect(toolRes.ok).toBe(true);
++    expect((toolRes.data as { queries_executed: number }).queries_executed).toBe(1);
++  });
++
++  it("synchronizes SERVER_VERSION, OpenAPI, HealthCheck, SSE events, and Worker / 23-tool catalogue with package.json", async () => {
++    vi.useFakeTimers();
++    const pkg = JSON.parse(readFileSync(resolve(ROOT, "package.json"), "utf8")) as {
++      version: string;
++    };
++
++    expect(SERVER.VERSION).toBe(pkg.version);
++    expect(SERVER_VERSION).toBe(pkg.version);
++    expect(SERVER_NAME).toBe("mcp-dadosbr");
++
++    const openApi = generateOpenAPISchema("https://worker.example/openapi.json") as {
++      info: { version: string };
++    };
++    expect(openApi.info.version).toBe(pkg.version);
++
++    const healthJson = (await handleHealthCheck().json()) as { version: string };
++    expect(healthJson.version).toBe(pkg.version);
++
++    const ctx = {
++      waitUntil: vi.fn(),
++      passThroughOnException: vi.fn(),
++    } as unknown as ExecutionContext;
++    const rootResp = await worker.fetch(
++      new Request("https://worker.example/"),
++      { MCP_DISABLE_RATE_LIMIT: "true" },
++      ctx
++    );
++    expect(rootResp.status).toBe(200);
++    const rootJson = (await rootResp.json()) as { version: string; tools: string[] };
++    expect(rootJson.version).toBe(pkg.version);
++    expect(rootJson.tools).toEqual(TOOL_DEFINITIONS.map((t) => t.name));
++    expect(rootJson.tools).toHaveLength(23);
++
++    // Check SSE initial events emit SERVER_VERSION
++    const sseResp = await handleSSEEndpoint(
++      new Request("https://worker.example/sse", { method: "GET" }),
++      {},
++      ctx
++    );
++    const reader = sseResp.body!.getReader();
++    const decoder = new TextDecoder();
++    const { value: chunk1 } = await reader.read();
++    const { value: chunk2 } = await reader.read();
++    const sseText = decoder.decode(chunk1) + decoder.decode(chunk2);
++    expect(sseText).toContain(`"version":"${pkg.version}"`);
++    await reader.cancel();
++  });
++
++  it("propagates all allowlisted Worker API keys via syncWorkerEnv and worker.fetch without leaking control secrets or KV bindings", async () => {
++    syncWorkerEnv({
++      TAVILY_API_KEY: "tvly-sync",
++      PERPLEXITY_API_KEY: "pplx-sync",
++      TRANSPARENCIA_API_KEY: "transp-sync",
++      DATAJUD_API_KEY: "datajud-sync",
++      MCP_API_KEY: "control-secret-do-not-leak",
++      MCP_KV: { get: vi.fn(), put: vi.fn(), delete: vi.fn() } as unknown as KVNamespace,
++    });
++
++    expect(process.env.TAVILY_API_KEY).toBe("tvly-sync");
++    expect(process.env.PERPLEXITY_API_KEY).toBe("pplx-sync");
++    expect(process.env.TRANSPARENCIA_API_KEY).toBe("transp-sync");
++    expect(process.env.DATAJUD_API_KEY).toBe("datajud-sync");
++    expect(process.env.MCP_API_KEY).toBeUndefined();
++    expect(process.env.MCP_KV).toBeUndefined();
++
++    delete process.env.TAVILY_API_KEY;
++    delete process.env.PERPLEXITY_API_KEY;
++    delete process.env.TRANSPARENCIA_API_KEY;
++    delete process.env.DATAJUD_API_KEY;
++
++    const ctx = {
++      waitUntil: vi.fn(),
++      passThroughOnException: vi.fn(),
++    } as unknown as ExecutionContext;
++    await worker.fetch(
++      new Request("https://worker.example/"),
++      {
++        MCP_DISABLE_RATE_LIMIT: "true",
++        TAVILY_API_KEY: "tvly-fetch",
++        PERPLEXITY_API_KEY: "pplx-fetch",
++        TRANSPARENCIA_API_KEY: "transp-fetch",
++        DATAJUD_API_KEY: "datajud-fetch",
++      },
++      ctx
++    );
++
++    expect(process.env.TAVILY_API_KEY).toBe("tvly-fetch");
++    expect(process.env.PERPLEXITY_API_KEY).toBe("pplx-fetch");
++    expect(process.env.TRANSPARENCIA_API_KEY).toBe("transp-fetch");
++    expect(process.env.DATAJUD_API_KEY).toBe("datajud-fetch");
++  });
++
++  it("removes orphan patch file and broken test:sse package script", () => {
++    expect(existsSync(resolve(ROOT, "test/unit/search.test.ts.patch"))).toBe(false);
++    const pkg = JSON.parse(readFileSync(resolve(ROOT, "package.json"), "utf8")) as {
++      scripts: Record<string, string>;
++    };
++    expect(pkg.scripts).not.toHaveProperty("test:sse");
++  });
++});
+diff --git a/test/unit/search.test.ts.patch b/test/unit/search.test.ts.patch
+deleted file mode 100644
+index 4b6ef26..0000000
+--- a/test/unit/search.test.ts.patch
++++ /dev/null
+@@ -1,15 +0,0 @@
+---- test/unit/search.test.ts
+-+++ test/unit/search.test.ts
+-@@ -6,9 +6,9 @@
+- 
+- // Mock the Tavily client
+- vi.mock('tavily', () => {
+-   return {
+--    TavilyClient: vi.fn().mockImplementation(() => ({
+--      search: vi.fn(),
+--    })),
+-+    TavilyClient: class TavilyClient {
+-+      search = vi.fn();
+-+    },
+-   };
+- });

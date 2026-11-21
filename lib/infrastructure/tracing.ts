@@ -1,20 +1,31 @@
 /**
  * Request tracing and correlation ID management
- * Enables tracking requests across the system
+ * Uses Web Crypto APIs so tracing is portable across Node.js and Cloudflare Workers.
  */
 
 import { createLogger } from './logger.js';
 
 const logger = createLogger('tracing');
 
+export const REQUEST_ID_HEADER = 'X-Request-Id';
+
+const VALID_REQUEST_ID_REGEX = /^[A-Za-z0-9._:-]{1,128}$/;
+
 /**
- * Generate a unique request ID for tracing
- * Format: req_<timestamp>_<random>
+ * Generate a cryptographically random unique request ID for tracing.
  */
 export function generateRequestId(): string {
-  const timestamp = Date.now().toString(36);
-  const random = Math.random().toString(36).substring(2, 10);
-  return `req_${timestamp}_${random}`;
+  const webCrypto = globalThis.crypto;
+  if (webCrypto && typeof webCrypto.randomUUID === 'function') {
+    return `req_${webCrypto.randomUUID()}`;
+  }
+  if (webCrypto && typeof webCrypto.getRandomValues === 'function') {
+    const bytes = new Uint8Array(16);
+    webCrypto.getRandomValues(bytes);
+    const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+    return `req_${hex}`;
+  }
+  throw new Error('Web Crypto API is required to generate request IDs');
 }
 
 /**
@@ -101,10 +112,39 @@ export class RequestContext {
   }
 }
 
+function sanitizeRequestId(raw: string | undefined): string | undefined {
+  if (typeof raw !== 'string') return undefined;
+  const trimmed = raw.trim();
+  if (!trimmed || !VALID_REQUEST_ID_REGEX.test(trimmed)) {
+    return undefined;
+  }
+  return trimmed;
+}
+
 /**
- * Extract request ID from HTTP headers
+ * Extract and sanitize request ID from HTTP Headers or plain header records.
+ * Rejects control characters (CR/LF), whitespace, and overly long values.
  */
-export function extractRequestId(headers: Record<string, string | string[] | undefined>): string | undefined {
-  const headerId = headers['x-request-id'] || headers['X-Request-Id'];
-  return typeof headerId === 'string' ? headerId : undefined;
+export function extractRequestId(
+  headers: Headers | Record<string, string | string[] | undefined>,
+): string | undefined {
+  if (typeof (headers as Headers).get === 'function') {
+    const val = (headers as Headers).get(REQUEST_ID_HEADER);
+    return sanitizeRequestId(val ?? undefined);
+  }
+
+  const record = headers as Record<string, string | string[] | undefined>;
+  let raw: string | string[] | undefined =
+    record['x-request-id'] ?? record['X-Request-Id'];
+  if (raw === undefined) {
+    for (const [key, value] of Object.entries(record)) {
+      if (key.toLowerCase() === 'x-request-id') {
+        raw = value;
+        break;
+      }
+    }
+  }
+
+  const candidate = Array.isArray(raw) ? raw[0] : raw;
+  return sanitizeRequestId(candidate);
 }

@@ -1,8 +1,8 @@
 # Arquitetura AS-IS
 
-Base revisada: `79aa712` (`v0.5.0`; base inicial: `037dae4c`).
+Base revisada: `c83d626` (`0.6.0`, worktree `audit-remediation`; base inicial: `037dae4c`).
 
-O CLI conecta o servidor MCP por stdio ou HTTP/SSE (com métricas de execução emitidas em `stderr` para manter `stdout` exclusivo de JSON-RPC no transporte stdio). Há um adapter separado no Cloudflare Worker. O servidor central consulta um registro de ferramentas por domínio e expõe cinco recursos MCP Apps (`ui://dadosbr/*.html`) no runtime Node.
+O CLI conecta o servidor MCP por stdio ou HTTP/SSE (`lib/adapters/cli-http.ts`, com métricas de execução emitidas em `stderr` para manter `stdout` exclusivo de JSON-RPC no transporte stdio). Há um adapter separado no Cloudflare Worker. O servidor central consulta o registro unificado de 23 ferramentas por domínio (`lib/core/registry.ts`, `lib/core/tools.ts`) e expõe cinco recursos MCP Apps (`ui://dadosbr/*.html`) no runtime Node, enquanto a automação de produção/sandbox opcional vive isolada em `infra/runner/`.
 
 ```mermaid
 flowchart LR
@@ -29,7 +29,13 @@ sequenceDiagram
 - `lib/adapters/cli.ts:L166-L245`
 - `lib/core/mcp-server.ts:L17-L143`
 - `lib/core/tools.ts:L27-L47`
-- `lib/workers/worker.ts:L68-L92`
+- `lib/core/lookup.ts:L1-L87`
+- `lib/core/intelligence.ts:L5,L219-L253,L458-L525`
+- `lib/tools/core.ts:L6-L103`
+- `lib/adapters/cloudflare.ts:L23-L58,L163,L184,L280`
+- `lib/workers/worker.ts:L12-L115,L166`
+- `lib/workers/sse.ts:L155-L185`
+- `lib/workers/openapi.ts:L6,L14-L20`
 - `lib/tools/government.ts:L12-L38`
 - `scripts/build-apps.mjs:L1-L42`
 
@@ -52,3 +58,14 @@ O servidor Node registra `ui://dadosbr/editais-pncp.html` por `pncp_licitacoes`.
 ### MCP App de ficha por CNPJ
 
 O servidor Node associa `cnpj_lookup` a `ui://dadosbr/ficha-cnpj.html`. A projeção seleciona situação, CNAEs, endereço e proveniência da resposta existente do provedor. O JSON textual e a validação original de CNPJ numérico são preservados. O Worker oferece retorno textual.
+
+## Confiabilidade de Transportes e KV (`TCK-0020` / `FND-0008`)
+
+- **Worker SSE (`lib/workers/sse.ts`, `lib/workers/worker.ts`)**: `handleSSEEndpoint` usa `ReadableStream<Uint8Array>` (`highWaterMark: 16`) com `timeout` (`TIMEOUTS.SSE_CONNECTION_MS`) e heartbeat (`TIMEOUTS.PING_INTERVAL_MS`) sem limpeza prematura em `finally`, coordenando encerramento síncrono e idempotente (`cleanup(reason)` + `finally { resolveDone(); }`) via `request.signal` abort, `cancel()` do consumidor, erro ou timeout, descartando pings com `desiredSize <= 0` sob backpressure e propagando `ctx.waitUntil(donePromise)`. Comportamento em runtime edge de produção no Cloudflare Workers fica *a confirmar*.
+- **KV TTL e Rate Limit (`lib/core/cache.ts`, `lib/workers/rate-limit.ts`, `wrangler.toml`)**: `KVCache.set` e `checkRateLimit` gravam com `expirationTtl` mínimo de `60` segundos (`MIN_KV_EXPIRATION_TTL_SECONDS`, requisito da API Cloudflare KV) e tratamento defensivo de JSON corrompido. `checkRateLimit` lê `TIMEOUTS.RATE_LIMIT_WINDOW_MS` dinamicamente, usa chaves em janela fixa (`rate_limit:<ip>:<bucket>`), prioriza `CF-Connecting-IP` e ignora `X-Forwarded-For` salvo opt-in `MCP_TRUST_X_FORWARDED_FOR="true"`. `wrangler.toml` mantém `MCP_CACHE` e `MCP_KV` no mesmo namespace ID separados por prefixo de chave; como o Cloudflare KV possui consistência eventual e não provê incremento atômico global entre POPs (*a confirmar* em tráfego distribuído), bursts simultâneos são best-effort até eventual adoção de binding nativo de Rate Limiting ou Durable Objects.
+- **Timers e Graceful Shutdown no Node CLI (`lib/infrastructure/rate-limiter.ts`, `lib/adapters/cli-http.ts`, `lib/adapters/cli.ts`)**: `RateLimiter` utiliza `.unref?.()` no timer de limpeza e expõe `destroy()` + alias `dispose()`. O servidor HTTP+SSE do CLI aplica headers defensivos e validação `Host`/`Origin` antes do parser `express.json({ limit: "1mb" })`, captura o `http.Server` retornado por `app.listen` e unifica `SIGINT`/`SIGTERM` em `createGracefulShutdown` (drenando sessões SSE, conexões ociosas do servidor HTTP, `mcpServer.close()` e `cache.clear()` dentro de timeout limitado).
+
+## Arquitetura em Camadas e Paridade Worker (`TCK-0024` / `FND-0012`)
+
+- **Separação acíclica `lib/core` <- `lib/tools` (`ADR-0001`)**: `lookup()`, `deduplicate()` e `getPendingRequestCount()` residem em `lib/core/lookup.ts` (`L1-L87`). `lib/core/intelligence.ts` e `lib/tools/company.ts` consomem `core/lookup.ts` diretamente, eliminando qualquer import de `lib/tools/` dentro de `lib/core/`. `lib/tools/core.ts` consome `...CNPJ_INTELLIGENCE_TOOL` e `executeIntelligence` estaticamente (sem schema duplicado) mantendo apenas re-exports de `lookup`/`deduplicate`/`getPendingRequestCount` em `L103` para retrocompatibilidade dos testes. `executeIntelligenceInternal` normaliza `options.cnpj` via `normalizeCnpj` antes de acessar/gravar chaves `cnpj:<baseUrl>:<digits>`.
+- **Paridade Node <-> Cloudflare Worker (`ADR-0002`)**: `SERVER.VERSION` em `lib/shared/utils/constants.ts:L37` e `SERVER_VERSION` em `lib/config/index.ts:L13` refletem `"0.6.0"` (mesma versão de `package.json`), propagada para `/`, `/health`, `/openapi.json` e eventos `/sse`. `GET /` em `lib/workers/worker.ts:L109` publica dinamicamente todas as 23 ferramentas de `TOOL_DEFINITIONS`. `syncWorkerEnv(env)` em `lib/adapters/cloudflare.ts:L40-L58` sincroniza a allowlist explícita (`TAVILY_API_KEY`, `PERPLEXITY_API_KEY`, `TRANSPARENCIA_API_KEY`, `DATAJUD_API_KEY`) para `process.env` no Worker sem vazar `MCP_API_KEY` ou bindings KV. Comportamento em runtime edge de produção no Cloudflare Workers fica *a confirmar*.

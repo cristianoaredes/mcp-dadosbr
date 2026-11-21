@@ -1,0 +1,118 @@
+diff --git a/.archagents/06-infra-devops.md b/.archagents/06-infra-devops.md
+index 7740782..897f1b6 100644
+--- a/.archagents/06-infra-devops.md
++++ b/.archagents/06-infra-devops.md
+@@ -16,6 +16,7 @@ O snapshot inicial continha workflows de CI, release por tag e Cloudflare com ru
+ - O job `lint` (`Code Quality`) de `.github/workflows/ci.yml:L116-L117` executa `npm audit --omit=dev --audit-level=high` após `npm ci`.
+ - `.github/workflows/cloudflare-deploy.yml:L27-L41` declara `permissions: { contents: read }` no nível do workflow (menor privilégio para `GITHUB_TOKEN`) e `persist-credentials: false` em `actions/checkout@v4`.
+ - Dependências de runtime mortas (`agents`, `@smithery/sdk`, `workers-mcp`, `async-mutex`) e o módulo obsoleto `lib/workers/mcp-agent.ts` foram removidos em `TCK-0021`; `zod` (`^4.6.7`) e `express` (`^5.3.0`) + transitivas foram saneados com `package-lock.json` validado via `npm ci`. A execução efetiva dos pipelines no GitHub Actions após essas alterações permanece **a confirmar**.
++- Em `TCK-0022`, as `devDependencies` diretas vulneráveis foram atualizadas (`vitest@^4.1.12`, `@vitest/ui@^4.1.12`, `vite@^7.3.8`, `wrangler@^4.166.0`, `@cloudflare/workers-types@^5.20261120.1`) e as transitivas saneadas no `package-lock.json` via `npm install && npm audit fix` (validado com `npm ci`), alinhando `wranglerVersion: "4.166.0"` em `.github/workflows/cloudflare-deploy.yml:L71`. A execução remota do deploy Cloudflare com `wrangler@4.166.0` no GitHub Actions permanece **a confirmar**.
+ 
+ ## Alteração preparada para o runner próprio
+ 
+diff --git a/.github/workflows/cloudflare-deploy.yml b/.github/workflows/cloudflare-deploy.yml
+index 332cb7e..ae70780 100644
+--- a/.github/workflows/cloudflare-deploy.yml
++++ b/.github/workflows/cloudflare-deploy.yml
+@@ -68,7 +68,7 @@ jobs:
+           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+           environment: ${{ github.event.inputs.environment || 'staging' }}
+           workingDirectory: "."
+-          wranglerVersion: "3.95.0"
++          wranglerVersion: "4.166.0"
+           command: deploy --env ${{ github.event.inputs.environment || 'staging' }}
+ 
+       - name: Get worker URL
+diff --git a/package.json b/package.json
+index ad58e10..ec9eb81 100644
+--- a/package.json
++++ b/package.json
+@@ -87,20 +87,20 @@
+     "zod": "^4.6.7"
+   },
+   "devDependencies": {
+-    "@cloudflare/workers-types": "^4.20250927.0",
++    "@cloudflare/workers-types": "^5.20261120.1",
+     "@modelcontextprotocol/ext-apps": "1.7.5",
+     "@types/express": "^4.17.21",
+     "@types/node": "^22.0.0",
+-    "@vitest/ui": "^4.0.8",
++    "@vitest/ui": "^4.1.12",
+     "c8": "^9.0.0",
+     "esbuild": "0.25.10",
+     "msw": "^2.0.0",
+     "standard-version": "^9.5.0",
+     "tsx": "^4.0.0",
+     "typescript": "^5.0.0",
+-    "vite": "^7.2.2",
+-    "vitest": "^4.0.8",
+-    "wrangler": "^4.40.2"
++    "vite": "^7.3.8",
++    "vitest": "^4.1.12",
++    "wrangler": "^4.166.0"
+   },
+   "engines": {
+     "node": "^22.12.0 || ^24.0.0 || ^26.0.0"
+diff --git a/test/unit/dependency-hygiene.test.ts b/test/unit/dependency-hygiene.test.ts
+index 3780fe7..98075c7 100644
+--- a/test/unit/dependency-hygiene.test.ts
++++ b/test/unit/dependency-hygiene.test.ts
+@@ -43,3 +43,58 @@ describe("TCK-0021 / FND-0009: Runtime dependency hygiene & CI audit gate", () =
+     expect(badHeaders.success).toBe(false);
+   });
+ });
++
++function parseSemverTuple(raw: string): [number, number, number] {
++  const cleaned = raw.replace(/^[^0-9]*/, "");
++  const parts = cleaned.split(".").map((n) => Number.parseInt(n, 10));
++  return [parts[0] || 0, parts[1] || 0, parts[2] || 0];
++}
++
++function isAtLeastSemver(actual: string, min: [number, number, number]): boolean {
++  const [a0, a1, a2] = parseSemverTuple(actual);
++  if (a0 !== min[0]) return a0 > min[0];
++  if (a1 !== min[1]) return a1 > min[1];
++  return a2 >= min[2];
++}
++
++describe("TCK-0022 / FND-0010: DevDependencies CVE patches & CI wranglerVersion alignment", () => {
++  it("declares patched floors for vulnerable devDependencies in package.json", () => {
++    const pkg = JSON.parse(readFileSync(resolve(ROOT, "package.json"), "utf8")) as {
++      devDependencies: Record<string, string>;
++    };
++
++    expect(isAtLeastSemver(pkg.devDependencies.vitest, [4, 1, 12])).toBe(true);
++    expect(isAtLeastSemver(pkg.devDependencies["@vitest/ui"], [4, 1, 12])).toBe(true);
++    expect(isAtLeastSemver(pkg.devDependencies.vite, [7, 3, 8])).toBe(true);
++    expect(isAtLeastSemver(pkg.devDependencies.wrangler, [4, 166, 0])).toBe(true);
++    expect(pkg.devDependencies["@cloudflare/workers-types"]).toMatch(/^\^5\./);
++  });
++
++  it("aligns wranglerVersion in .github/workflows/cloudflare-deploy.yml with package.json", () => {
++    const pkg = JSON.parse(readFileSync(resolve(ROOT, "package.json"), "utf8")) as {
++      devDependencies: Record<string, string>;
++    };
++    const workflow = readFileSync(
++      resolve(ROOT, ".github/workflows/cloudflare-deploy.yml"),
++      "utf8",
++    );
++    const match = workflow.match(/wranglerVersion:\s*"([^"]+)"/);
++    expect(match).not.toBeNull();
++    const ciWrangler = match![1];
++    expect(ciWrangler).not.toMatch(/^3\./);
++    expect(isAtLeastSemver(ciWrangler, [4, 166, 0])).toBe(true);
++    expect(ciWrangler).toBe(pkg.devDependencies.wrangler.replace(/^\^/, ""));
++  });
++
++  it("pins patched versions of direct and transitive packages in package-lock.json", () => {
++    const lock = JSON.parse(readFileSync(resolve(ROOT, "package-lock.json"), "utf8")) as {
++      packages: Record<string, { version?: string }>;
++    };
++
++    expect(isAtLeastSemver(lock.packages["node_modules/vitest"]?.version ?? "0.0.0", [4, 1, 12])).toBe(true);
++    expect(isAtLeastSemver(lock.packages["node_modules/@vitest/ui"]?.version ?? "0.0.0", [4, 1, 12])).toBe(true);
++    expect(isAtLeastSemver(lock.packages["node_modules/vite"]?.version ?? "0.0.0", [7, 3, 8])).toBe(true);
++    expect(isAtLeastSemver(lock.packages["node_modules/wrangler"]?.version ?? "0.0.0", [4, 166, 0])).toBe(true);
++    expect(isAtLeastSemver(lock.packages["node_modules/handlebars"]?.version ?? "0.0.0", [4, 7, 10])).toBe(true);
++  });
++});

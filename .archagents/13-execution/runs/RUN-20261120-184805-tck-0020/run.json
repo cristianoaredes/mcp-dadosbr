@@ -1,0 +1,22 @@
+{
+  "id": "RUN-20261120-184805-tck-0020",
+  "design": "DES-0021",
+  "ticket": "TCK-0020",
+  "started_at": "2026-11-20T18:48:05Z",
+  "started_by": "ops",
+  "environment": "dev",
+  "mode": "live",
+  "status": "completed",
+  "current_step": 6,
+  "total_steps": 6,
+  "ended_at": "2026-11-20T18:52:40Z",
+  "result": "87/87 targeted tests (5 files), 394/394 Vitest (26 files), tsc + tsc.worker TYPECHECK_OK, build + build:worker BUILD_OK, npm run test:transport PASS, criteria-check 5/5 pass",
+  "loop_iterations": 1,
+  "attempt_count": 0,
+  "lessons_consulted": [],
+  "loop_cost_usd": null,
+  "cost_source": "unknown",
+  "loop_strategy": "default",
+  "context_peak": 0,
+  "final_judge_delta": 0
+}

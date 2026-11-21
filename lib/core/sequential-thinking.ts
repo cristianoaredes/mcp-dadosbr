@@ -1,4 +1,16 @@
 import chalk from 'chalk';
+import { maskSensitiveText } from '../shared/log-redaction.js';
+
+export const MAX_THOUGHT_HISTORY = 100;
+export const MAX_BRANCHES = 20;
+export const MAX_THOUGHTS_PER_BRANCH = 50;
+
+export interface SequentialThinkingOptions {
+  maxHistory?: number;
+  maxBranches?: number;
+  maxThoughtsPerBranch?: number;
+  enableThoughtLogging?: boolean;
+}
 
 export interface ThoughtData {
   thought: string;
@@ -26,11 +38,32 @@ export interface ThoughtResult {
 
 export class SequentialThinkingProcessor {
   private thoughtHistory: ThoughtData[] = [];
-  private branches: Record<string, ThoughtData[]> = {};
-  private disableThoughtLogging: boolean;
+  private branches = new Map<string, ThoughtData[]>();
+  private enableThoughtLogging: boolean;
+  private maxHistory: number;
+  private maxBranches: number;
+  private maxThoughtsPerBranch: number;
 
-  constructor() {
-    this.disableThoughtLogging = (process.env.DISABLE_THOUGHT_LOGGING || "").toLowerCase() === "true";
+  constructor(options?: SequentialThinkingOptions) {
+    this.maxHistory = Math.max(1, options?.maxHistory ?? MAX_THOUGHT_HISTORY);
+    this.maxBranches = Math.max(1, options?.maxBranches ?? MAX_BRANCHES);
+    this.maxThoughtsPerBranch = Math.max(1, options?.maxThoughtsPerBranch ?? MAX_THOUGHTS_PER_BRANCH);
+
+    const isProd = typeof process !== 'undefined' && process.env?.NODE_ENV === 'production';
+    const explicitlyEnabled =
+      typeof process !== 'undefined' &&
+      (process.env?.ENABLE_THOUGHT_LOGGING || '').toLowerCase() === 'true';
+    const explicitlyDisabled =
+      typeof process !== 'undefined' &&
+      (process.env?.DISABLE_THOUGHT_LOGGING || '').toLowerCase() === 'true';
+
+    if (isProd || explicitlyDisabled) {
+      this.enableThoughtLogging = false;
+    } else if (options?.enableThoughtLogging !== undefined) {
+      this.enableThoughtLogging = options.enableThoughtLogging;
+    } else {
+      this.enableThoughtLogging = explicitlyEnabled;
+    }
   }
 
   private validateThoughtData(input: unknown): ThoughtData {
@@ -79,14 +112,15 @@ export class SequentialThinkingProcessor {
       context = '';
     }
 
+    const maskedThought = maskSensitiveText(thought, 80);
     const header = `${prefix} ${thoughtNumber}/${totalThoughts}${context}`;
-    const border = '─'.repeat(Math.max(header.length, thought.length) + 4);
+    const border = '─'.repeat(Math.max(header.length, maskedThought.length) + 4);
 
     return `
 ┌${border}┐
 │ ${header} │
 ├${border}┤
-│ ${thought.padEnd(border.length - 2)} │
+│ ${maskedThought.padEnd(border.length - 2)} │
 └${border}┘`;
   }
 
@@ -99,18 +133,31 @@ export class SequentialThinkingProcessor {
         validatedInput.totalThoughts = validatedInput.thoughtNumber;
       }
 
+      if (this.thoughtHistory.length >= this.maxHistory) {
+        this.thoughtHistory.shift();
+      }
       this.thoughtHistory.push(validatedInput);
 
-      // Track branches
+      // Track branches in Map to prevent Object.prototype collisions and bound memory
       if (validatedInput.branchFromThought && validatedInput.branchId) {
-        if (!this.branches[validatedInput.branchId]) {
-          this.branches[validatedInput.branchId] = [];
+        if (!this.branches.has(validatedInput.branchId)) {
+          if (this.branches.size >= this.maxBranches) {
+            const oldestKey = this.branches.keys().next().value;
+            if (oldestKey !== undefined) {
+              this.branches.delete(oldestKey);
+            }
+          }
+          this.branches.set(validatedInput.branchId, []);
         }
-        this.branches[validatedInput.branchId].push(validatedInput);
+        const branchList = this.branches.get(validatedInput.branchId)!;
+        if (branchList.length >= this.maxThoughtsPerBranch) {
+          branchList.shift();
+        }
+        branchList.push(validatedInput);
       }
 
-      // Log to stderr (won't interfere with MCP protocol)
-      if (!this.disableThoughtLogging) {
+      // Log only when explicitly enabled outside production, using masked/truncated thought
+      if (this.enableThoughtLogging) {
         const formattedThought = this.formatThought(validatedInput);
         console.error(formattedThought);
       }
@@ -121,7 +168,7 @@ export class SequentialThinkingProcessor {
           thoughtNumber: validatedInput.thoughtNumber,
           totalThoughts: validatedInput.totalThoughts,
           nextThoughtNeeded: validatedInput.nextThoughtNeeded,
-          branches: Object.keys(this.branches),
+          branches: Array.from(this.branches.keys()),
           thoughtHistoryLength: this.thoughtHistory.length
         }
       };
@@ -138,12 +185,16 @@ export class SequentialThinkingProcessor {
   }
 
   public getBranches(): Record<string, ThoughtData[]> {
-    return { ...this.branches };
+    const snapshot: Record<string, ThoughtData[]> = Object.create(null);
+    for (const [key, list] of this.branches.entries()) {
+      snapshot[key] = [...list];
+    }
+    return snapshot;
   }
 
   public reset(): void {
     this.thoughtHistory = [];
-    this.branches = {};
+    this.branches.clear();
   }
 }
 

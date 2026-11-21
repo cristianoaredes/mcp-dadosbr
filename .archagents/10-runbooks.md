@@ -1,6 +1,6 @@
 # Operação local
 
-Base revisada: `79aa712` (`v0.5.0`; base inicial: `037dae4c`).
+Base revisada: `786d7ed` (`0.6.0`, worktree `audit-remediation`; base inicial: `037dae4c`).
 
 Execute `npm ci`, `npm run build` (inclui `npm run build:apps`), `npm test`, `npm run test:transport` e `npm run build:worker`. O smoke exige handshake, ping, catálogo de 23 ferramentas, os 5 recursos MCP Apps e 101 chamadas `stdio` sem erro de protocolo. O deploy deve seguir autorização e evidência do ambiente de destino.
 
@@ -8,6 +8,18 @@ Execute `npm ci`, `npm run build` (inclui `npm run build:apps`), `npm test`, `np
 
 - `package.json:L18-L48`
 - `test/integration/transports.mjs:L44-L99`
+- `lib/infrastructure/logger.ts:L1-L122`
+- `lib/infrastructure/tracing.ts:L1-L150`
+- `lib/core/tools.ts:L1-L203`
+- `lib/adapters/cloudflare.ts:L165-L248`
+- `lib/workers/auth.ts:L47-L107`
+
+## Observabilidade, Logs Estruturados, Métricas RED e Health Check (`TCK-0025` / `FND-0013`)
+
+- **Logs JSON em `stderr` (`lib/infrastructure/logger.ts`)**: todos os níveis (`debug`, `info`, `warn`, `error`) escrevem exclusivamente em `console.error` para preservar `stdout` limpo para JSON-RPC no transporte `stdio`. Configure `LOG_LEVEL=debug|info|warn|error` (padrão `INFO`; `DEBUG` apenas quando `NODE_ENV=development` sem `LOG_LEVEL`).
+- **Correlação Web Crypto (`lib/infrastructure/tracing.ts`, `cli-http.ts`, `worker.ts`)**: requisições HTTP/SSE/Worker propagam ou geram `X-Request-Id` (`req_<uuid>`) via `globalThis.crypto.randomUUID()` / `getRandomValues()` e rejeitam cabeçalhos malformados/CRLF (`extractRequestId`).
+- **Métricas RED e `cacheHits` (`lib/core/tools.ts`, `mcp-server.ts`)**: `executeTool` rastreia `requests`, `errors`, `cacheHits` reais e `totalTimeMs`/`avgTimeMs`/`maxTimeMs` por ferramenta (`getToolMetrics()`), mantendo `[metrics] ...` a cada 100 requisições sem zerar contadores globais entre sessões SSE (`createMCPServer()`).
+- **Audit Log 401 & Health KV (`lib/workers/auth.ts`, `lib/adapters/cloudflare.ts`)**: falhas 401 no Worker registram JSON estruturado `auth.unauthorized` (`reason`, `method`, `path`, `requestId`) sem vazar API key ou query string. `/health` executa sonda KV com timeout limitado (`1000ms`), retornando `200` (`healthy`, `kv.status: "ok" | "unconfigured"`) ou `503` (`degraded`, `kv.status: "degraded"`). Diagnóstico e comportamento real no edge Workers via `wrangler tail` permanecem *a confirmar* em produção.
 
 ## Runner próprio
 
