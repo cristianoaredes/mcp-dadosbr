@@ -9,7 +9,10 @@ import { buildDorks, DorkCategory, CNPJData } from './dork-templates.js';
 import { TimeoutError } from '../shared/types/result.js';
 import { SEARCH } from '../shared/utils/constants.js';
 import { TIMEOUTS } from '../config/timeouts.js';
+import { createLogger } from '../infrastructure/logger.js';
 import { maskCnpj, maskSensitiveText, summarizeQueryForLog } from '../shared/log-redaction.js';
+
+const intelligenceLogger = createLogger('intelligence');
 
 /**
  * Execute tasks with concurrency limit
@@ -74,6 +77,7 @@ export interface IntelligenceOptions {
   maxResultsPerQuery?: number;
   maxQueries?: number;
   cachedCompanyData?: CNPJData; // Reuse company data if already fetched
+  requestId?: string;
 }
 
 export interface IntelligenceResult {
@@ -159,9 +163,11 @@ export function filterResultsByCnpj(results: SearchResult[], cnpj: string): Sear
 export async function executeIntelligence(
   options: IntelligenceOptions,
   apiConfig: ApiConfig,
-  cache?: Cache
+  cache?: Cache,
+  requestId?: string
 ): Promise<LookupResult> {
   const TOTAL_TIMEOUT_MS = TIMEOUTS.INTELLIGENCE_TOTAL_MS;
+  const activeRequestId = requestId ?? options.requestId;
   const controller = new AbortController();
   let timeoutId: ReturnType<typeof setTimeout> | undefined;
 
@@ -182,7 +188,8 @@ export async function executeIntelligence(
     options,
     apiConfig,
     cache,
-    controller.signal
+    controller.signal,
+    activeRequestId
   );
   // Prevent unhandled rejection if execution rejects after timeout wins Promise.race
   executionPromise.catch(() => {});
@@ -192,8 +199,10 @@ export async function executeIntelligence(
   } catch (error: unknown) {
     if (error instanceof TimeoutError) {
       const maskedCnpj = maskCnpj(options.cnpj);
-      console.error(
-        `[intelligence] [${maskedCnpj}] Timeout reached (limit: ${error.timeoutMs}ms)`
+      intelligenceLogger.warn(
+        'intelligence.timeout',
+        { cnpj: maskedCnpj, timeoutMs: error.timeoutMs },
+        activeRequestId
       );
       return {
         ok: false,
@@ -213,7 +222,8 @@ async function executeIntelligenceInternal(
   options: IntelligenceOptions,
   apiConfig: ApiConfig,
   cache: Cache | undefined,
-  signal: AbortSignal
+  signal: AbortSignal,
+  requestId?: string
 ): Promise<LookupResult> {
   const startTime = Date.now();
   const normalizedCnpj = normalizeCnpj(options.cnpj);
@@ -221,14 +231,22 @@ async function executeIntelligenceInternal(
 
   try {
     // Step 1: Get company data (reuse cached if provided)
-    console.error(`[intelligence] [${maskedCnpj}] Starting CNPJ intelligence search...`);
+    intelligenceLogger.info(
+      'intelligence.started',
+      { cnpj: maskedCnpj },
+      requestId
+    );
 
     let companyData: CNPJData;
 
     if (options.cachedCompanyData) {
       // Reuse provided company data
       companyData = options.cachedCompanyData;
-      console.error(`[intelligence] [${maskedCnpj}] Using cached company data`);
+      intelligenceLogger.debug(
+        'intelligence.company_cached_input',
+        { cnpj: maskedCnpj },
+        requestId
+      );
     } else {
       // Try to get from cache first using normalized CNPJ key (matching lookup())
       const cacheKey = `cnpj:${apiConfig.cnpjBaseUrl}:${normalizedCnpj}`;
@@ -236,7 +254,11 @@ async function executeIntelligenceInternal(
 
       if (cachedData) {
         companyData = cachedData;
-        console.error(`[intelligence] [${maskedCnpj}] Using cache hit for company data`);
+        intelligenceLogger.debug(
+          'intelligence.company_cache_hit',
+          { cnpj: maskedCnpj },
+          requestId
+        );
       } else {
         // Fetch from API only if not in cache
         const cnpjResult = await lookup('cnpj', normalizedCnpj, apiConfig, cache);
@@ -257,14 +279,22 @@ async function executeIntelligenceInternal(
     }
 
     const company = companyData as { razao_social?: string };
-    console.error(`[intelligence] [${maskedCnpj}] Company resolved (has_name=${Boolean(company.razao_social)})`);
+    intelligenceLogger.debug(
+      'intelligence.company_resolved',
+      { cnpj: maskedCnpj, hasName: Boolean(company.razao_social) },
+      requestId
+    );
 
     // Step 2: Build dorks based on company data
     const dorks = buildDorks(companyData, options.categories);
     const maxQueries = options.maxQueries || SEARCH.DEFAULT_MAX_QUERIES;
     const selectedDorks = dorks.slice(0, maxQueries);
 
-    console.error(`[intelligence] [${maskedCnpj}] Generated ${dorks.length} dorks, using ${selectedDorks.length}`);
+    intelligenceLogger.debug(
+      'intelligence.dorks_generated',
+      { cnpj: maskedCnpj, generated: dorks.length, selected: selectedDorks.length },
+      requestId
+    );
 
     // Step 3: Resolve provider (requires Tavily API key from server config)
     const provider: SearchProvider = await getAvailableProvider(options.provider);
@@ -273,8 +303,10 @@ async function executeIntelligenceInternal(
       throw new TimeoutError('Intelligence search timed out', TIMEOUTS.INTELLIGENCE_TOTAL_MS);
     }
 
-    console.error(
-      `[intelligence] [${maskedCnpj}] Using provider: ${provider.name}`
+    intelligenceLogger.debug(
+      'intelligence.provider_selected',
+      { cnpj: maskedCnpj, provider: provider.name },
+      requestId
     );
 
     // Step 4: Execute searches with concurrency limit
@@ -295,12 +327,15 @@ async function executeIntelligenceInternal(
     const maxResultsPerQuery = options.maxResultsPerQuery || SEARCH.DEFAULT_MAX_RESULTS;
 
     // Get concurrency limit from environment or use default
-    const rawConcurrency = Number.parseInt(process.env.MCP_INTELLIGENCE_CONCURRENCY || '3', 10);
+    const rawConcurrencyEnv =
+      typeof process !== 'undefined' ? process.env?.MCP_INTELLIGENCE_CONCURRENCY : undefined;
+    const rawConcurrency = Number.parseInt(rawConcurrencyEnv || '3', 10);
     const concurrencyLimit = Number.isFinite(rawConcurrency) && rawConcurrency > 0 ? rawConcurrency : 3;
 
-    console.error(
-      `[intelligence] [${maskedCnpj}] Executing ${selectedDorks.length} queries ` +
-      `with concurrency limit: ${concurrencyLimit}`
+    intelligenceLogger.debug(
+      'intelligence.queries_executing',
+      { cnpj: maskedCnpj, queryCount: selectedDorks.length, concurrencyLimit },
+      requestId
     );
 
     // Create tasks for concurrent execution
@@ -315,7 +350,15 @@ async function executeIntelligenceInternal(
         }
 
         try {
-          console.error(`[intelligence] [${dork.category}] Searching (${summarizeQueryForLog(dork.query)})`);
+          intelligenceLogger.debug(
+            'intelligence.dork_searching',
+            {
+              cnpj: maskedCnpj,
+              category: dork.category,
+              querySummary: summarizeQueryForLog(dork.query),
+            },
+            requestId
+          );
           const searchResult = await provider.search(
             dork.query,
             maxResultsPerQuery,
@@ -332,9 +375,15 @@ async function executeIntelligenceInternal(
               category: dork.category
             }));
 
-            console.error(
-              `[intelligence] [${dork.category}] Found ${searchResult.value.length} results, ` +
-              `${filteredResults.length} after CNPJ filter`
+            intelligenceLogger.debug(
+              'intelligence.dork_results',
+              {
+                cnpj: maskedCnpj,
+                category: dork.category,
+                totalResults: searchResult.value.length,
+                filteredResults: filteredResults.length,
+              },
+              requestId
             );
 
             return {
@@ -344,7 +393,15 @@ async function executeIntelligenceInternal(
             };
           } else {
             // Log error but continue with other searches
-            console.error(`[intelligence] [${dork.category}] Search failed: ${maskSensitiveText(searchResult.error.message)}`);
+            intelligenceLogger.warn(
+              'intelligence.dork_failed',
+              {
+                cnpj: maskedCnpj,
+                category: dork.category,
+                error: maskSensitiveText(searchResult.error.message),
+              },
+              requestId
+            );
             return {
               category: dork.category,
               results: [],
@@ -353,7 +410,15 @@ async function executeIntelligenceInternal(
           }
         } catch (error: unknown) {
           const err = error as Error;
-          console.error(`[intelligence] [${dork.category}] Unexpected error: ${maskSensitiveText(err.message)}`);
+          intelligenceLogger.error(
+            'intelligence.dork_exception',
+            {
+              cnpj: maskedCnpj,
+              category: dork.category,
+              error: maskSensitiveText(err.message),
+            },
+            requestId
+          );
           return {
             category: dork.category,
             results: [],
@@ -405,7 +470,11 @@ async function executeIntelligenceInternal(
     const duplicatesRemoved = Object.values(searchResults).reduce((sum, results) => sum + results.length, 0) - totalResults;
 
     if (duplicatesRemoved > 0) {
-      console.error(`[intelligence] [${maskedCnpj}] Removed ${duplicatesRemoved} duplicate results`);
+      intelligenceLogger.debug(
+        'intelligence.duplicates_removed',
+        { cnpj: maskedCnpj, duplicatesRemoved },
+        requestId
+      );
     }
 
     // Step 6: Build response
@@ -419,8 +488,16 @@ async function executeIntelligenceInternal(
       timestamp: new Date().toISOString()
     };
 
-    console.error(
-      `[intelligence] [${maskedCnpj}] Complete [${elapsed}ms] [${queriesExecuted} queries] [${providerUsed}]`
+    intelligenceLogger.info(
+      'intelligence.completed',
+      {
+        cnpj: maskedCnpj,
+        elapsedMs: elapsed,
+        queriesExecuted,
+        provider: providerUsed,
+        totalResults,
+      },
+      requestId
     );
 
     return {
@@ -433,8 +510,10 @@ async function executeIntelligenceInternal(
 
     // Handle timeout errors specifically
     if (error instanceof TimeoutError) {
-      console.error(
-        `[intelligence] [${maskedCnpj}] Timeout after ${elapsed}ms (limit: ${error.timeoutMs}ms)`
+      intelligenceLogger.warn(
+        'intelligence.timeout',
+        { cnpj: maskedCnpj, elapsedMs: elapsed, timeoutMs: error.timeoutMs },
+        requestId
       );
       return {
         ok: false,
@@ -443,8 +522,14 @@ async function executeIntelligenceInternal(
     }
 
     const err = error as Error;
-    console.error(
-      `[intelligence] [${maskedCnpj}] Error: ${maskSensitiveText(err.message)} [${elapsed}ms]`
+    intelligenceLogger.error(
+      'intelligence.error',
+      {
+        cnpj: maskedCnpj,
+        elapsedMs: elapsed,
+        error: maskSensitiveText(err.message),
+      },
+      requestId
     );
 
     return {

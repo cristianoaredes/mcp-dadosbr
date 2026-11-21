@@ -84,10 +84,11 @@ export interface MCPServerOptions {
   apiConfig: ApiConfig;
   cache?: Cache;
   rateLimit?: { windowMs: number; maxRequests: number } | false;
+  getRequestContext?: () => RequestContext | undefined;
 }
 
 export function createMCPServer(options: MCPServerOptions): Server {
-  const { apiConfig, cache, rateLimit } = options;
+  const { apiConfig, cache, rateLimit, getRequestContext } = options;
 
   // Session-local sequential thinking state (isolated per server/connection)
   const thinkingProcessor = new SequentialThinkingProcessor();
@@ -142,7 +143,7 @@ export function createMCPServer(options: MCPServerOptions): Server {
   // Register call tool handler
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const { name, arguments: args } = request.params;
-    const requestContext = new RequestContext();
+    const requestContext = getRequestContext?.() ?? new RequestContext();
     requestContext.addMetadata("tool", name);
 
     if (toolRateLimiter && !toolRateLimiter.checkLimit("mcp-session")) {

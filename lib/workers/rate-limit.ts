@@ -11,6 +11,11 @@
 import { Env, corsHeaders } from "../adapters/cloudflare.js";
 import { MIN_KV_EXPIRATION_TTL_SECONDS } from "../core/cache.js";
 import { TIMEOUTS } from "../config/timeouts.js";
+import { createLogger } from "../infrastructure/logger.js";
+import type { RequestContext } from "../infrastructure/tracing.js";
+import { maskSensitiveText } from "../shared/log-redaction.js";
+
+const rateLimitLogger = createLogger("worker-rate-limit");
 
 const RATE_LIMIT_MAX_REQUESTS = 30; // Max requests per window per IP
 const CLIENT_ID_REGEX = /^[A-Za-z0-9.:_-]{1,64}$/;
@@ -48,7 +53,8 @@ export function extractClientIdentifier(request: Request, env: Env): string {
  */
 export async function checkRateLimit(
   request: Request,
-  env: Env
+  env: Env,
+  requestContext?: RequestContext
 ): Promise<RateLimitResult> {
   // Skip rate limiting for health checks
   const url = new URL(request.url);
@@ -143,7 +149,15 @@ export async function checkRateLimit(
     return { allowed: true };
   } catch (error) {
     // On KV transport error, allow request (fail open)
-    console.error("Rate limit check failed:", error);
+    rateLimitLogger.error(
+      "rate_limit.check_failed",
+      {
+        error: maskSensitiveText(
+          error instanceof Error ? error.message : String(error)
+        ),
+      },
+      requestContext?.requestId
+    );
     return { allowed: true };
   }
 }

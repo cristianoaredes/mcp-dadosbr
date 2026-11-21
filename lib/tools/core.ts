@@ -55,9 +55,9 @@ registerTool({
 registerTool({
     ...SEARCH_TOOL,
     zodSchema: CnpjSearchSchema,
-    execute: async (args, _apiConfig, cache) => {
+    execute: async (args, _apiConfig, cache, context) => {
         const { query, max_results = 5 } = args as { query: string; max_results?: number };
-        return await executeSearch(query, max_results, cache);
+        return await executeSearch(query, max_results, cache, context?.requestId);
     },
 });
 
@@ -66,7 +66,7 @@ registerTool({
 registerTool({
     ...CNPJ_INTELLIGENCE_TOOL,
     zodSchema: CnpjIntelligenceSchema,
-    execute: async (args, apiConfig, cache) => {
+    execute: async (args, apiConfig, cache, context) => {
         const parsed = args as {
             cnpj: string;
             categories?: typeof DORK_CATEGORIES[number][];
@@ -85,6 +85,7 @@ registerTool({
             },
             apiConfig,
             cache,
+            context?.requestId,
         );
     },
 });

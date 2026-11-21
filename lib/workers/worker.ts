@@ -154,20 +154,20 @@ async function routeRequest(
             { status: 400, headers: { 'Content-Type': 'application/json', ...corsHeaders } }
           );
         }
-        return await handleLookupEndpoint(toolType, decodedValue, env);
+        return await handleLookupEndpoint(toolType, decodedValue, env, requestContext);
       }
 
       // Handle advanced REST endpoints
       if (url.pathname === '/search' && request.method === 'POST') {
-        return await handleSearchEndpoint(request, env);
+        return await handleSearchEndpoint(request, env, requestContext);
       }
 
       if (url.pathname === '/intelligence' && request.method === 'POST') {
-        return await handleIntelligenceEndpoint(request, env);
+        return await handleIntelligenceEndpoint(request, env, requestContext);
       }
 
       if (url.pathname === '/thinking' && request.method === 'POST') {
-        return await handleThinkingEndpoint(request, env);
+        return await handleThinkingEndpoint(request, env, requestContext);
       }
 
       return new Response('Not found', {
@@ -210,7 +210,7 @@ export default {
     }
 
     // Apply rate limiting
-    const rateLimitResult = await checkRateLimit(request, env);
+    const rateLimitResult = await checkRateLimit(request, env, requestContext);
     if (!rateLimitResult.allowed) {
       return withRequestId(
         withCorsHeaders(rateLimitResult.error!, request, env, { isPublic }),
