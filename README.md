@@ -132,8 +132,10 @@ O que muda entre os modos é onde o servidor executa e se o cliente recebe os pa
 | Modo | Transporte | MCP Apps (`ui://`) | Retorno JSON textual | Controles inclusos | Quando escolher |
 | --- | --- | --- | --- | --- | --- |
 | **CLI local (padrão)** | `stdio` | **Sim (5 apps)** | Sim (23 ferramentas) | `stdout` reservado para JSON-RPC, cache em memória, deduplicação, retry + circuit breaker, allowlist SSRF | Uso local no Claude Desktop, Cursor, Windsurf, Claude Code e demais hosts desktop |
-| **CLI HTTP/SSE local** | `GET /mcp` + `POST /messages` | **Sim (5 apps)** | Sim (23 ferramentas) | Rate limit (30 req/min por IP), limpeza de sessões SSE inativas, CORS | Rede local, Docker, VPS própria ou clientes MCP remotos com suporte a SSE |
+| **CLI HTTP/SSE local** | `GET /mcp` + `POST /messages` | **Sim (5 apps)** | Sim (23 ferramentas) | Rate limit (30 req/min por IP), limpeza de sessões SSE inativas, CORS restrito, `MCP_API_KEY` obrigatória fora de loopback | Rede local, Docker, VPS própria ou clientes MCP remotos com suporte a SSE |
 | **Cloudflare Worker** | `POST /mcp`, `/sse`, REST e OAuth | Não (somente texto) | Sim | Autenticação/OAuth, rate limit na borda, `GET /health`, OpenAPI | Conectores remotos serverless e integrações HTTP sem manter servidor dedicado |
+
+> **Autenticação obrigatória fora de loopback (`MCP_API_KEY`):** por padrão, o modo `HTTP/SSE` escuta em `127.0.0.1`. Ao definir `MCP_HTTP_HOST` para um endereço não-loopback (`0.0.0.0`, `::`, IP de rede etc.), o servidor opera em modo **fail-closed** e recusa iniciar sem `MCP_API_KEY`. Com `MCP_API_KEY` configurada (inclusive em loopback), todas as requisições `GET /mcp` e `POST /messages` exigem `Authorization: Bearer <chave>` ou `X-API-Key: <chave>`.
 
 **O que não muda entre os modos:**
 
@@ -190,10 +192,14 @@ Configure seu cliente apontando para o caminho absoluto do build:
 ### 3. Modo servidor HTTP/SSE local
 
 ```bash
+# Uso local em loopback (127.0.0.1:3000)
 MCP_TRANSPORT=http MCP_HTTP_PORT=3000 npx -y @aredes.me/mcp-dadosbr
+
+# Exposição em rede / Docker / VPS (MCP_API_KEY obrigatória fora de loopback)
+MCP_TRANSPORT=http MCP_HTTP_HOST=0.0.0.0 MCP_API_KEY="<sua-chave-secreta>" npx -y @aredes.me/mcp-dadosbr
 ```
 
-O servidor abre o stream SSE em `GET http://127.0.0.1:3000/mcp` e recebe mensagens JSON-RPC em `POST http://127.0.0.1:3000/messages?sessionId=<id>`, com rate limit de **30 requisições por minuto por IP** ([`lib/adapters/cli.ts`](lib/adapters/cli.ts#L93-L239)).
+O servidor abre o stream SSE em `GET http://127.0.0.1:3000/mcp` e recebe mensagens JSON-RPC em `POST http://127.0.0.1:3000/messages?sessionId=<id>`, com rate limit de **30 requisições por minuto por IP** ([`lib/adapters/cli-http.ts`](lib/adapters/cli-http.ts)). Ao configurar `MCP_API_KEY`, envie `Authorization: Bearer <sua-chave-secreta>` ou `X-API-Key: <sua-chave-secreta>` nas requisições.
 
 ### 4. Provedor customizado de CNPJ ou CEP (`.mcprc.json` ou variável de ambiente)
 
@@ -250,6 +256,8 @@ Ou crie um `.mcprc.json` baseado em [`.mcprc.example.json`](.mcprc.example.json)
 | `API_KEY_HEADER` / `API_KEY_VALUE` | *(nenhum)* | Cabeçalho de autenticação enviado ao provedor customizado de CNPJ/CEP. |
 | `MCP_TRANSPORT` | `stdio` | Modo de transporte do CLI: `stdio` ou `http` (HTTP/SSE). |
 | `MCP_HTTP_PORT` | `3000` | Porta TCP usada quando `MCP_TRANSPORT=http`. |
+| `MCP_HTTP_HOST` | `127.0.0.1` | Host de bind do modo HTTP/SSE (endereços não-loopback exigem `MCP_API_KEY`). |
+| `MCP_API_KEY` | *(nenhum)* | Chave de autenticação (`Authorization: Bearer` ou `X-API-Key`) obrigatória ao expor HTTP/SSE fora de loopback e opcional em loopback. |
 | `MCP_CACHE_SIZE` / `MCP_CACHE_TTL` | `256` / `3600000` ms | Capacidade e TTL (ms) do cache em memória do CLI. |
 | `MCP_CACHE_BACKGROUND_CLEANUP` | `false` | Se `true`, ativa limpeza periódica em segundo plano do cache. |
 | `MCP_API_TIMEOUT` | `8000` ms | Timeout (ms) das requisições HTTP de saída. |
