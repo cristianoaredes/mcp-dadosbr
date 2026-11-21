@@ -468,3 +468,296 @@ Falsa sensação de segurança na regressão (suítes não exercitam código rea
 
 #### Mitigação sugerida
 Adicionar testes unitários importando diretamente os módulos reais de `auth`, `oauth`, `rate-limit`, `sse`, `cloudflare`, `worker`, `http-client`, `smithery`, `sequential-thinking` e `tools/{legal,company}` (incluindo cenários de erro/bypass); refatorar `sse.test.ts`, `concurrency.test.ts`, `deduplication.test.ts` e `intelligence.test.ts` para importar as implementações de `lib/`; instalar/alinhar `@vitest/coverage-v8` (avaliando revisão das exclusões em `vitest.config.ts`) e migrar `circuit-breaker.test.ts`/`concurrency.test.ts` para fake timers.
+
+*(Nota: os 14 findings da auditoria inicial `6c74db6` — `FND-0001` a `FND-0014` — foram remediados e encerrados nos tickets `TCK-0013`–`TCK-0029` até a revisão `a3a2e12`.)*
+
+---
+
+## Re-auditoria Pós-Remediação — Revisão `a3a2e12` (2026-11-21, `--compliance`)
+
+- **Revisão base:** `a3a2e12` (branch `main`, pós-integração local de `TCK-0013`–`TCK-0029`)
+- **Data:** `2026-11-21`
+- **Autonomia:** `L2`
+- **Dimensões executadas (9):** `security`, `agentic-security`, `reliability`, `performance`, `architecture`, `test-coverage`, `observability`, `dependency`, `compliance-br`
+- **Dimensões puladas (2):**
+  - `martech` (`--martech`): pulada — sem flag `--martech` e sem superfície de tracking/analytics/marketing detectada.
+  - `inventory` (`--inventory`): pulada — sem flag `--inventory`.
+
+### Controles Transversais (`P11`, `SC-6`, `SC-9`)
+
+- **`P11` (Prompt injection no repositório):** `0` ocorrências maliciosas (`.github/copilot-instructions.md:L141-L142` possui apenas tags literais residuais benignas de geração antiga).
+- **`SC-6` (Secrets no código/infra):** `secret-scan.sh` sobre todos os arquivos rastreados de `lib/`, `apps/`, `scripts/`, `infra/`, `.github/` retornou **0 segredos expostos**.
+- **`SC-9` (Allowlist & Capabilities):** `.archagents/_capabilities.json:L1-L20` e `.archagents/mcp-tool-allowlist.json:L1-L270` cobrem as 23 tools MCP (divergência menor de texto em `mcp-tool-allowlist.json:L56` mapeada em `FND-0021`).
+
+### Medição Mecânica (`audit-measure.py` + medição complementar da stack)
+
+> `audit-measure.py --root . --json` retornou `mede_o_framework: false`. Nenhuma dimensão reportada como `nao_medido` ou `parcial` pelo coletor é declarada `limpo`.
+
+| Dimensão | Estado no Coletor (`audit-measure.py`) | Detalhes do Coletor | Medição Complementar da Stack (`a3a2e12`) |
+|---|---|---|---|
+| `security` | `nao_medido` | 5 auto-auditorias do framework | `secret-scan.sh` 0 segredos; `rg` 0 `eval`/`innerHTML`/`Math.random`; inspeção direta de `lib/adapters/cli-http.ts`, `lib/workers/rest.ts`, `lib/adapters/cloudflare.ts` |
+| `agentic-security` | `nao_exec` (`apply-heuristic.py` aponta caminho antigo do framework) | Fora do repo do framework (TCK-0239) | Inspeção direta de `mcp-tool-allowlist.json`, `lib/core/search-providers.ts`, `lib/tools/osint.ts`, `lib/tools/legal.ts`, `lib/core/mcp-server.ts` |
+| `reliability` | `limpo` | `runs-zumbis: 0`, `retro-validate: 29/29 ok` | Inspeção de código pós-`TCK-0018`–`0020` sem novos achados (`0`) |
+| `performance` | `limpo` | `duracao-dos-runs`: mediana `304.0s`, p95 `580.0s`, max `1254.0s` em `30` runs | Inspeção pós-`TCK-0023` sem novos achados (`0`) |
+| `architecture` | `achado` + `nao_medido` | `cobertura-do-as-is`: `apps/` e `infra/` ausentes do `REGISTRY` fixo do framework (`03-modules` `sem-suspeita`, ADR supersede `limpo` 2 ADRs, claimed `limpo` 8); 4 auto-auditorias `nao_medido` | Inspeção de contratos REST/OpenAPI (`rest.ts`, `openapi.ts`, `types.ts`), módulos órfãos e docs |
+| `test-coverage` | `nao_medido` | `cobertura-de-teste`: sem `.coverage.json` Python | `npm run test:coverage`: **31 arquivos, 442/442 testes PASS**, V8 **`91.32% Stmts / 83.57% Branch / 93.25% Funcs / 92.09% Lines`** (thresholds `85/80/85/85`); `tsc`, `tsc.worker`, `build`, `build:worker`, `test:transport` PASS; lacunas residuais em `cli-http.ts` (`77.3%`) e `mcp-server.ts` (`36.36%` funcs) |
+| `observability` | `achado` | `independencia-de-verify`: `limpo` (`p10: ok=31 achado=0`); `cobertura-do-reflect`: `routes_coverage`/`cost_coverage` `no_data` (telemetria do harness) | Inspeção de propagação `X-Request-Id` em `worker.ts`/`rest.ts`/`cli-http.ts` e logs ad-hoc residuais em `rate-limit.ts`/`search.ts`/`intelligence.ts` |
+| `dependency` | `nao_medido` | `pip-check` (auto-auditoria do framework) | `npm ci` (`508` pkgs), `npm audit --omit=dev --json` = **0 vulns (`prod: 98`)**, `npm audit --json` total = **0 vulns (`total: 638`)** (`0` novos achados) |
+| `compliance-br` | *sem coletor automático* | Heurística opt-in `--compliance` | Auditoria direta LGPD + Marco Civil em tools de dados pessoais, cache, transferência internacional, logs e documentação |
+
+### Resumo dos Novos Achados (`a3a2e12`)
+
+| ID | Dimensão | Severidade | Título | Ticket |
+|---|---|---|---|---|
+| `FND-0015` | `compliance-br` | `high` | Ausência de minimização de dados pessoais, chaves de cache em claro com CPF/nomes penais e ausência de eliminação por titular no cache | `TCK-0030` |
+| `FND-0016` | `compliance-br` | `medium` | Transferência internacional não divulgada e sem opt-out de PII de sócios (`QSA`) e pessoas físicas para provedores externos (`Tavily`/`Perplexity`) | `TCK-0031` |
+| `FND-0017` | `compliance-br` | `medium` | Registro de `clientIp` em claro em logs (`auth.ts`, `cli-http.ts`) e alegação incorreta de conformidade LGPD automática em `docs/pt-br/desenvolvimento/metricas.md` | `TCK-0032` |
+| `FND-0018` | `compliance-br` | `medium` | Ausência de política LGPD/canal DPO (`Art. 41`), plano de incidente ANPD (`Art. 48`) e salvaguarda contra homônimos/decisão automatizada em ferramentas penais | `TCK-0033` |
+| `FND-0019` | `security` | `medium` | Transporte HTTP/SSE do CLI (`lib/adapters/cli-http.ts`) sem autenticação (`MCP_API_KEY`) quando exposto fora de loopback (`0.0.0.0`/`::`) | `TCK-0034` |
+| `FND-0020` | `security` | `low` | Endpoints REST do Worker retornam `error.message` bruto como HTTP `500` em JSON inválido/exceções e `cloudflare.ts` omite headers defensivos extras | `TCK-0035` |
+| `FND-0021` | `agentic-security` | `medium` | Ausência de delimitação anti-prompt-injection indireta e limite de tamanho em outputs externos e em `strategic_osint_prompt` + ajuste de metadado `allowlist` | `TCK-0036` |
+| `FND-0022` | `architecture` | `medium` | Divergência de contrato REST/OpenAPI do Worker (`rest.ts`, `openapi.ts`, `types.ts`, `404` unreachable, `decodeURIComponent`) e artefatos/docs obsoletos residuais | `TCK-0037` |
+| `FND-0023` | `observability` | `medium` | Correlação `X-Request-Id` quebrada em REST (`worker.ts` → `rest.ts`) e `POST /messages` → `mcp-server.ts`, além de logs não estruturados residuais | `TCK-0038` |
+| `FND-0024` | `test-coverage` | `medium` | Fluxos de runtime/segurança em `cli-http.ts` (`429`, `413`, `400`, `extraAllowedHosts`, SSE/shutdown) e handlers/erros em `mcp-server.ts` sem testes unitários no Vitest | `TCK-0039` |
+
+---
+
+### FND-0015 — Ausência de minimização de dados pessoais, chaves de cache em claro com CPF/nomes penais e ausência de eliminação por titular no cache
+
+- **Categoria:** `compliance-br`
+- **Severidade:** `high`
+- **Confiança:** `confirmed`
+- **Ticket:** `TCK-0030`
+- **Evidência:**
+  - `lib/core/lookup.ts:L63-L76`
+  - `lib/tools/government.ts:L187-L206`
+  - `lib/tools/legal.ts:L40,L59,L100,L109,L139,L160,L205,L376-L378,L462,L472`
+  - `lib/tools/health.ts:L24,L33`
+  - `lib/core/search.ts:L24,L71-L73`
+  - `lib/core/cache.ts:L37-L52,L178-L181`
+  - `lib/config/index.ts:L199`
+  - `lib/types/index.ts:L59-L72`
+
+#### Descrição
+Tools cadastrais e jurídico-penais persistem dados pessoais em cache (`MemoryCache` e Cloudflare `KVCache`) usando chaves legíveis em texto claro contendo CPF (`transparencia:${url}` com `?cpf=...`), nomes completos de advogados/partes/procurados (`oab:${url}`, `bnmp:${url}`, `procurados:entries:v1`, `datajud:${url}`) e queries OSINT (`search:${query}:${maxResults}`), retornando payloads completos sem minimização de campos de pessoa física (e mantendo expiração lazy em `MemoryCache` sem teto para `MCP_CACHE_TTL` nem método `delete(key)` na interface `Cache`/`KVCache`).
+
+#### Impacto
+Risco de exposição e retenção injustificada de dados pessoais sensíveis/penais/cadastrais em memória ou KV de borda sem mecanismo técnico de eliminação por titular (**LGPD Art. 6º III, Art. 15, Art. 16, Art. 18 VI e Art. 46**).
+
+#### Mitigação sugerida
+Hashear chaves de cache com CPF/nomes/queries (SHA-256 com prefixo de domínio), impor TTL curto ou bypass de cache para consultas penais/CPF (`bnmp_mandados`, `procurados_lookup`, `servidores`), adicionar `delete(key)` em `Cache`/`KVCache` e teto máximo para `MCP_CACHE_TTL`, além de opção de minimização de QSA/contatos em `cnpj_lookup`.
+
+---
+
+### FND-0016 — Transferência internacional não divulgada e sem opt-out de PII de sócios (`QSA`) e pessoas físicas para provedores externos (`Tavily`/`Perplexity`)
+
+- **Categoria:** `compliance-br`
+- **Severidade:** `medium`
+- **Confiança:** `confirmed`
+- **Ticket:** `TCK-0031`
+- **Evidência:**
+  - `lib/core/dork-templates.ts:L180-L203,L279-L292,L447-L465`
+  - `lib/core/intelligence.ts:L263-L323`
+  - `lib/core/search-providers.ts:L79-L86,L168-L188`
+  - `lib/tools/company.ts:L202-L204`
+  - `lib/tools/osint.ts:L29,L53,L74,L84`
+  - `README.md:L117-L119,L284-L295`
+
+#### Descrição
+Com as categorias padrão, `cnpj_intelligence` extrai até 3 nomes de sócios do QSA e gera dorks nominais (`"${nomeSocio}" site:linkedin.com`, redes sociais e portais judiciais), enviando os nomes para `Tavily` ou `Perplexity` (servidores nos EUA), comportamento análogo ao fluxo padrão `include_news = true` em `company_deep_profile` e às instruções de `strategic_osint_prompt`, sem aviso ou opt-out explícito documentado.
+
+#### Impacto
+Transferência internacional automática de dados pessoais de terceiros fora do Brasil sem transparência ao usuário nem registro de salvaguardas/cláusulas padrão (**LGPD Art. 33, Art. 6º I/III e Art. 7º §§3º-4º**).
+
+#### Mitigação sugerida
+Documentar a transferência internacional para Tavily/Perplexity/Cloudflare na documentação e aviso de privacidade; adicionar flag/configuração para desabilitar envio de nomes de pessoas físicas (`partners`/`social_media`) ou exigir opt-in explícito para dorks nominais.
+
+---
+
+### FND-0017 — Registro de `clientIp` em claro em logs (`auth.ts`, `cli-http.ts`) e alegação incorreta de conformidade LGPD automática em `docs/pt-br/desenvolvimento/metricas.md`
+
+- **Categoria:** `compliance-br`
+- **Severidade:** `medium`
+- **Confiança:** `confirmed`
+- **Ticket:** `TCK-0032`
+- **Evidência:**
+  - `lib/workers/auth.ts:L71-L84`
+  - `lib/adapters/cli-http.ts:L322-L327`
+  - `docs/pt-br/desenvolvimento/metricas.md:L11,L179-L183`
+  - `lib/infrastructure/logger.ts:L55-L108`
+  - `lib/shared/log-redaction.ts:L17-L32`
+
+#### Descrição
+`auth.ts:L81` registra `CF-Connecting-IP` bruto no evento `auth.unauthorized`, e `cli-http.ts:L322` grava `clientId` bruto sempre que `NODE_ENV !== "production"` (situação padrão em execuções CLI/Docker sem `NODE_ENV=production`). Paralelamente, `docs/pt-br/desenvolvimento/metricas.md:L11,L179-L183` declara `LGPD Compliant: ✅` afirmando mascaramento automático no `Logger` de telefone, API keys e objetos aninhados — comportamento inexistente em `lib/infrastructure/logger.ts` e apenas parcial via `maskSensitiveText`.
+
+#### Impacto
+Exposição de endereços IP (dado pessoal sob **LGPD Art. 5º I**, guarda regulada pelo **Marco Civil Art. 15**) em logs sem política de retenção e falsa garantia documental de conformidade automática ao operador.
+
+#### Mitigação sugerida
+Mascarar/pseudonimizar `clientIp` em `auth.ts` e `cli-http.ts` por padrão (independente de `NODE_ENV`), e corrigir `docs/pt-br/desenvolvimento/metricas.md` alinhando-o à implementação real.
+
+---
+
+### FND-0018 — Ausência de política LGPD/canal DPO (`Art. 41`), plano de incidente ANPD (`Art. 48`) e salvaguarda contra homônimos/decisão automatizada em ferramentas penais
+
+- **Categoria:** `compliance-br`
+- **Severidade:** `medium`
+- **Confiança:** `confirmed`
+- **Ticket:** `TCK-0033`
+- **Evidência:**
+  - `lib/tools/legal.ts:L239-L250,L276,L398`
+  - `lib/workers/worker.ts:L96-L132`
+  - `lib/workers/openapi.ts:L14-L21`
+  - `.archagents/07-security-compliance.md:L1-L5`
+  - `.archagents/10-runbooks.md:L1-L35`
+
+#### Descrição
+Faltam aviso LGPD/Política de Privacidade, canal de contato do Encarregado (DPO — Art. 41) para a instância pública e procedimento operacional de notificação de incidentes à ANPD e titulares (Art. 48) em `.archagents/10-runbooks.md`. Adicionalmente, `procurados_lookup` faz correspondência por substring parcial do nome sem CPF ou data de nascimento e retorna alertas direcionados a `due diligence` e `security screening` sem ressalva explícita de risco de homônimos e revisão humana (**LGPD Art. 6º I/V, Art. 7º §§3º-4º, Art. 20**).
+
+#### Impacto
+Risco de falsos positivos contra homônimos em decisões automatizadas de triagem e ausência de transparência e governança de incidentes LGPD exigidos na operação pública brasileira.
+
+#### Mitigação sugerida
+Adicionar política de privacidade / aviso LGPD (`PRIVACY.md` + `README.md` + metadado em `GET /` do Worker), incluir fluxo de incidente ANPD (Art. 48) em `.archagents/10-runbooks.md`, e acrescentar aviso estruturado de homônimo/revisão humana nos retornos de `procurados_lookup`, `bnmp_mandados`, `ceis_cnep_lookup` e `datajud_processos`.
+
+---
+
+### FND-0019 — Transporte HTTP/SSE do CLI (`lib/adapters/cli-http.ts`) sem autenticação (`MCP_API_KEY`) quando exposto fora de loopback (`0.0.0.0`/`::`)
+
+- **Categoria:** `security`
+- **Severidade:** `medium`
+- **Confiança:** `confirmed`
+- **Ticket:** `TCK-0034`
+- **Evidência:**
+  - `lib/adapters/cli.ts:L118-L148`
+  - `lib/adapters/cli-http.ts:L212-L275,L385-L502`
+  - `README.md:L135`
+
+#### Descrição
+Ao configurar `MCP_HTTP_HOST=0.0.0.0` (ou `::`) para deploy em rede/Docker/VPS, `cli.ts` apenas emite um warning em `stderr` e `createCliHttpApp()` não exige nem suporta `MCP_API_KEY` nas rotas `/mcp` e `/messages`, diferente do Cloudflare Worker (`lib/workers/auth.ts`).
+
+#### Impacto
+Em deploy remoto via CLI Node, qualquer cliente que atinja a porta HTTP com `Host` permitido consome as 23 tools MCP e eventuais chaves pagas configuradas no servidor sem autenticação.
+
+#### Mitigação sugerida
+Implementar autenticação Bearer/`X-API-Key` (comparação constant-time via `MCP_API_KEY`) em `createCliHttpApp()`, exigindo-a em modo fail-closed sempre que `host` não for loopback (`127.0.0.1`, `localhost`, `::1`).
+
+---
+
+### FND-0020 — Endpoints REST do Worker retornam `error.message` bruto como HTTP `500` em JSON inválido/exceções e `cloudflare.ts` omite headers defensivos extras
+
+- **Categoria:** `security`
+- **Severidade:** `low`
+- **Confiança:** `confirmed`
+- **Ticket:** `TCK-0035`
+- **Evidência:**
+  - `lib/workers/rest.ts:L59-L73,L84,L126-L137,L148,L190-L201,L212,L243-L254`
+  - `lib/adapters/cloudflare.ts:L67-L75`
+  - `lib/adapters/cli-http.ts:L231-L236`
+
+#### Descrição
+Nos 4 handlers de `lib/workers/rest.ts`, erros de `await request.json()` caem no `catch` geral respondendo HTTP `500` com `error.message` bruto em vez de `400 Invalid JSON payload`, e exceções internas também devolvem `error.message` ao cliente. Já `cloudflare.ts` define `X-Content-Type-Options: nosniff`, mas omite `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer` e `Cache-Control: no-store`.
+
+#### Impacto
+Vazamento menor de detalhes de exceção / status HTTP impróprio (`500` em payload malformado) e ausência de defesa contra caching intermediário/navegador de respostas com dados pessoais.
+
+#### Mitigação sugerida
+Tratar parsing JSON em bloco dedicado retornando `400` limpo, sanitizar mensagens em `500` no `rest.ts`, e adicionar `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer` e `Cache-Control: no-store` às respostas do Worker em `cloudflare.ts`.
+
+---
+
+### FND-0021 — Ausência de delimitação anti-prompt-injection indireta e limite de tamanho em outputs externos e em `strategic_osint_prompt` + ajuste de metadado `allowlist`
+
+- **Categoria:** `agentic-security`
+- **Severidade:** `medium`
+- **Confiança:** `confirmed`
+- **Ticket:** `TCK-0036`
+- **Evidência:**
+  - `lib/core/search-providers.ts:L96-L105,L209-L223`
+  - `lib/tools/legal.ts:L221-L237`
+  - `lib/tools/osint.ts:L95-L114`
+  - `lib/core/mcp-server.ts:L212-L220`
+  - `lib/adapters/cloudflare.ts:L290-L302`
+  - `.archagents/mcp-tool-allowlist.json:L56` vs `lib/core/tool-schemas.ts:L59`
+
+#### Descrição
+Snippets externos (`Tavily`/`Perplexity`, raspagem `procurados_lookup`) são devolvidos diretamente no payload ao modelo sem marcação explícita de conteúdo externo não-confiável (`untrusted data`), `strategic_osint_prompt` interpola `context` livre (`<= 2000` chars) sem delimitadores de dados dentro do prompt instrucional, não há teto máximo de tamanho de resposta JSON antes de enviar ao cliente MCP, e `mcp-tool-allowlist.json:L56` menciona `"bounded to 10 queries"` quando o schema permite `20`.
+
+#### Impacto
+Superfície residual de prompt injection indireta via resultados web/HTML ou parâmetro `context` e risco de estouro de janela de contexto do agente em respostas extensas.
+
+#### Mitigação sugerida
+Aplicar delimitação de dados não-confiáveis / truncamento limitado em resultados externos e na interpolação de `context` em `strategic_osint_prompt`, impor limite defensivo de payload textual em `mcp-server.ts`/`cloudflare.ts` e alinhar o texto descritivo em `mcp-tool-allowlist.json:L56`.
+
+---
+
+### FND-0022 — Divergência de contrato REST/OpenAPI do Worker (`rest.ts`, `openapi.ts`, `types.ts`, `404` unreachable, `decodeURIComponent`) e artefatos/docs obsoletos residuais
+
+- **Categoria:** `architecture`
+- **Severidade:** `medium`
+- **Confiança:** `confirmed`
+- **Ticket:** `TCK-0037`
+- **Evidência:**
+  - `lib/workers/openapi.ts:L151,L194-L217`
+  - `lib/workers/rest.ts:L43,L149-L168`
+  - `lib/workers/types.ts:L33-L46`
+  - `lib/workers/worker.ts:L136-L140`
+  - `lib/workers/tokens.ts:L1-L17`, `smithery.config.js:L1-L9`
+  - `lib/core/dork-templates.ts:L521-L540`, `lib/config/timeouts.ts:L117-L131`
+  - `.archagents/03-modules.md:L9`, `test/manual/test-manual.js:L1-L28`, `docs/CONFIGURATION.md:L138-L139`, `CLAUDE.md:L166-L167`, `.github/workflows/cloudflare-deploy.yml:L117-L120`
+
+#### Descrição
+O contrato REST/OpenAPI do Worker ainda lista 6 categorias OSINT em `/intelligence` (vs 10 em `DORK_CATEGORIES`), ignora `provider`/`max_results`, define `ThinkingRequestBody` incompatível com `SequentialThinkingSchema`, nunca retorna `404` em `rest.ts:L43` (`'Not found'` não casa `"CNPJ not found"`/`"CEP not found"`) e `worker.ts:L138` não decodifica `%2F` em `/cnpj/...`. Restam ainda `lib/workers/tokens.ts`, `smithery.config.js` (citando `@smithery/sdk`), funções mortas em `dork-templates.ts`/`timeouts.ts`, citação a `crypto.ts` inexistente em `.archagents/03-modules.md:L9`, scripts manuais desatualizados e docs secundárias obsoletas. *(Nota adicional no coletor: `apps/` e `infra/` não pertencem ao `REGISTRY` fixo de `audit-asis-coverage.py` no harness.)*
+
+#### Impacto
+Deriva entre OpenAPI/REST e ferramentas MCP, falhas ao consultar CNPJs URL-encoded via REST, erro `400` em vez de `404` e atrito de manutenção por código/docs legados.
+
+#### Mitigação sugerida
+Unificar schemas de `rest.ts`/`openapi.ts`/`types.ts` com `DORK_CATEGORIES`/`SEARCH_PROVIDERS`/`SequentialThinkingSchema`, corrigir `404` + `decodeURIComponent`, remover código morto (`tokens.ts`, `smithery.config.js` e exports órfãos) e sincronizar `.archagents/03-modules.md:L9` + docs/scripts.
+
+---
+
+### FND-0023 — Correlação `X-Request-Id` quebrada em REST (`worker.ts` → `rest.ts`) e `POST /messages` → `mcp-server.ts`, além de logs não estruturados residuais
+
+- **Categoria:** `observability`
+- **Severidade:** `medium`
+- **Confiança:** `confirmed`
+- **Ticket:** `TCK-0038`
+- **Evidência:**
+  - `lib/workers/worker.ts:L139,L144,L148,L152`
+  - `lib/workers/rest.ts:L33,L107,L171,L224`
+  - `lib/adapters/cli-http.ts:L450-L454,L489` vs `lib/core/mcp-server.ts:L144`
+  - `lib/workers/rate-limit.ts:L146`
+  - `lib/core/search.ts:L34,L49,L76,L89`
+  - `lib/core/intelligence.ts:L195,L224-L450`
+  - `lib/core/tools.ts:L138`
+
+#### Descrição
+`worker.ts` extrai `requestContext`, mas os 4 endpoints REST de `lib/workers/rest.ts` chamam `handleMCPRequest(mcpRequest, env)` sem `requestContext` (gerando um `req_<uuid>` diferente nos logs de `tools.ts`); de modo análogo, `POST /messages` em `cli-http.ts` não correlaciona o ID HTTP com `CallToolRequestSchema` em `mcp-server.ts`. Adicionalmente, `rate-limit.ts:L146`, `search.ts` e `intelligence.ts` ainda usam `console.error` ad-hoc sem `Logger` JSON/correlação, e `tool.executed` fica restrito a `DEBUG`. *(Nota no coletor: `cobertura-do-reflect` segue acusando `routes_coverage`/`cost_coverage` `no_data` como telemetria do harness `codebase-ops`.)*
+
+#### Impacto
+Impossibilidade de correlacionar uma requisição REST do Worker ou `POST /messages` do CLI até os logs internos de execução da tool no diagnóstico de incidentes.
+
+#### Mitigação sugerida
+Repassar `requestContext` de `worker.ts` → `rest.ts` → `handleMCPRequest`, adotar `createLogger` em `rate-limit.ts`/`search.ts`/`intelligence.ts`, avaliar `AsyncLocalStorage` (ou contexto por sessão) entre `cli-http.ts` e `mcp-server.ts`, e logar trilha básica `INFO` de chamadas sem PII.
+
+---
+
+### FND-0024 — Fluxos de runtime/segurança em `cli-http.ts` (`429`, `413`, `400`, `extraAllowedHosts`, SSE/shutdown) e handlers/erros em `mcp-server.ts` sem testes unitários no Vitest
+
+- **Categoria:** `test-coverage`
+- **Severidade:** `medium`
+- **Confiança:** `confirmed`
+- **Ticket:** `TCK-0039`
+- **Evidência:**
+  - `lib/adapters/cli-http.ts:L49-L55,L134-L143,L292-L335,L406-L498,L590-L593` (`77.3%` stmts, `70.28%` branch em `test:coverage`)
+  - `lib/core/mcp-server.ts:L116-L139,L239-L256` (`78.68%` stmts, `36.36%` funcs em `test:coverage`)
+
+#### Descrição
+Embora a suíte global alcance `91.32%` stmts (`85/85/80/85` ratchet), os ramos defensivos `429` (`rateLimitMiddleware`), `413` (`>1mb`), `400` (JSON inválido), `extraAllowedHosts`, roundtrip `GET /mcp` + `POST /messages` + `transport.onclose` e timeout de `createGracefulShutdown` em `cli-http.ts`, bem como `ListTools`/`ListResources`/`ReadResource` e o `catch` inesperado em `mcp-server.ts`, ainda têm `0` hits unitários dentro da suíte Vitest.
+
+#### Impacto
+Risco de regressão silenciosa em controles de segurança/DoS do transporte HTTP/SSE local do CLI e no tratamento de erros/MCP Apps de `mcp-server.ts` sem detecção unitária rápida.
+
+#### Mitigação sugerida
+Expandir `test/unit/cli-http-security.test.ts` (ou nova suíte dedicada) cobrindo `429`, `413`, `400`, `extraAllowedHosts`, handshake/fechamento SSE em `GET /mcp`/`POST /messages`, timeout do shutdown e todos os handlers/exceções de `createMCPServer()`.
