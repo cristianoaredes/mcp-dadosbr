@@ -74,6 +74,9 @@ const BASE_CORS_HEADERS: Record<string, string> = {
   "Access-Control-Allow-Headers": "Content-Type, Accept, Authorization, X-API-Key",
   "Access-Control-Max-Age": "86400",
   "X-Content-Type-Options": "nosniff",
+  "X-Frame-Options": "DENY",
+  "Referrer-Policy": "no-referrer",
+  "Cache-Control": "no-store",
 };
 
 // Base CORS headers without wildcard origin
