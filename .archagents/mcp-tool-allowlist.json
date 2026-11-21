@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
   "server": "mcp-dadosbr",
-  "updated_at": "2026-11-20T16:50:30Z",
+  "updated_at": "2026-11-21T17:00:00Z",
   "mcp_servers": {
     "allowed": [
       {
@@ -264,6 +264,72 @@
       "description": "Generate structured OSINT analysis prompt templates.",
       "rationale": "Pure local template rendering restricted to fixed template enum and bounded strings.",
       "network_access": "none",
+      "api_key_env": null
+    },
+    {
+      "id": "MCP-TOOL-24",
+      "name": "tcu_certidoes",
+      "risk_level": "low",
+      "destructive": false,
+      "requires_approval": false,
+      "description": "Query consolidated public integrity certificates (TCU, CNJ/CNIA, CEIS, CNEP) for a Brazilian CNPJ.",
+      "rationale": "Read-only fixed-HTTPS TCU public query validated by strict mod-11 CNPJ schema with sanitization and LGPD Art. 20 notice.",
+      "network_access": "external-https",
+      "api_key_env": null
+    },
+    {
+      "id": "MCP-TOOL-25",
+      "name": "cnae_ncm_lookup",
+      "risk_level": "low",
+      "destructive": false,
+      "requires_approval": false,
+      "description": "Look up IBGE v2 CNAE economic classifications and BrasilAPI NCM product codes.",
+      "rationale": "Read-only fixed-HTTPS lookup validated by CnaeNcmSchema.strict() with bounded paginated search (limit <= 50) and sanitized outputs.",
+      "network_access": "external-https",
+      "api_key_env": null
+    },
+    {
+      "id": "MCP-TOOL-26",
+      "name": "sistema_financeiro_lookup",
+      "risk_level": "low",
+      "destructive": false,
+      "requires_approval": false,
+      "description": "Query Brazilian banks (COMPE/ISPB), Pix participants, and CVM brokers (corretoras) via BrasilAPI.",
+      "rationale": "Read-only fixed-HTTPS financial registry lookup validated by SistemaFinanceiroSchema.strict() with strict pagination (limit <= 50) to prevent oversized responses.",
+      "network_access": "external-https",
+      "api_key_env": null
+    },
+    {
+      "id": "MCP-TOOL-27",
+      "name": "feriados_ddd_lookup",
+      "risk_level": "low",
+      "destructive": false,
+      "requires_approval": false,
+      "description": "Check Brazilian national holidays/business days and validate DDD area codes against states and cities via BrasilAPI.",
+      "rationale": "Read-only fixed-HTTPS lookup validated by FeriadosDddSchema.strict() with regex constraints on ISO date, 2-digit DDD, and 2-letter UF.",
+      "network_access": "external-https",
+      "api_key_env": null
+    },
+    {
+      "id": "MCP-TOOL-28",
+      "name": "bcb_olinda",
+      "risk_level": "low",
+      "destructive": false,
+      "requires_approval": false,
+      "description": "Query Central Bank of Brazil (Olinda OData) historical PTAX exchange rates and Focus market expectations.",
+      "rationale": "Read-only fixed-HTTPS OData query validated by BcbOlindaSchema.strict() with literal currency and indicator enums preventing OData filter injection.",
+      "network_access": "external-https",
+      "api_key_env": null
+    },
+    {
+      "id": "MCP-TOOL-29",
+      "name": "ibge_indicadores",
+      "risk_level": "low",
+      "destructive": false,
+      "requires_approval": false,
+      "description": "Fetch municipal and state population estimates and GDP series from IBGE Agregados v3.",
+      "rationale": "Read-only fixed-HTTPS IBGE Agregados v3 query validated by IbgeIndicadoresSchema.strict() with strict 2- or 7-digit IBGE code regex.",
+      "network_access": "external-https",
       "api_key_env": null
     }
   ]

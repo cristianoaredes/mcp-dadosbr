@@ -53,10 +53,10 @@ describe("TCK-0041: MTE Lista Suja CSV, Consumidor.gov.br Sanitized Fallback & T
     vi.useRealTimers();
   });
 
-  describe("Architectural & Wave-1 registration invariants", () => {
-    it("keeps getToolCount() === 23 without top-level registration of tcu_certidoes", () => {
-      expect(getToolCount()).toBe(23);
-      expect(hasTool("tcu_certidoes")).toBe(false);
+  describe("Architectural & Wave-2 catalog registration invariants", () => {
+    it("registers tcu_certidoes in the integrated 29-tool v0.7.0 catalogue", () => {
+      expect(getToolCount()).toBe(29);
+      expect(hasTool("tcu_certidoes")).toBe(true);
     });
 
     it("enforces ADR-0001 / ADR-0002 boundaries (zero node:* and zero core/tools imports in shared)", () => {
@@ -74,22 +74,18 @@ describe("TCK-0041: MTE Lista Suja CSV, Consumidor.gov.br Sanitized Fallback & T
       }
     });
 
-    it("registers TCU_CERTIDOES_TOOL idempotently via registerTcuTool() when explicitly invoked", async () => {
+    it("keeps registerTcuTool() idempotent when already registered via lib/tools/index.js", async () => {
       vi.resetModules();
       await import("../../lib/tools/index.js");
       const registry = await import("../../lib/core/registry.js");
       const tcuMod = await import("../../lib/tools/tcu.js");
 
-      expect(registry.getToolCount()).toBe(23);
-      expect(registry.hasTool("tcu_certidoes")).toBe(false);
-
-      tcuMod.registerTcuTool();
+      expect(registry.getToolCount()).toBe(29);
       expect(registry.hasTool("tcu_certidoes")).toBe(true);
-      expect(registry.getToolCount()).toBe(24);
 
       const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
       tcuMod.registerTcuTool();
-      expect(registry.getToolCount()).toBe(24);
+      expect(registry.getToolCount()).toBe(29);
       expect(warnSpy).not.toHaveBeenCalled();
     });
   });

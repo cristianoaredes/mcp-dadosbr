@@ -18,6 +18,8 @@ scope_files_modified:
   - test/unit/tool-validation-allowlist.test.ts
   - test/unit/architecture-hygiene.test.ts
   - test/unit/mcp-server-handlers.test.ts
+  - test/unit/tcu-mte-v070.test.ts
+  - test/unit/fiscal-banking-v070.test.ts
   - test/integration/transports.mjs
   - README.md
   - .archagents/00-overview.md

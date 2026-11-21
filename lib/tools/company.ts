@@ -220,7 +220,7 @@ async function executeDeepProfile(
 registerTool({
     name: "company_deep_profile",
     description: `Generate a comprehensive OSINT profile for a Brazilian company by orchestrating multiple data sources.
-Combines: CNPJ lookup, government transparency records, court records, domain WHOIS, slave labor blacklist, and web search.
+Combines: CNPJ lookup, government transparency records, TCU consolidated certificates, court records, domain WHOIS, slave labor blacklist, and web search.
 This is the most powerful tool for company due diligence.`,
     inputSchema: {
         type: "object",

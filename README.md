@@ -6,13 +6,13 @@
 [![npm](https://img.shields.io/npm/v/%40aredes.me%2Fmcp-dadosbr?label=npm&color=0f766e&style=flat)](https://www.npmjs.com/package/@aredes.me/mcp-dadosbr)
 [![License: AGPL-3.0-only](https://img.shields.io/badge/license-AGPL--3.0--only-1e293b?style=flat)](LICENSE)
 [![Node.js](https://img.shields.io/badge/node-22.12%2B%20%7C%2024%20%7C%2026-334155?style=flat)](package.json)
-[![Tools & Apps](https://img.shields.io/badge/tools-23%20%7C%20MCP%20Apps%3A%205-0f766e?style=flat)](#os-5-mcp-apps-interativos)
+[![Tools & Apps](https://img.shields.io/badge/tools-29%20%7C%20MCP%20Apps%3A%205-0f766e?style=flat)](#os-5-mcp-apps-interativos)
 
-[O problema](#o-problema) · [5 MCP Apps](#os-5-mcp-apps-interativos) · [23 ferramentas](#catálogo-completo-das-23-ferramentas) · [Perímetro](#perímetro-de-execução) · [Instalação](#instalação-e-configuração) · [Por dentro](#como-funciona-por-dentro) · [O que não faz](#honestidade-o-que-o-mcp-dadosbr-não-faz) · [Governança](#governança-construído-com-codebase-ops-by-orqo) · [AGPL-3.0](#licença-gnu-agpl-30) · [English](#english)
+[O problema](#o-problema) · [5 MCP Apps](#os-5-mcp-apps-interativos) · [29 ferramentas](#catálogo-completo-das-29-ferramentas) · [Perímetro](#perímetro-de-execução) · [Instalação](#instalação-e-configuração) · [Por dentro](#como-funciona-por-dentro) · [O que não faz](#honestidade-o-que-o-mcp-dadosbr-não-faz) · [Governança](#governança-construído-com-codebase-ops-by-orqo) · [AGPL-3.0](#licença-gnu-agpl-30) · [English](#english)
 
 ---
 
-O **MCP DadosBR** é um servidor open source do [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) desenvolvido pela [Orqo](https://orqo.pro/) que conecta assistentes de IA a **23 consultas de dados públicos brasileiros** — com **5 painéis interativos (MCP Apps)** para explorar municípios, diários oficiais, indicadores do Banco Central, editais do PNCP e fichas cadastrais de CNPJ diretamente na conversa.
+O **MCP DadosBR** é um servidor open source do [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) desenvolvido pela [Orqo](https://orqo.pro/) que conecta assistentes de IA a **29 consultas de dados públicos brasileiros** — com **5 painéis interativos (MCP Apps)** para explorar municípios, diários oficiais, indicadores do Banco Central, editais do PNCP e fichas cadastrais de CNPJ diretamente na conversa.
 
 - **Zero chave nos 5 MCP Apps e no CEP** — IBGE, Querido Diário, Banco Central, PNCP, OpenCNPJ e OpenCEP funcionam sem cadastro prévio.
 - **Proveniência explícita** — URL consultada e horário da consulta no servidor (`fetchedAt`) nos 5 MCP Apps (`structuredContent`) e nas consultas de CNPJ/CEP (`source`/`fetchedAt`), com separação explícita entre `fetchedAt` e `updatedAt` na ficha cadastral.
@@ -64,51 +64,57 @@ Os cinco painéis implementam a extensão [MCP Apps](https://modelcontextprotoco
 
 ---
 
-## Catálogo completo das 23 ferramentas
+## Catálogo completo das 29 ferramentas
 
-Todas as 23 ferramentas registradas em [`lib/tools/index.ts`](lib/tools/index.ts) respondem em JSON estruturado no conteúdo textual (`content[0].text`). As cinco marcadas com **MCP App** também entregam `structuredContent` e painel HTML quando o cliente suporta `io.modelcontextprotocol/ui`.
+Todas as 29 ferramentas registradas em [`lib/tools/index.ts`](lib/tools/index.ts) respondem em JSON estruturado no conteúdo textual (`content[0].text`). As cinco marcadas com **MCP App** também entregam `structuredContent` e painel HTML quando o cliente suporta `io.modelcontextprotocol/ui`.
 
-### Cadastro, endereços e validação (3)
+### Cadastro, endereços, validação e classificação (5)
 
 | Ferramenta | Descrição | Fonte | MCP App | Credencial |
 | --- | --- | --- | --- | --- |
 | `cnpj_lookup` | Dados cadastrais de empresa brasileira por CNPJ (com ou sem máscara). | OpenCNPJ (padrão) ou allowlist | **Sim** | Sem chave |
 | `cep_lookup` | Endereço completo por CEP brasileiro (com ou sem máscara). | OpenCEP (padrão) ou allowlist | Texto | Sem chave |
 | `cpf_validate` | Valida dígito verificador (mod-11), formata e informa a região fiscal do 9º dígito. | Cálculo local | Texto | Sem chave |
+| `cnae_ncm_lookup` | Consulta classificações CNAE (`IBGE v2` divisões/grupos/classes/subclasses) e códigos NCM (`BrasilAPI`), por código ou busca paginada. | IBGE CNAE `v2` / BrasilAPI NCM | Texto | Sem chave |
+| `feriados_ddd_lookup` | Consulta feriados nacionais / dias úteis por ano/data e valida DDDs contra UF e municípios. | BrasilAPI (`feriados/v1`, `ddd/v1`) | Texto | Sem chave |
 
-### Governo, diários e contratações (5)
+### Governo, diários, contratações e indicadores (6)
 
 | Ferramenta | Descrição | Fonte | MCP App | Credencial |
 | --- | --- | --- | --- | --- |
 | `ibge_localidades` | Lista regiões (`regioes`), estados (`estados`), todos os municípios (`municipios`) ou por UF (`municipios_por_uf`). | API de Localidades do IBGE | **Sim** | Sem chave |
+| `ibge_indicadores` | População residente estimada (`6579/9324`), PIB municipal/estadual (`5938/37`) e PIB per capita estimado para UF (`N3`) ou município (`N6`). | IBGE Agregados `v3` | Texto | Sem chave |
 | `querido_diario` | Busca publicações em diários oficiais municipais por texto, `territory_id`, `since`, `until`, `page`, `size`. | Open Knowledge Brasil | **Sim** | Sem chave |
 | `pncp_licitacoes` | Consulta publicações filtradas (`modalidade_id`, `data_inicial`, `data_final`, `cnpj_orgao`, `query: ""`) ou busca legada por termo. | PNCP (Lei 14.133/2021) | **Sim** | Sem chave |
 | `transparencia_lookup` | Consulta `contratos`, `licitacoes`, `convenios`, `servidores` ou `sancoes` federais por CNPJ/CPF e período. | Portal da Transparência (CGU) | Texto | `TRANSPARENCIA_API_KEY` |
 | `ceis_cnep_lookup` | Verifica sanções em **CEIS**, **CNEP** e **CEPIM** (`tipo: ceis\|cnep\|cepim\|all`). Sem chave, retorna URLs de consulta manual. | Portal da Transparência (CGU) | Texto | `TRANSPARENCIA_API_KEY` (opcional com fallback manual) |
 
-### Financeiro e mercado (2)
+### Financeiro e mercado (4)
 
 | Ferramenta | Descrição | Fonte | MCP App | Credencial |
 | --- | --- | --- | --- | --- |
 | `bacen_taxas` | Séries `selic`, `ipca`, `dolar`, `euro` e `cdi` por `ultimos` pontos ou `periodo_dias` (`30`, `90`, `365`). | Banco Central — BCData/SGS | **Sim** | Sem chave |
+| `bcb_olinda` | Cotação PTAX histórica por data (resolução de dias não-úteis em janela de 7 dias) e Expectativas de Mercado (Boletim Focus). | Banco Central — Olinda OData | Texto | Sem chave |
+| `sistema_financeiro_lookup` | Consulta bancos (COMPE/ISPB), participantes do Pix e corretoras CVM com filtro e paginação. | BrasilAPI (`banks/v1`, `pix/v1`, `cvm/corretoras/v1`) | Texto | Sem chave |
 | `fipe_veiculos` | Consulta preços por `codigo_fipe` ou lista marcas por `tipo` (`carros`, `motos`, `caminhoes`). | Tabela FIPE via BrasilAPI | Texto | Sem chave |
 
-### Jurídico, compliance e integridade (5)
+### Jurídico, compliance e integridade (6)
 
 | Ferramenta | Descrição | Fonte | MCP App | Credencial |
 | --- | --- | --- | --- | --- |
 | `datajud_processos` | Busca processos judiciais em 17 tribunais mapeados (`tst`, `trf1`–`trf5`, `tjsp`, `tjrj`, `tjmg`, `tjrs`, `tjpr`, `tjsc`, `tjba`, `tjpe`, `tjce`, `tjgo`, `tjdf`). | API Pública DataJud (CNJ) | Texto | `DATAJUD_API_KEY` |
+| `tcu_certidoes` | Consulta Certidões Consolidadas PJ no TCU (Licitantes Inidôneos TCU, Improbidade CNJ/CNIA, CEIS e CNEP) por CNPJ. | TCU — Consulta Consolidada | Texto | Sem chave |
 | `oab_advogado` | Consulta o Cadastro Nacional dos Advogados por `nome`, `inscricao` e `uf`. Retorna link manual quando bloqueado por CAPTCHA. | OAB — CNA | Texto | Sem chave (sujeito a CAPTCHA) |
 | `bnmp_mandados` | Consulta mandados de prisão por `nome` e `orgaoJulgador`. Retorna link manual quando bloqueado por CAPTCHA. | CNJ — BNMP | Texto | Sem chave (sujeito a CAPTCHA) |
 | `procurados_lookup` | Busca por correspondência parcial na lista federal de procurados (~195 registros). | MJSP — Projeto Captura | Texto | Sem chave |
-| `lista_suja_lookup` | Verifica o cadastro de empregadores em trabalho análogo à escravidão (com fallback para links oficiais). | Portal da Transparência / MTE | Texto | Sem chave |
+| `lista_suja_lookup` | Verifica o cadastro oficial de empregadores em trabalho análogo à escravidão via CSV aberto do MTE (com fallback manual em indisponibilidade). | MTE — Cadastro de Empregadores | Texto | Sem chave |
 
 ### Saúde e consumo (2)
 
 | Ferramenta | Descrição | Fonte | MCP App | Credencial |
 | --- | --- | --- | --- | --- |
 | `cnes_saude` | Busca estabelecimentos (`estabelecimento`) ou profissionais (`profissional`) por código CNES, nome, UF ou município (códigos IBGE). | CNES — DataSUS | Texto | Sem chave |
-| `consumidor_reclamacoes` | Consulta indicadores de reclamações por nome da empresa (com fallback para dados abertos). | Consumidor.gov.br — SENACON | Texto | Sem chave |
+| `consumidor_reclamacoes` | Retorna orientação guiada e links oficiais (portal + dados abertos), pois o portal aplica proteção anti-bot interativa sem API JSON pública. | Consumidor.gov.br — SENACON | Texto | Sem chave (portal com anti-bot) |
 
 ### Inteligência, busca web, domínio e raciocínio (6)
 
@@ -116,7 +122,7 @@ Todas as 23 ferramentas registradas em [`lib/tools/index.ts`](lib/tools/index.ts
 | --- | --- | --- | --- | --- |
 | `cnpj_search` | Pesquisa web com dorks e filtros direcionados sobre empresas e CNPJs. | Tavily / Perplexity | Texto | `TAVILY_API_KEY` ou `PERPLEXITY_API_KEY` |
 | `cnpj_intelligence` | Pesquisa automatizada multi-categoria por CNPJ com limite de concorrência configurável. | Tavily / Perplexity + CNPJ | Texto | `TAVILY_API_KEY` ou `PERPLEXITY_API_KEY` |
-| `company_deep_profile` | Orquestra em paralelo `cnpj_lookup`, `transparencia_lookup`, `datajud_processos`, `domain_whois`, `lista_suja_lookup` e `cnpj_search`, listando fontes consultadas e indisponíveis. | Múltiplas fontes acima | Texto | Usa chaves configuradas |
+| `company_deep_profile` | Orquestra em paralelo `cnpj_lookup`, `transparencia_lookup`, `tcu_certidoes`, `datajud_processos`, `domain_whois`, `lista_suja_lookup` e `cnpj_search`, listando fontes consultadas e indisponíveis. | Múltiplas fontes acima | Texto | Usa chaves configuradas |
 | `domain_whois` | Consulta registro de domínio via RDAP (`.br` no Registro.br com fallback IANA RDAP). | Registro.br / RDAP.org | Texto | Sem chave |
 | `strategic_osint_prompt` | Gera roteiros estruturados de análise (`due_diligence`, `competitor_analysis`, `fraud_detection`, `esg_compliance`, `investment_screening`) referenciando as ferramentas do servidor. | Templates locais | Texto | Sem chave |
 | `sequentialthinking` | Auxilia decomposição passo a passo e revisão de hipóteses em investigações complexas. | Processamento local | Texto | Sem chave |
@@ -131,8 +137,8 @@ O que muda entre os modos é onde o servidor executa e se o cliente recebe os pa
 
 | Modo | Transporte | MCP Apps (`ui://`) | Retorno JSON textual | Controles inclusos | Quando escolher |
 | --- | --- | --- | --- | --- | --- |
-| **CLI local (padrão)** | `stdio` | **Sim (5 apps)** | Sim (23 ferramentas) | `stdout` reservado para JSON-RPC, cache em memória, deduplicação, retry + circuit breaker, allowlist SSRF | Uso local no Claude Desktop, Cursor, Windsurf, Claude Code e demais hosts desktop |
-| **CLI HTTP/SSE local** | `GET /mcp` + `POST /messages` | **Sim (5 apps)** | Sim (23 ferramentas) | Rate limit (30 req/min por IP), limpeza de sessões SSE inativas, CORS restrito, `MCP_API_KEY` obrigatória fora de loopback | Rede local, Docker, VPS própria ou clientes MCP remotos com suporte a SSE |
+| **CLI local (padrão)** | `stdio` | **Sim (5 apps)** | Sim (29 ferramentas) | `stdout` reservado para JSON-RPC, cache em memória, deduplicação, retry + circuit breaker, allowlist SSRF | Uso local no Claude Desktop, Cursor, Windsurf, Claude Code e demais hosts desktop |
+| **CLI HTTP/SSE local** | `GET /mcp` + `POST /messages` | **Sim (5 apps)** | Sim (29 ferramentas) | Rate limit (30 req/min por IP), limpeza de sessões SSE inativas, CORS restrito, `MCP_API_KEY` obrigatória fora de loopback | Rede local, Docker, VPS própria ou clientes MCP remotos com suporte a SSE |
 | **Cloudflare Worker** | `POST /mcp`, `/sse`, REST e OAuth | Não (somente texto) | Sim | Autenticação/OAuth, rate limit na borda, `GET /health`, OpenAPI | Conectores remotos serverless e integrações HTTP sem manter servidor dedicado |
 
 > **Autenticação obrigatória fora de loopback (`MCP_API_KEY`):** por padrão, o modo `HTTP/SSE` escuta em `127.0.0.1`. Ao definir `MCP_HTTP_HOST` para um endereço não-loopback (`0.0.0.0`, `::`, IP de rede etc.), o servidor opera em modo **fail-closed** e recusa iniciar sem `MCP_API_KEY`. Com `MCP_API_KEY` configurada (inclusive em loopback), todas as requisições `GET /mcp` e `POST /messages` exigem `Authorization: Bearer <chave>` ou `X-API-Key: <chave>`.
@@ -276,10 +282,10 @@ flowchart LR
   Host["Host MCP"] -->|"stdio ou HTTP/SSE"| CLI["CLI Node.js"]
   Host -->|"POST /mcp, /sse, REST, OAuth"| Worker["Cloudflare Worker"]
   CLI --> Server["createMCPServer + 5 MCP Apps (ui://)"]
-  Server --> Registry["Registry: 23 ferramentas"]
+  Server --> Registry["Registry: 29 ferramentas"]
   Worker --> Registry
   Registry --> Infra["Cache + Deduplicação + Retry/Circuit Breaker + Allowlist SSRF"]
-  Infra --> APIs["IBGE · Querido Diário · BCB/SGS · PNCP · OpenCNPJ/CEP · CGU · CNJ · DataSUS"]
+  Infra --> APIs["IBGE · Querido Diário · BCB SGS/Olinda · PNCP · OpenCNPJ/CEP · TCU · MTE · BrasilAPI · CGU · CNJ · DataSUS"]
 ```
 
 - **Contrato `structuredContent` + fallback textual ([`lib/core/mcp-server.ts`](lib/core/mcp-server.ts#L109-L143)):** toda chamada bem-sucedida devolve o JSON serializado em `content[0].text`. Quando o cliente negocia `extensions["io.modelcontextprotocol/ui"]` com `text/html;profile=mcp-app`, o servidor acrescenta `structuredContent`: `{ items, source }` no IBGE, `{ ...result.data, provenance: result.source }` em Querido Diário/BACEN/PNCP, e `{ profile }` (via [`readCnpjProfile`](lib/shared/cnpj-profile.ts)) no CNPJ.
@@ -320,10 +326,10 @@ Conheça mais sobre a camada de governança em **[orqo.pro](https://orqo.pro/)**
 ## Perguntas diretas
 
 **Preciso de chaves de API para começar?**
-Não. Os cinco MCP Apps (`ibge_localidades`, `querido_diario`, `bacen_taxas`, `pncp_licitacoes`, `cnpj_lookup`), além de `cep_lookup`, `cpf_validate`, `fipe_veiculos`, `domain_whois`, `cnes_saude`, `consumidor_reclamacoes`, `procurados_lookup`, `lista_suja_lookup`, `strategic_osint_prompt` e `sequentialthinking`, funcionam sem nenhuma credencial. Chaves opcionais ampliam o alcance para Portal da Transparência, DataJud e busca web.
+Não. Os cinco MCP Apps (`ibge_localidades`, `querido_diario`, `bacen_taxas`, `pncp_licitacoes`, `cnpj_lookup`), além de `cep_lookup`, `cpf_validate`, `cnae_ncm_lookup`, `feriados_ddd_lookup`, `ibge_indicadores`, `bcb_olinda`, `sistema_financeiro_lookup`, `fipe_veiculos`, `domain_whois`, `cnes_saude`, `consumidor_reclamacoes`, `procurados_lookup`, `lista_suja_lookup`, `tcu_certidoes`, `strategic_osint_prompt` e `sequentialthinking`, funcionam sem nenhuma credencial. Chaves opcionais ampliam o alcance para Portal da Transparência, DataJud e busca web.
 
 **O que acontece se o meu cliente MCP não suportar MCP Apps?**
-Todas as 23 ferramentas continuam funcionando normalmente com retorno JSON estruturado em texto. O `structuredContent` e os recursos `ui://` só são ativados quando o cliente anuncia suporte a `io.modelcontextprotocol/ui`.
+Todas as 29 ferramentas continuam funcionando normalmente com retorno JSON estruturado em texto. O `structuredContent` e os recursos `ui://` só são ativados quando o cliente anuncia suporte a `io.modelcontextprotocol/ui`.
 
 **Posso trocar o provedor de CNPJ ou CEP?**
 Sim, via `CNPJ_API_BASE_URL` / `CEP_API_BASE_URL` ou `.mcprc.json`, desde que o host esteja na allowlist HTTPS de [`lib/config/index.ts`](lib/config/index.ts#L17-L35).
@@ -355,7 +361,7 @@ Depois de instalar e compilar (`npm ci && npm run build`), execute a verificaç�
 
 ```bash
 npm test                 # Suíte unitária (Vitest)
-npm run test:transport   # Handshake, 23 ferramentas, 5 MCP Apps e 101 chamadas stdio + HTTP/SSE
+npm run test:transport   # Handshake, 29 ferramentas, 5 MCP Apps e 101 chamadas stdio + HTTP/SSE
 npm run build:worker     # Validação de build do Cloudflare Worker
 ```
 
@@ -381,10 +387,10 @@ O MCP DadosBR realiza consultas sob demanda a fontes públicas brasileiras e nã
 
 ### MCP DadosBR `by Orqo` — Brazilian public data in AI conversations, with source, provenance, and explicit boundaries.
 
-**MCP DadosBR** is an open-source [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server maintained by **[Orqo](https://orqo.pro/en/)** that connects AI assistants to **23 Brazilian public-data tools** and **5 interactive [MCP Apps](https://modelcontextprotocol.io/extensions/apps/overview)** (`ui://dadosbr/*.html`).
+**MCP DadosBR** is an open-source [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server maintained by **[Orqo](https://orqo.pro/en/)** that connects AI assistants to **29 Brazilian public-data tools** and **5 interactive [MCP Apps](https://modelcontextprotocol.io/extensions/apps/overview)** (`ui://dadosbr/*.html`).
 
 - **5 interactive MCP Apps (no API key required):** IBGE Locations (`ibge_localidades`), Querido Diário municipal gazettes (`querido_diario`), Central Bank SGS indicators (`bacen_taxas` — Selic, IPCA, USD, EUR, CDI over 30/90/365-day windows), PNCP public procurement notices (`pncp_licitacoes`), and Company Registration Profiles (`cnpj_lookup`).
-- **23 tools across 6 domains:** company/address lookup & CPF checksum validation, government/gazettes/procurement/transparency, Central Bank & FIPE, CNJ DataJud/OAB/BNMP/MJSP/Lista Suja, CNES/Consumidor.gov.br, plus web search, RDAP WHOIS, OSINT templates, and sequential thinking.
+- **29 tools across 6 domains:** company/address/CNAE/NCM lookup & CPF/DDD/holiday checks, IBGE localities & population/GDP indicators, government/gazettes/procurement/transparency, Central Bank SGS & Olinda PTAX/Focus + SFN/Pix/CVM brokers + FIPE, TCU consolidated integrity certificates + CNJ DataJud/OAB/BNMP/MJSP/MTE Lista Suja CSV, CNES/Consumidor.gov.br, plus web search, RDAP WHOIS, OSINT templates, and sequential thinking.
 - **Two execution perimeters:** Node.js CLI (`stdio` or `HTTP/SSE`, with all 5 interactive MCP Apps and strict JSON-RPC `stdout` isolation) and Cloudflare Worker (serverless edge runtime with text JSON, REST, and OAuth).
 - **Quick start (Node.js 22.12+, 24, or 26):**
   ```json

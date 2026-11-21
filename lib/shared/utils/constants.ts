@@ -34,7 +34,7 @@ export const SERVER = {
   NAME: 'mcp-dadosbr',
   
   /** Server version (aligned with package.json) */
-  VERSION: '0.6.0',
+  VERSION: '0.7.0',
   
   /** Default transport mode */
   DEFAULT_TRANSPORT: 'stdio',

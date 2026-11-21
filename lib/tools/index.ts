@@ -15,6 +15,15 @@ import "./company.js";
 import "./financial.js";
 import "./health.js";
 import "./osint.js";
+import { registerTcuTool } from "./tcu.js";
+import { registerFiscalBankingTools } from "./fiscal-banking.js";
+import { registerOlindaTool } from "./olinda.js";
+import { registerIbgeIndicadoresTool } from "./ibge-indicadores.js";
+
+registerTcuTool();
+registerFiscalBankingTools();
+registerOlindaTool();
+registerIbgeIndicadoresTool();
 
 // Re-export registry API for consumers
 export {
