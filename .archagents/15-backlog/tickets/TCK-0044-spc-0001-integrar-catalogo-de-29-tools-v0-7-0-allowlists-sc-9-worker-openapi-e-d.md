@@ -5,8 +5,8 @@ title: "[SPC-0001] Integrar catalogo de 29 tools v0.7.0, allowlists SC-9, Worker
 source: spec
 created_at: 2026-11-21T16:23:37Z
 created_by: ops
-updated_at: 2026-11-21T17:00:03Z
-status: executing
+updated_at: 2026-11-21T17:12:05Z
+status: verifying
 severity: medium
 category: feature
 effort: M
@@ -58,3 +58,4 @@ Antes desta integração, `TOOL_DEFINITIONS` lista 23 tools, `package.json` decl
 - 2026-11-21T16:57:23Z - **triaged** - Wave 1 TCK-0041..0043 done; ready for Wave 2 integration
 - 2026-11-21T17:00:02Z - **designed** - DES-0040 approved
 - 2026-11-21T17:00:03Z - **executing** - Wave 2 integration execution (RUN-20261121-170002-tck-0044)
+- 2026-11-21T17:12:05Z - **verifying** - 29-tool catalog v0.7.0, allowlists, tests and docs committed; ready for P10 verify
