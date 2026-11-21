@@ -251,13 +251,40 @@
     "updated_at": "2026-11-20T20:01:33Z",
     "updated_by": "criteria-check"
   },
-  "TCK-0034": {
-    "content_digest": null,
-    "criteria_digest": null,
-    "head": null,
+  "TCK-0033": {
+    "content_digest": "sha256:ff0f53a26084babba5e123c8b3f0bff90a775d6cbc6b8c4189a0c465dedc729b",
+    "criteria_digest": "sha256:b68fae30628529237b2dbe86c5b15beee45bf9bd03eb481e2c4277c614e9665a",
+    "head": "384ddb6091512e179f71aa457e99cfd6c8f2e394",
     "passes": true,
-    "tree": null,
-    "updated_at": "2026-11-21T13:49:54Z",
+    "tree": "b844cb653b1eb417dab889c4993e2c7ae1de34ae",
+    "updated_at": "2026-11-21T14:01:36Z",
+    "updated_by": "criteria-check"
+  },
+  "TCK-0034": {
+    "content_digest": "sha256:ff0f53a26084babba5e123c8b3f0bff90a775d6cbc6b8c4189a0c465dedc729b",
+    "criteria_digest": "sha256:5ed7aff0a0e0cb5bb4dc990c0dd611772183a934bebf17e3b4527ef2fc36b0b6",
+    "head": "384ddb6091512e179f71aa457e99cfd6c8f2e394",
+    "passes": true,
+    "tree": "b844cb653b1eb417dab889c4993e2c7ae1de34ae",
+    "updated_at": "2026-11-21T14:01:42Z",
+    "updated_by": "criteria-check"
+  },
+  "TCK-0036": {
+    "content_digest": "sha256:ff0f53a26084babba5e123c8b3f0bff90a775d6cbc6b8c4189a0c465dedc729b",
+    "criteria_digest": "sha256:3e3dd1a21c9f4cddb1418b1ee802b49d6b77a514c2e53304ae5ac22d57255d4e",
+    "head": "384ddb6091512e179f71aa457e99cfd6c8f2e394",
+    "passes": true,
+    "tree": "b844cb653b1eb417dab889c4993e2c7ae1de34ae",
+    "updated_at": "2026-11-21T14:01:47Z",
+    "updated_by": "criteria-check"
+  },
+  "TCK-0037": {
+    "content_digest": "sha256:ff0f53a26084babba5e123c8b3f0bff90a775d6cbc6b8c4189a0c465dedc729b",
+    "criteria_digest": "sha256:8e76f50f935c2905eb5b572659a43910355b4dac7cf067f54e8a2bfec785ee72",
+    "head": "384ddb6091512e179f71aa457e99cfd6c8f2e394",
+    "passes": true,
+    "tree": "b844cb653b1eb417dab889c4993e2c7ae1de34ae",
+    "updated_at": "2026-11-21T14:01:51Z",
     "updated_by": "criteria-check"
   }
 }

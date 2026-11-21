@@ -5,8 +5,8 @@ title: "Delimitar outputs externos anti-prompt-injection, limitar payload MCP e 
 source: audit
 created_at: 2026-11-21T13:09:43Z
 created_by: ops
-updated_at: 2026-11-21T13:50:55Z
-status: verifying
+updated_at: 2026-11-21T14:02:29Z
+status: done
 severity: medium
 category: agentic-security
 effort: M
@@ -19,7 +19,8 @@ linked_designs:
   - DES-0031
 linked_runs:
   - RUN-20261121-134527-tck-0036
-linked_verifications: []
+linked_verifications:
+  - VER-20261121-135930-tck-0036
 linked_docs:
   - .archagents/mcp-tool-allowlist.json
 external_refs: []
@@ -75,3 +76,4 @@ Antes do fix, `lib/core/search-providers.ts:L96-L105,L209-L223`, `lib/tools/lega
 - 2026-11-21T13:45:27Z - **designed** - DES-0031 created
 - 2026-11-21T13:45:34Z - **executing** - executing TCK-0036
 - 2026-11-21T13:50:55Z - **verifying** - DES-0031 implemented and verified in RUN-20261121-134527-tck-0036
+- 2026-11-21T14:02:29Z - **done** - P10 verify approved-with-notes (8147006d) + judge pass

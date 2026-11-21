@@ -10,7 +10,7 @@
   "current_step": 4,
   "total_steps": 4,
   "ended_at": "2026-11-21T13:50:30Z",
-  "result": "87/87 targeted (6 files), 453/453 Vitest (32 files), V8 91.44/83.47/93.31/92.19 >= 85/80/85/85, tsc + tsc.worker + secret-scan PASS",
+  "result": "TCK-0036 completed: agentic-guard prompt delimiters, bounded MCP output, allowlist aligned, 33 files / 464 tests PASS",
   "loop_iterations": 0,
   "attempt_count": 0,
   "lessons_consulted": [
@@ -20,7 +20,16 @@
   "cost_source": "unknown",
   "loop_strategy": "default",
   "context_peak": 0,
-  "final_judge_delta": 0,
+  "final_judge_delta": 41,
   "lesson_consult_attempted": true,
-  "warmup": false
+  "warmup": false,
+  "final_judge_delta_source": "judge",
+  "lesson_utility": {
+    "utility": 0.82,
+    "n_lessons": 1,
+    "lessons_consulted": [
+      "Precisou de 2 iterações (re-execução)"
+    ],
+    "signal": "computed"
+  }
 }
