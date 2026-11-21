@@ -270,7 +270,7 @@
     ]
   },
   "metrics": {
-    "total_tickets": 39,
+    "total_tickets": 44,
     "done_tickets": 36,
     "archived_tickets": 0,
     "avg_cycle_time": 1.64,
@@ -289,25 +289,42 @@
     },
     "status_breakdown": {
       "done": 36,
-      "raw": 3
+      "executing": 4,
+      "raw": 4
     }
   },
-  "active_runs": [],
+  "active_runs": [
+    {
+      "run_id": "RUN-20261121-162558-tck-0043",
+      "status": "running",
+      "path": ".archagents/13-execution/runs/RUN-20261121-162558-tck-0043"
+    },
+    {
+      "run_id": "RUN-20261121-162556-tck-0042",
+      "status": "running",
+      "path": ".archagents/13-execution/runs/RUN-20261121-162556-tck-0042"
+    },
+    {
+      "run_id": "RUN-20261121-162555-tck-0041",
+      "status": "running",
+      "path": ".archagents/13-execution/runs/RUN-20261121-162555-tck-0041"
+    }
+  ],
   "malformed_runs": [],
   "noncanonical_runs": [],
   "zombie_runs": [],
   "zombie_runs_coverage": "ok",
-  "health_score": 56.92,
+  "health_score": 52.73,
   "health_score_coverage": {
     "formula": "ad-hoc: 0.4*backlog + 0.4*recent_success + 0.2*drift - zombie_debt_penalty (cap 20, ver TCK-2693)",
     "approved_alternative": "lib/health_rubric (SPC-0086) — zero chamadores; trocar exige ADR",
     "components": {
       "backlog_health": {
-        "value": 92.31,
+        "value": 81.82,
         "weight": 0.4,
         "measured": 36,
-        "total": 39,
-        "ratio": 0.9231
+        "total": 44,
+        "ratio": 0.8182
       },
       "recent_success": {
         "value": 0.0,
@@ -334,7 +351,7 @@
       "source": "zombie-run-scan.py (TCK-1447/TCK-2477) via .archagents/.zombie-runs-baseline.json"
     }
   },
-  "last_updated": "2026-11-21T14:33:49.906533Z",
+  "last_updated": "2026-11-21T16:27:50.843533Z",
   "learning_log": [
     {
       "run": "RUN-20261117-224844-querido-diario",
