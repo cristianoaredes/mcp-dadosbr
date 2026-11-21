@@ -5,8 +5,8 @@ title: "Publicar aviso LGPD/DPO, plano ANPD e ressalva de homonimo em procurados
 source: audit
 created_at: 2026-11-21T13:09:41Z
 created_by: ops
-updated_at: 2026-11-21T13:09:41Z
-status: raw
+updated_at: 2026-11-21T13:51:24Z
+status: verifying
 severity: medium
 category: compliance-br
 effort: M
@@ -15,8 +15,10 @@ ceremony: full
 business_impact: ""
 linked_findings:
   - FND-0018
-linked_designs: []
-linked_runs: []
+linked_designs:
+  - DES-0029
+linked_runs:
+  - RUN-20261121-134533-tck-0033
 linked_verifications: []
 linked_docs:
   - .archagents/10-runbooks.md
@@ -25,7 +27,21 @@ external_sync: []
 blocks: []
 blocked_by: []
 related: []
-acceptance: []
+acceptance:
+  - check: "test -f PRIVACY.md && grep -q \"Art. 20\" PRIVACY.md && grep -q \"Art. 41\" PRIVACY.md && grep -q \"MCP_DPO_CONTACT\" README.md && grep -q \"Art. 48\" .archagents/10-runbooks.md && echo DOCS_COMPLIANCE_OK"
+    expect: DOCS_COMPLIANCE_OK
+  - check: "npx vitest run test/unit/compliance-lgpd-notice.test.ts && echo COMPLIANCE_TESTS_OK"
+    expect: COMPLIANCE_TESTS_OK
+  - check: "npm run test && echo FULL_TESTS_OK"
+    expect: FULL_TESTS_OK
+  - check: "npx tsc --noEmit && npx tsc -p tsconfig.worker.json --noEmit && echo TYPECHECK_OK"
+    expect: TYPECHECK_OK
+depth_decision:
+  workflow: lightweight
+  design: lightweight
+  verify: completo
+  source: routing-classifier
+  classified_at: 2026-11-21T13:45:09Z
 ---
 # TCK-0033 - Publicar aviso LGPD/DPO, plano ANPD e ressalva de homonimo em procurados_lookup/bnmp
 
@@ -54,3 +70,7 @@ Antes do fix, `lib/tools/legal.ts:L239-L250,L276,L398` retorna resultados de man
 ## Log de transicoes
 
 - 2026-11-21T13:09:41Z - **raw** - criado via scripts/ops/ticket/create.py.
+- 2026-11-21T13:45:09Z - **triaged** - triaged in wave 1 parallel remediation [aceite reescrito: 4 critério(s)] [depth_decision do routing-classifier: workflow lightweight, design lightweight, verify completo]
+- 2026-11-21T13:45:33Z - **designed** - DES-0029 created
+- 2026-11-21T13:45:41Z - **executing** - executing TCK-0033
+- 2026-11-21T13:51:24Z - **verifying** - implementation and tests passing, ready for P10 verify

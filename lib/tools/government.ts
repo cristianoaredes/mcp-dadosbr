@@ -13,6 +13,7 @@ import {
 } from "../core/tool-schemas.js";
 import { Cache, LookupResult } from "../types/index.js";
 import { PNCP_ORIGIN, pncpCnpj, pncpDate, positiveInteger } from "../shared/pncp.js";
+import { attachLgpdNotice, HOMONYM_HUMAN_REVIEW_NOTICE } from "../shared/compliance-notices.js";
 
 // ─── IBGE Localidades ───────────────────────────────────────────────────────
 
@@ -250,6 +251,7 @@ async function executeCeisCnep(args: CeisCnepArgs, cache?: Cache): Promise<Looku
                     "https://portaldatransparencia.gov.br/sancoes/cepim",
                 ],
                 how_to_register: "Register at portaldatransparencia.gov.br/api-de-dados/cadastrar-email",
+                lgpd_notice: HOMONYM_HUMAN_REVIEW_NOTICE,
             },
         };
     }
@@ -259,7 +261,7 @@ async function executeCeisCnep(args: CeisCnepArgs, cache?: Cache): Promise<Looku
     const cacheKey = `ceis_cnep:${tipo}:${pagina}:${args.query.trim().toLowerCase()}`;
     if (cache) {
         const cached = await cache.get(cacheKey);
-        if (cached) return { ok: true, data: cached };
+        if (cached) return { ok: true, data: attachLgpdNotice(cached) };
     }
 
     const results: Record<string, unknown> = {};
@@ -290,6 +292,7 @@ async function executeCeisCnep(args: CeisCnepArgs, cache?: Cache): Promise<Looku
             cnep: "Cadastro Nacional de Empresas Punidas — punished under Anti-Corruption Law (Lei 12.846)",
             cepim: "Cadastro de Entidades Sem Fins Lucrativos Impedidas — NGOs barred from federal agreements",
         },
+        lgpd_notice: HOMONYM_HUMAN_REVIEW_NOTICE,
     };
     if (cache && errors.length === 0) {
         await cache.set(cacheKey, payload);
