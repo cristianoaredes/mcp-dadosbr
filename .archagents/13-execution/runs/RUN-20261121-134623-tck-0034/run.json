@@ -1,0 +1,26 @@
+{
+  "id": "RUN-20261121-134623-tck-0034",
+  "design": "DES-0030",
+  "ticket": "TCK-0034",
+  "started_at": "2026-11-21T13:46:23Z",
+  "started_by": "ops",
+  "environment": "dev",
+  "mode": "live",
+  "status": "completed",
+  "current_step": 4,
+  "total_steps": 4,
+  "ended_at": "2026-11-21T13:50:50Z",
+  "result": "447/447 Vitest (31 files, 12/12 cli-http-security.test.ts), tsc + tsc.worker exit 0, build + build:worker + test:transport PASS, secret-scan clean, criteria-check 3/3 PASS",
+  "loop_iterations": 0,
+  "attempt_count": 0,
+  "lessons_consulted": [
+    "Precisou de 2 iterações (re-execução)"
+  ],
+  "loop_cost_usd": null,
+  "cost_source": "unknown",
+  "loop_strategy": "default",
+  "context_peak": 0,
+  "final_judge_delta": 0,
+  "lesson_consult_attempted": true,
+  "warmup": false
+}
