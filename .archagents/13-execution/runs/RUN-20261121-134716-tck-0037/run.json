@@ -5,12 +5,12 @@
   "started_at": "2026-11-21T13:47:16Z",
   "started_by": "ops",
   "environment": "dev",
-  "mode": "dry-run",
-  "status": "running",
-  "current_step": 0,
+  "mode": "live",
+  "status": "completed",
+  "current_step": 4,
   "total_steps": 4,
-  "ended_at": null,
-  "result": null,
+  "ended_at": "2026-11-21T14:01:14Z",
+  "result": "TCK-0037 completed: REST/OpenAPI aligned (10 categories + SequentialThinking), 404/decodeURIComponent, dead artifacts removed, 33 files / 464 tests PASS",
   "loop_iterations": 0,
   "attempt_count": 0,
   "lessons_consulted": [
@@ -20,7 +20,16 @@
   "cost_source": "unknown",
   "loop_strategy": "default",
   "context_peak": 0,
-  "final_judge_delta": 0,
+  "final_judge_delta": 41,
   "lesson_consult_attempted": true,
-  "warmup": false
+  "warmup": false,
+  "final_judge_delta_source": "judge",
+  "lesson_utility": {
+    "utility": 0.82,
+    "n_lessons": 1,
+    "lessons_consulted": [
+      "Precisou de 2 iterações (re-execução)"
+    ],
+    "signal": "computed"
+  }
 }

@@ -5,8 +5,8 @@ title: "Suportar e exigir MCP_API_KEY no transporte HTTP/SSE do CLI fora de loop
 source: audit
 created_at: 2026-11-21T13:09:42Z
 created_by: ops
-updated_at: 2026-11-21T13:51:13Z
-status: verifying
+updated_at: 2026-11-21T14:02:28Z
+status: done
 severity: medium
 category: security
 effort: M
@@ -19,7 +19,8 @@ linked_designs:
   - DES-0030
 linked_runs:
   - RUN-20261121-134623-tck-0034
-linked_verifications: []
+linked_verifications:
+  - VER-20261121-135836-tck-0034
 linked_docs:
   - .archagents/07-security-compliance.md
 external_refs: []
@@ -69,3 +70,4 @@ Antes do fix, `lib/adapters/cli.ts:L118-L148` e `lib/adapters/cli-http.ts:L212-L
 - 2026-11-21T13:46:23Z - **designed** - DES-0030 created
 - 2026-11-21T13:46:24Z - **executing** - executing TCK-0034
 - 2026-11-21T13:51:13Z - **verifying** - Implementation, unit tests, transport smoke check, tsc, worker tsc, and secret-scan complete; ready for independent verification
+- 2026-11-21T14:02:28Z - **done** - P10 verify approved-with-notes (6e6a7b1f) + judge pass

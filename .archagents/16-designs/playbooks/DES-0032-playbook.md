@@ -51,6 +51,6 @@ commit_per_step: false
 ## Rollback
 
 Caso qualquer regressão ocorra antes do merge na branch de integração:
-1. Reverter alterações no worktree/branch com `git reset --hard 8bf9673` (ou `git revert <commit-sha>` após commit).
+1. Reverter alterações já commitadas com `git revert <commit-sha>` (reversível, conforme `SAFETY.md`).
 2. Restaurar eventuais arquivos deletados (`lib/workers/tokens.ts`, `smithery.config.js`) via `git checkout 8bf9673 -- lib/workers/tokens.ts smithery.config.js`.
 3. Reverter o status do ticket via `transition.py` se necessário antes de nova tentativa.

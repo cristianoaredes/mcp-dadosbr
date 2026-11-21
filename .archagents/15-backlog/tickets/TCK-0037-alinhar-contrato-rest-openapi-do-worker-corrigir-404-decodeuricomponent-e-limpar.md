@@ -5,8 +5,8 @@ title: "Alinhar contrato REST/OpenAPI do Worker, corrigir 404/decodeURIComponent
 source: audit
 created_at: 2026-11-21T13:09:44Z
 created_by: ops
-updated_at: 2026-11-21T13:51:46Z
-status: verifying
+updated_at: 2026-11-21T14:06:02Z
+status: done
 severity: medium
 category: architecture
 effort: M
@@ -19,7 +19,8 @@ linked_designs:
   - DES-0032
 linked_runs:
   - RUN-20261121-134716-tck-0037
-linked_verifications: []
+linked_verifications:
+  - VER-20261121-135934-tck-0037
 linked_docs:
   - .archagents/03-modules.md
 external_refs: []
@@ -83,3 +84,4 @@ Antes do fix, `lib/workers/openapi.ts:L151,L194-L217`, `lib/workers/rest.ts:L43,
 - 2026-11-21T13:47:16Z - **designed** - DES-0032 created
 - 2026-11-21T13:47:25Z - **executing** - executing TCK-0037
 - 2026-11-21T13:51:46Z - **verifying** - implementation verified and ready for review
+- 2026-11-21T14:06:02Z - **done** - P10 verify approved-with-notes (8c948d51) + judge pass

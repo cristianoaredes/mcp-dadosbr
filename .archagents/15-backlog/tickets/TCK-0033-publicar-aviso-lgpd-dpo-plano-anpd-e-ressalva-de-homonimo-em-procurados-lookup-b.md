@@ -5,8 +5,8 @@ title: "Publicar aviso LGPD/DPO, plano ANPD e ressalva de homonimo em procurados
 source: audit
 created_at: 2026-11-21T13:09:41Z
 created_by: ops
-updated_at: 2026-11-21T13:51:24Z
-status: verifying
+updated_at: 2026-11-21T14:02:26Z
+status: done
 severity: medium
 category: compliance-br
 effort: M
@@ -19,7 +19,8 @@ linked_designs:
   - DES-0029
 linked_runs:
   - RUN-20261121-134533-tck-0033
-linked_verifications: []
+linked_verifications:
+  - VER-20261121-135811-tck-0033
 linked_docs:
   - .archagents/10-runbooks.md
 external_refs: []
@@ -74,3 +75,4 @@ Antes do fix, `lib/tools/legal.ts:L239-L250,L276,L398` retorna resultados de man
 - 2026-11-21T13:45:33Z - **designed** - DES-0029 created
 - 2026-11-21T13:45:41Z - **executing** - executing TCK-0033
 - 2026-11-21T13:51:24Z - **verifying** - implementation and tests passing, ready for P10 verify
+- 2026-11-21T14:02:26Z - **done** - P10 verify approved-with-notes (3905ef10) + judge pass
