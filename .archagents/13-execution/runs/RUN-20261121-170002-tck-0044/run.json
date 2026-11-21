@@ -1,0 +1,34 @@
+{
+  "id": "RUN-20261121-170002-tck-0044",
+  "design": "DES-0040",
+  "ticket": "TCK-0044",
+  "started_at": "2026-11-21T17:00:02Z",
+  "started_by": "ops",
+  "environment": "dev",
+  "mode": "live",
+  "status": "completed",
+  "current_step": 4,
+  "total_steps": 4,
+  "ended_at": "2026-11-21T17:11:36Z",
+  "result": "c6ba490: 29 tools (stdio + HTTP/SSE + Cloudflare Worker) v0.7.0 integrated, allowlists & SC-9 updated, 536/536 Vitest tests PASS (94.67% stmts / 86.32% branch / 97.1% funcs / 95.25% lines), npm run build + build:worker PASS, npm run test:transport PASS (101 stdio calls + 29 HTTP/SSE tools + 5 MCP Apps).",
+  "loop_iterations": 1,
+  "attempt_count": 1,
+  "lessons_consulted": [
+    "Precisou de 2 iterações (re-execução)"
+  ],
+  "loop_cost_usd": null,
+  "cost_source": "unknown",
+  "loop_strategy": "default",
+  "context_peak": 0,
+  "final_judge_delta": 39,
+  "warmup": false,
+  "final_judge_delta_source": "judge",
+  "lesson_utility": {
+    "utility": 0.78,
+    "n_lessons": 1,
+    "lessons_consulted": [
+      "Precisou de 2 iterações (re-execução)"
+    ],
+    "signal": "computed"
+  }
+}

@@ -1,0 +1,1700 @@
+diff --git a/lib/shared/fiscal-banking-schemas.ts b/lib/shared/fiscal-banking-schemas.ts
+new file mode 100644
+index 0000000..17e4f8d
+--- /dev/null
++++ b/lib/shared/fiscal-banking-schemas.ts
+@@ -0,0 +1,49 @@
++/**
++ * Runtime Zod schemas for v0.7.0 Fiscal, Banking, Calendar, and DDD tools.
++ * Web-standard only (imports exclusively `zod`, zero `node:*` dependencies).
++ */
++
++import { z } from "zod";
++
++export const CnaeNcmSchema = z
++  .object({
++    tipo: z.enum(["cnae", "ncm"]),
++    codigo: z.string().trim().min(1).max(20).optional(),
++    termo: z.string().trim().min(1).max(120).optional(),
++    page: z.number().int().min(1).max(1000).optional(),
++    limit: z.number().int().min(1).max(50).optional(),
++  })
++  .strict()
++  .refine((v) => Boolean(v.codigo || v.termo), {
++    message: "Provide codigo or termo",
++  });
++
++export const SistemaFinanceiroSchema = z
++  .object({
++    tipo: z.enum(["bancos", "pix", "corretoras"]),
++    codigo: z.string().trim().regex(/^\d{1,6}$/, "codigo must be numeric").optional(),
++    ispb: z.string().trim().regex(/^\d{8}$/, "ispb must be 8 digits").optional(),
++    cnpj: z.string().trim().min(11).max(20).optional(),
++    busca: z.string().trim().min(1).max(120).optional(),
++    status: z.string().trim().min(1).max(60).optional(),
++    page: z.number().int().min(1).max(1000).optional(),
++    limit: z.number().int().min(1).max(50).optional(),
++  })
++  .strict();
++
++export const FeriadosDddSchema = z
++  .object({
++    tipo: z.enum(["feriados", "ddd"]),
++    ano: z.number().int().min(1900).max(2199).optional(),
++    data: z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/, "data must be YYYY-MM-DD").optional(),
++    ddd: z.string().trim().regex(/^\d{2}$/, "ddd must be 2 digits").optional(),
++    uf_esperada: z.string().trim().regex(/^[A-Za-z]{2}$/, "uf_esperada must be 2 letters").optional(),
++  })
++  .strict()
++  .refine((v) => (v.tipo === "ddd" ? Boolean(v.ddd) : true), {
++    message: "ddd is required when tipo is ddd",
++  });
++
++export type CnaeNcmArgs = z.infer<typeof CnaeNcmSchema>;
++export type SistemaFinanceiroArgs = z.infer<typeof SistemaFinanceiroSchema>;
++export type FeriadosDddArgs = z.infer<typeof FeriadosDddSchema>;
+diff --git a/lib/tools/fiscal-banking.ts b/lib/tools/fiscal-banking.ts
+new file mode 100644
+index 0000000..baa024f
+--- /dev/null
++++ b/lib/tools/fiscal-banking.ts
+@@ -0,0 +1,915 @@
++/**
++ * Fiscal, Banking, Calendar, and DDD tools — IBGE CNAE v2, BrasilAPI NCM,
++ * Bancos, Pix participants, Corretoras CVM, Feriados Nacionais, and DDD.
++ *
++ * Wave 1 (`TCK-0042` / `DES-0038`): exports tool definitions and
++ * `registerFiscalBankingTools()` without auto-registering at module top-level.
++ */
++
++import { httpJson } from "../core/http-client.js";
++import { hasTool, registerTool, type ToolHandler } from "../core/registry.js";
++import {
++  sanitizeUntrustedText,
++  UNTRUSTED_EXTERNAL_DATA_NOTICE,
++} from "../shared/agentic-guard.js";
++import {
++  CnaeNcmSchema,
++  FeriadosDddSchema,
++  SistemaFinanceiroSchema,
++  type CnaeNcmArgs,
++  type FeriadosDddArgs,
++  type SistemaFinanceiroArgs,
++} from "../shared/fiscal-banking-schemas.js";
++import type { Cache, LookupResult } from "../types/index.js";
++
++const IBGE_CNAE_BASE = "https://servicodados.ibge.gov.br/api/v2/cnae";
++const BRASILAPI_BASE = "https://brasilapi.com.br/api";
++
++const DEFAULT_PAGE = 1;
++const DEFAULT_LIMIT = 25;
++const MAX_LIMIT = 50;
++const MAX_EXTERNAL_TEXT_CHARS = 2000;
++
++interface SourceMeta {
++  url: string;
++  fetchedAt: string;
++}
++
++interface CachedPayload {
++  data: unknown;
++  source: SourceMeta;
++}
++
++interface PaginationMeta {
++  page: number;
++  limit: number;
++  total: number;
++  total_pages: number;
++  has_more: boolean;
++}
++
++type FetchCachedResult =
++  | { ok: true; data: unknown; source: SourceMeta }
++  | { ok: false; error: string };
++
++interface FetchCachedOptions {
++  rejectEmptyArray?: boolean;
++  notFoundMessage?: string;
++  expectArray?: boolean;
++  expectObject?: boolean;
++}
++
++/** Normalize text to lowercase ASCII (NFD without diacritics) for accent-insensitive filtering. */
++function normalizeSearchText(value: string): string {
++  return value
++    .trim()
++    .toLowerCase()
++    .normalize("NFD")
++    .replace(/[\u0300-\u036f]/g, "");
++}
++
++/** Recursively sanitize external strings against control characters, spoofed tags, and excessive length. */
++function sanitizeExternalValue(value: unknown, maxChars: number = MAX_EXTERNAL_TEXT_CHARS): unknown {
++  if (typeof value === "string") {
++    return sanitizeUntrustedText(value, maxChars);
++  }
++  if (Array.isArray(value)) {
++    return value.map((item) => sanitizeExternalValue(item, maxChars));
++  }
++  if (typeof value === "object" && value !== null) {
++    const out: Record<string, unknown> = {};
++    for (const [key, entry] of Object.entries(value)) {
++      out[key] = sanitizeExternalValue(entry, maxChars);
++    }
++    return out;
++  }
++  return value;
++}
++
++/** Slice an array into a bounded page (`page >= 1`, `1 <= limit <= 50`). */
++function paginateItems<T>(
++  items: T[],
++  rawPage?: number,
++  rawLimit?: number,
++): { items: T[]; pagination: PaginationMeta } {
++  const page =
++    typeof rawPage === "number" && Number.isFinite(rawPage) && rawPage >= 1
++      ? Math.floor(rawPage)
++      : DEFAULT_PAGE;
++  const limit =
++    typeof rawLimit === "number" && Number.isFinite(rawLimit) && rawLimit >= 1
++      ? Math.min(MAX_LIMIT, Math.floor(rawLimit))
++      : DEFAULT_LIMIT;
++
++  const total = items.length;
++  const start = (page - 1) * limit;
++  const paged = items.slice(start, start + limit);
++
++  return {
++    items: paged,
++    pagination: {
++      page,
++      limit,
++      total,
++      total_pages: Math.ceil(total / limit),
++      has_more: start + paged.length < total,
++    },
++  };
++}
++
++function asString(value: unknown): string {
++  return typeof value === "string" ? value : "";
++}
++
++function includesNormalized(candidate: unknown, needle: string): boolean {
++  if (typeof candidate !== "string" || !candidate) return false;
++  return normalizeSearchText(candidate).includes(needle);
++}
++
++function anyIncludesNormalized(candidates: unknown[], needle: string): boolean {
++  return candidates.some((candidate) => includesNormalized(candidate, needle));
++}
++
++function isPlainObject(value: unknown): value is Record<string, unknown> {
++  return typeof value === "object" && value !== null && !Array.isArray(value);
++}
++
++/** Read from cache or fetch via `httpJson`, sanitize external payload, and cache successful responses only. */
++async function fetchCachedJson(
++  url: string,
++  cacheKey: string,
++  cache?: Cache,
++  options?: FetchCachedOptions,
++): Promise<FetchCachedResult> {
++  if (cache) {
++    const cached = await cache.get<CachedPayload>(cacheKey);
++    if (cached && typeof cached === "object" && "data" in cached && cached.source) {
++      return { ok: true, data: cached.data, source: cached.source };
++    }
++  }
++
++  const result = await httpJson(url);
++  if (!result.ok) {
++    return { ok: false, error: result.error || "Upstream API request failed" };
++  }
++
++  const raw = result.data;
++  if (raw === null || raw === undefined) {
++    return { ok: false, error: options?.notFoundMessage || "not found" };
++  }
++  if (options?.expectArray && !Array.isArray(raw)) {
++    return { ok: false, error: "Unexpected upstream response format (expected array)" };
++  }
++  if (options?.expectObject && !isPlainObject(raw)) {
++    return { ok: false, error: "Unexpected upstream response format (expected object)" };
++  }
++  if (options?.rejectEmptyArray && Array.isArray(raw) && raw.length === 0) {
++    return { ok: false, error: options.notFoundMessage || "not found" };
++  }
++
++  const sanitized = sanitizeExternalValue(raw);
++  const source: SourceMeta = { url, fetchedAt: new Date().toISOString() };
++  if (cache) {
++    await cache.set(cacheKey, { data: sanitized, source });
++  }
++  return { ok: true, data: sanitized, source };
++}
++
++// ─── CNAE / NCM Lookup ──────────────────────────────────────────────────────
++
++function resolveCnaeEndpoint(rawCodigo: string):
++  | { ok: true; endpoint: string; normalizedCode: string; level: string }
++  | { ok: false; error: string } {
++  const digits = rawCodigo.replace(/\D/g, "");
++  switch (digits.length) {
++    case 7:
++      return {
++        ok: true,
++        endpoint: `subclasses/${digits}`,
++        normalizedCode: digits,
++        level: "subclasse",
++      };
++    case 5:
++      return {
++        ok: true,
++        endpoint: `classes/${digits}`,
++        normalizedCode: digits,
++        level: "classe",
++      };
++    case 4: {
++      const padded = digits.padStart(5, "0");
++      return {
++        ok: true,
++        endpoint: `classes/${padded}`,
++        normalizedCode: padded,
++        level: "classe",
++      };
++    }
++    case 3:
++      return {
++        ok: true,
++        endpoint: `grupos/${digits}`,
++        normalizedCode: digits,
++        level: "grupo",
++      };
++    case 2:
++      return {
++        ok: true,
++        endpoint: `divisoes/${digits}`,
++        normalizedCode: digits,
++        level: "divisao",
++      };
++    default:
++      return {
++        ok: false,
++        error: `Invalid CNAE code "${rawCodigo}": expected 2 (divisão), 3 (grupo), 4-5 (classe), or 7 (subclasse) digits.`,
++      };
++  }
++}
++
++function matchesCnaeClass(entry: unknown, needle: string): boolean {
++  if (!isPlainObject(entry)) return false;
++  if (includesNormalized(entry.id, needle) || includesNormalized(entry.descricao, needle)) {
++    return true;
++  }
++  if (Array.isArray(entry.observacoes)) {
++    return entry.observacoes.some((obs) => includesNormalized(obs, needle));
++  }
++  return includesNormalized(entry.observacoes, needle);
++}
++
++/** Query IBGE CNAE v2 (code hierarchy or full-text class search) or BrasilAPI NCM. */
++export async function executeCnaeNcm(
++  args: CnaeNcmArgs,
++  cache?: Cache,
++): Promise<LookupResult> {
++  if (!args || (args.tipo !== "cnae" && args.tipo !== "ncm")) {
++    return { ok: false, error: "Invalid tipo: expected 'cnae' or 'ncm'" };
++  }
++
++  const codigo = typeof args.codigo === "string" ? args.codigo.trim() : "";
++  const termo = typeof args.termo === "string" ? args.termo.trim() : "";
++  if (!codigo && !termo) {
++    return { ok: false, error: "Provide codigo or termo" };
++  }
++
++  if (args.tipo === "cnae") {
++    if (codigo) {
++      const resolved = resolveCnaeEndpoint(codigo);
++      if (!resolved.ok) {
++        return { ok: false, error: resolved.error };
++      }
++
++      const url = `${IBGE_CNAE_BASE}/${resolved.endpoint}`;
++      const res = await fetchCachedJson(url, `cnae:code:${resolved.endpoint}`, cache, {
++        rejectEmptyArray: true,
++        notFoundMessage: `CNAE not found: ${codigo}`,
++      });
++      if (!res.ok) {
++        const message =
++          res.error === "not found"
++            ? `CNAE not found: ${codigo}`
++            : res.error;
++        return { ok: false, error: message };
++      }
++
++      const item =
++        Array.isArray(res.data) && res.data.length === 1 ? res.data[0] : res.data;
++
++      return {
++        ok: true,
++        data: {
++          tipo: "cnae",
++          codigo: resolved.normalizedCode,
++          nivel: resolved.level,
++          item,
++          source: "IBGE CNAE v2",
++          fetchedAt: res.source.fetchedAt,
++          untrusted_data_notice: UNTRUSTED_EXTERNAL_DATA_NOTICE,
++        },
++        source: res.source,
++      };
++    }
++
++    const url = `${IBGE_CNAE_BASE}/classes`;
++    const res = await fetchCachedJson(url, "cnae:classes:all", cache, {
++      expectArray: true,
++    });
++    if (!res.ok) {
++      return { ok: false, error: `IBGE CNAE API error: ${res.error}` };
++    }
++
++    const needle = normalizeSearchText(termo);
++    const matches = (res.data as unknown[]).filter((entry) => matchesCnaeClass(entry, needle));
++    const { items, pagination } = paginateItems(matches, args.page, args.limit);
++
++    return {
++      ok: true,
++      data: {
++        tipo: "cnae",
++        termo,
++        items,
++        pagination,
++        source: "IBGE CNAE v2",
++        fetchedAt: res.source.fetchedAt,
++        untrusted_data_notice: UNTRUSTED_EXTERNAL_DATA_NOTICE,
++      },
++      source: res.source,
++    };
++  }
++
++  // tipo === "ncm"
++  if (codigo) {
++    const digitsOnly = codigo.replace(/\D/g, "");
++    if (!digitsOnly) {
++      return { ok: false, error: `Invalid NCM code: ${codigo}` };
++    }
++
++    const url = `${BRASILAPI_BASE}/ncm/v1/${encodeURIComponent(digitsOnly)}`;
++    const res = await fetchCachedJson(url, `ncm:code:${digitsOnly}`, cache, {
++      rejectEmptyArray: true,
++      notFoundMessage: `NCM not found: ${codigo}`,
++    });
++    if (!res.ok) {
++      return {
++        ok: false,
++        error: res.error === "not found" ? `NCM not found: ${codigo}` : `BrasilAPI NCM error: ${res.error}`,
++      };
++    }
++
++    return {
++      ok: true,
++      data: {
++        tipo: "ncm",
++        codigo: digitsOnly,
++        item: res.data,
++        source: "BrasilAPI — NCM",
++        fetchedAt: res.source.fetchedAt,
++        untrusted_data_notice: UNTRUSTED_EXTERNAL_DATA_NOTICE,
++      },
++      source: res.source,
++    };
++  }
++
++  const url = `${BRASILAPI_BASE}/ncm/v1?search=${encodeURIComponent(termo)}`;
++  const cacheKey = `ncm:search:${normalizeSearchText(termo)}`;
++  const res = await fetchCachedJson(url, cacheKey, cache, {
++    expectArray: true,
++  });
++  if (!res.ok) {
++    return { ok: false, error: `BrasilAPI NCM error: ${res.error}` };
++  }
++
++  const { items, pagination } = paginateItems(res.data as unknown[], args.page, args.limit);
++  return {
++    ok: true,
++    data: {
++      tipo: "ncm",
++      termo,
++      items,
++      pagination,
++      source: "BrasilAPI — NCM",
++      fetchedAt: res.source.fetchedAt,
++      untrusted_data_notice: UNTRUSTED_EXTERNAL_DATA_NOTICE,
++    },
++    source: res.source,
++  };
++}
++
++// ─── Sistema Financeiro Lookup ──────────────────────────────────────────────
++
++async function executeBancos(args: SistemaFinanceiroArgs, cache?: Cache): Promise<LookupResult> {
++  const codigo = typeof args.codigo === "string" ? args.codigo.trim() : "";
++  const ispb = typeof args.ispb === "string" ? args.ispb.trim() : "";
++  const busca = typeof args.busca === "string" ? args.busca.trim() : "";
++
++  if (codigo && !ispb && !busca) {
++    if (!/^\d{1,6}$/.test(codigo)) {
++      return { ok: false, error: "codigo must be numeric (1 to 6 digits)" };
++    }
++    const bankCode = Number(codigo);
++    const url = `${BRASILAPI_BASE}/banks/v1/${bankCode}`;
++    const res = await fetchCachedJson(url, `sfn:banco:${bankCode}`, cache, {
++      rejectEmptyArray: true,
++      notFoundMessage: `Bank not found: ${bankCode}`,
++    });
++    if (!res.ok) {
++      return {
++        ok: false,
++        error: res.error === "not found" ? `Bank not found: ${bankCode}` : `BrasilAPI Banks error: ${res.error}`,
++      };
++    }
++
++    return {
++      ok: true,
++      data: {
++        tipo: "bancos",
++        codigo: bankCode,
++        item: res.data,
++        source: "BrasilAPI — Bancos",
++        fetchedAt: res.source.fetchedAt,
++        untrusted_data_notice: UNTRUSTED_EXTERNAL_DATA_NOTICE,
++      },
++      source: res.source,
++    };
++  }
++
++  const url = `${BRASILAPI_BASE}/banks/v1`;
++  const res = await fetchCachedJson(url, "sfn:bancos:all", cache, { expectArray: true });
++  if (!res.ok) {
++    return { ok: false, error: `BrasilAPI Banks error: ${res.error}` };
++  }
++
++  const buscaNeedle = busca ? normalizeSearchText(busca) : "";
++  const targetCode = codigo ? Number(codigo) : null;
++  const filtered = (res.data as unknown[]).filter((entry) => {
++    if (!isPlainObject(entry)) return false;
++    if (ispb && asString(entry.ispb).trim() !== ispb) return false;
++    if (targetCode !== null) {
++      if (entry.code === null || entry.code === undefined || entry.code === "") return false;
++      if (Number(entry.code) !== targetCode) return false;
++    }
++    if (buscaNeedle && !anyIncludesNormalized([entry.name, entry.fullName, entry.nome], buscaNeedle)) {
++      return false;
++    }
++    return true;
++  });
++
++  const { items, pagination } = paginateItems(filtered, args.page, args.limit);
++  return {
++    ok: true,
++    data: {
++      tipo: "bancos",
++      items,
++      pagination,
++      source: "BrasilAPI — Bancos",
++      fetchedAt: res.source.fetchedAt,
++      untrusted_data_notice: UNTRUSTED_EXTERNAL_DATA_NOTICE,
++    },
++    source: res.source,
++  };
++}
++
++async function executePix(args: SistemaFinanceiroArgs, cache?: Cache): Promise<LookupResult> {
++  const ispb = typeof args.ispb === "string" ? args.ispb.trim() : "";
++  const busca = typeof args.busca === "string" ? args.busca.trim() : "";
++  const status = typeof args.status === "string" ? args.status.trim() : "";
++
++  const url = `${BRASILAPI_BASE}/pix/v1/participants`;
++  const res = await fetchCachedJson(url, "sfn:pix:participants", cache, { expectArray: true });
++  if (!res.ok) {
++    return { ok: false, error: `BrasilAPI Pix error: ${res.error}` };
++  }
++
++  const buscaNeedle = busca ? normalizeSearchText(busca) : "";
++  const statusNeedle = status ? normalizeSearchText(status) : "";
++  const filtered = (res.data as unknown[]).filter((entry) => {
++    if (!isPlainObject(entry)) return false;
++    if (ispb && asString(entry.ispb).trim() !== ispb) return false;
++    if (buscaNeedle && !anyIncludesNormalized([entry.nome, entry.nome_reduzido], buscaNeedle)) {
++      return false;
++    }
++    if (
++      statusNeedle &&
++      !anyIncludesNormalized([entry.modalidade_participacao, entry.tipo_participacao], statusNeedle)
++    ) {
++      return false;
++    }
++    return true;
++  });
++
++  const { items, pagination } = paginateItems(filtered, args.page, args.limit);
++  return {
++    ok: true,
++    data: {
++      tipo: "pix",
++      items,
++      pagination,
++      source: "BrasilAPI — Participantes Pix",
++      fetchedAt: res.source.fetchedAt,
++      untrusted_data_notice: UNTRUSTED_EXTERNAL_DATA_NOTICE,
++    },
++    source: res.source,
++  };
++}
++
++async function executeCorretoras(
++  args: SistemaFinanceiroArgs,
++  cache?: Cache,
++): Promise<LookupResult> {
++  const rawCnpj = typeof args.cnpj === "string" ? args.cnpj.trim() : "";
++  const cleanCnpj = rawCnpj ? rawCnpj.replace(/\D/g, "") : "";
++  const busca = typeof args.busca === "string" ? args.busca.trim() : "";
++  const status = typeof args.status === "string" ? args.status.trim() : "";
++
++  if (rawCnpj && !cleanCnpj) {
++    return { ok: false, error: "Invalid CNPJ filter: provide digits" };
++  }
++
++  if (cleanCnpj.length === 14 && !busca && !status) {
++    const url = `${BRASILAPI_BASE}/cvm/corretoras/v1/${encodeURIComponent(cleanCnpj)}`;
++    const res = await fetchCachedJson(url, `sfn:corretora:${cleanCnpj}`, cache, {
++      rejectEmptyArray: true,
++      notFoundMessage: `Corretora not found: ${cleanCnpj}`,
++    });
++    if (!res.ok) {
++      return {
++        ok: false,
++        error:
++          res.error === "not found"
++            ? `Corretora not found: ${cleanCnpj}`
++            : `BrasilAPI Corretoras error: ${res.error}`,
++      };
++    }
++
++    return {
++      ok: true,
++      data: {
++        tipo: "corretoras",
++        cnpj: cleanCnpj,
++        item: res.data,
++        source: "BrasilAPI — Corretoras CVM",
++        fetchedAt: res.source.fetchedAt,
++        untrusted_data_notice: UNTRUSTED_EXTERNAL_DATA_NOTICE,
++      },
++      source: res.source,
++    };
++  }
++
++  const url = `${BRASILAPI_BASE}/cvm/corretoras/v1`;
++  const res = await fetchCachedJson(url, "sfn:corretoras:all", cache, { expectArray: true });
++  if (!res.ok) {
++    return { ok: false, error: `BrasilAPI Corretoras error: ${res.error}` };
++  }
++
++  const buscaNeedle = busca ? normalizeSearchText(busca) : "";
++  const statusNeedle = status ? normalizeSearchText(status) : "";
++  const filtered = (res.data as unknown[]).filter((entry) => {
++    if (!isPlainObject(entry)) return false;
++    if (cleanCnpj) {
++      const entryDigits = asString(entry.cnpj).replace(/\D/g, "");
++      if (!entryDigits.includes(cleanCnpj)) return false;
++    }
++    if (
++      buscaNeedle &&
++      !anyIncludesNormalized([entry.nome_social, entry.nome_comercial, entry.municipio], buscaNeedle)
++    ) {
++      return false;
++    }
++    if (statusNeedle && !includesNormalized(entry.status, statusNeedle)) {
++      return false;
++    }
++    return true;
++  });
++
++  const { items, pagination } = paginateItems(filtered, args.page, args.limit);
++  return {
++    ok: true,
++    data: {
++      tipo: "corretoras",
++      items,
++      pagination,
++      source: "BrasilAPI — Corretoras CVM",
++      fetchedAt: res.source.fetchedAt,
++      untrusted_data_notice: UNTRUSTED_EXTERNAL_DATA_NOTICE,
++    },
++    source: res.source,
++  };
++}
++
++/** Query Brazilian banks, Pix participants, and CVM brokers with server-side filtering and pagination. */
++export async function executeSistemaFinanceiro(
++  args: SistemaFinanceiroArgs,
++  cache?: Cache,
++): Promise<LookupResult> {
++  if (!args) {
++    return { ok: false, error: "Invalid arguments for sistema_financeiro_lookup" };
++  }
++
++  switch (args.tipo) {
++    case "bancos":
++      return executeBancos(args, cache);
++    case "pix":
++      return executePix(args, cache);
++    case "corretoras":
++      return executeCorretoras(args, cache);
++    default:
++      return { ok: false, error: "Invalid tipo: expected 'bancos', 'pix', or 'corretoras'" };
++  }
++}
++
++// ─── Feriados / DDD Lookup ──────────────────────────────────────────────────
++
++const saoPauloYearFormatter = new Intl.DateTimeFormat("en-CA", {
++  timeZone: "America/Sao_Paulo",
++  year: "numeric",
++});
++
++function currentSaoPauloYear(now: Date = new Date()): number {
++  return Number(saoPauloYearFormatter.format(now));
++}
++
++function isValidIsoDate(iso: string): boolean {
++  if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return false;
++  const [y, m, d] = iso.split("-").map(Number);
++  const dt = new Date(Date.UTC(y, m - 1, d));
++  return (
++    dt.getUTCFullYear() === y &&
++    dt.getUTCMonth() === m - 1 &&
++    dt.getUTCDate() === d
++  );
++}
++
++/** Query national holidays (with business-day evaluation) or Brazilian DDD area code state/cities. */
++export async function executeFeriadosDdd(
++  args: FeriadosDddArgs,
++  cache?: Cache,
++): Promise<LookupResult> {
++  if (!args || (args.tipo !== "feriados" && args.tipo !== "ddd")) {
++    return { ok: false, error: "Invalid tipo: expected 'feriados' or 'ddd'" };
++  }
++
++  if (args.tipo === "feriados") {
++    const data = typeof args.data === "string" ? args.data.trim() : undefined;
++    if (data !== undefined) {
++      if (!isValidIsoDate(data)) {
++        return { ok: false, error: `Invalid date "${data}": expected valid YYYY-MM-DD` };
++      }
++      const dataYear = Number(data.slice(0, 4));
++      if (args.ano !== undefined && args.ano !== dataYear) {
++        return {
++          ok: false,
++          error: `Year mismatch: ano (${args.ano}) differs from data year (${dataYear})`,
++        };
++      }
++    }
++
++    const year = args.ano ?? (data ? Number(data.slice(0, 4)) : currentSaoPauloYear());
++    if (!Number.isInteger(year) || year < 1900 || year > 2199) {
++      return { ok: false, error: `Invalid year: ${year}. Expected integer between 1900 and 2199.` };
++    }
++
++    const url = `${BRASILAPI_BASE}/feriados/v1/${year}`;
++    const res = await fetchCachedJson(url, `feriados:${year}`, cache, { expectArray: true });
++    if (!res.ok) {
++      return { ok: false, error: `BrasilAPI Feriados error: ${res.error}` };
++    }
++
++    const holidays = res.data as unknown[];
++    if (data) {
++      const holidayMatch =
++        holidays.find((entry) => isPlainObject(entry) && entry.date === data) ?? null;
++      const [y, m, d] = data.split("-").map(Number);
++      const dayOfWeek = new Date(Date.UTC(y, m - 1, d)).getUTCDay();
++      const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
++      const isHoliday = Boolean(holidayMatch);
++
++      return {
++        ok: true,
++        data: {
++          tipo: "feriados",
++          year,
++          date: data,
++          is_holiday: isHoliday,
++          is_weekend: isWeekend,
++          is_business_day: !isHoliday && !isWeekend,
++          holiday: holidayMatch,
++          holidays,
++          source: "BrasilAPI — Feriados Nacionais",
++          fetchedAt: res.source.fetchedAt,
++          untrusted_data_notice: UNTRUSTED_EXTERNAL_DATA_NOTICE,
++        },
++        source: res.source,
++      };
++    }
++
++    return {
++      ok: true,
++      data: {
++        tipo: "feriados",
++        year,
++        holidays,
++        total: holidays.length,
++        source: "BrasilAPI — Feriados Nacionais",
++        fetchedAt: res.source.fetchedAt,
++        untrusted_data_notice: UNTRUSTED_EXTERNAL_DATA_NOTICE,
++      },
++      source: res.source,
++    };
++  }
++
++  // tipo === "ddd"
++  const ddd = typeof args.ddd === "string" ? args.ddd.trim() : "";
++  if (!/^\d{2}$/.test(ddd)) {
++    return { ok: false, error: "ddd is required and must be 2 digits when tipo is ddd" };
++  }
++
++  const expectedUfRaw = typeof args.uf_esperada === "string" ? args.uf_esperada.trim() : "";
++  if (expectedUfRaw && !/^[A-Za-z]{2}$/.test(expectedUfRaw)) {
++    return { ok: false, error: "uf_esperada must be 2 letters" };
++  }
++
++  const url = `${BRASILAPI_BASE}/ddd/v1/${encodeURIComponent(ddd)}`;
++  const res = await fetchCachedJson(url, `ddd:${ddd}`, cache, { expectObject: true });
++  if (!res.ok) {
++    return {
++      ok: false,
++      error: res.error === "not found" ? `DDD not found: ${ddd}` : `BrasilAPI DDD error: ${res.error}`,
++    };
++  }
++
++  const record = res.data as Record<string, unknown>;
++  const state = asString(record.state);
++  const cities = Array.isArray(record.cities) ? record.cities : [];
++  const expectedUf = expectedUfRaw ? expectedUfRaw.toUpperCase() : undefined;
++  const ufMatches =
++    expectedUf !== undefined
++      ? state.length > 0 && expectedUf === state.toUpperCase()
++      : undefined;
++
++  return {
++    ok: true,
++    data: {
++      tipo: "ddd",
++      ddd,
++      state,
++      cities,
++      ...(expectedUf !== undefined
++        ? { expected_uf: expectedUf, uf_matches: ufMatches }
++        : {}),
++      source: "BrasilAPI — DDD",
++      fetchedAt: res.source.fetchedAt,
++      untrusted_data_notice: UNTRUSTED_EXTERNAL_DATA_NOTICE,
++    },
++    source: res.source,
++  };
++}
++
++// ─── Tool Definitions & Explicit Registration ───────────────────────────────
++
++export const CNAE_NCM_LOOKUP_TOOL: ToolHandler = {
++  name: "cnae_ncm_lookup",
++  description: `Look up Brazilian economic activity classifications (CNAE via IBGE v2) and Mercosur goods nomenclature (NCM via BrasilAPI).
++For CNAE, pass codigo (2, 3, 4-5, or 7 digits) or termo for paginated class search.
++For NCM, pass codigo (e.g. '2710.12.59') or termo for paginated description search. No API key required.`,
++  inputSchema: {
++    type: "object",
++    properties: {
++      tipo: {
++        type: "string",
++        enum: ["cnae", "ncm"],
++        description: "Classification table: 'cnae' (IBGE v2) or 'ncm' (BrasilAPI)",
++      },
++      codigo: {
++        type: "string",
++        description: "CNAE code (2, 3, 4-5, or 7 digits) or NCM code",
++        minLength: 1,
++        maxLength: 20,
++      },
++      termo: {
++        type: "string",
++        description: "Search term for CNAE classes or NCM descriptions",
++        minLength: 1,
++        maxLength: 120,
++      },
++      page: {
++        type: "integer",
++        description: "1-indexed page number for paginated search results (default: 1)",
++        minimum: 1,
++        maximum: 1000,
++        default: 1,
++      },
++      limit: {
++        type: "integer",
++        description: "Results per page (default: 25, max: 50)",
++        minimum: 1,
++        maximum: 50,
++        default: 25,
++      },
++    },
++    required: ["tipo"],
++    additionalProperties: false,
++  },
++  zodSchema: CnaeNcmSchema,
++  execute: async (args, _apiConfig, cache) => executeCnaeNcm(args as CnaeNcmArgs, cache),
++};
++
++export const SISTEMA_FINANCEIRO_LOOKUP_TOOL: ToolHandler = {
++  name: "sistema_financeiro_lookup",
++  description: `Query Brazil's financial system registries via BrasilAPI: banks (COMPE/ISPB), Pix participants, and CVM brokers (corretoras).
++Supports direct single-item lookup (bank code or 14-digit broker CNPJ) and cached server-side filtering with pagination (default 25, max 50). No API key required.`,
++  inputSchema: {
++    type: "object",
++    properties: {
++      tipo: {
++        type: "string",
++        enum: ["bancos", "pix", "corretoras"],
++        description: "Financial registry to query",
++      },
++      codigo: {
++        type: "string",
++        description: "Numeric COMPE bank code (1-6 digits, e.g. '1' or '001') for bancos",
++      },
++      ispb: {
++        type: "string",
++        description: "8-digit ISPB code for bancos or pix",
++      },
++      cnpj: {
++        type: "string",
++        description: "Full 14-digit or partial CNPJ for corretoras",
++        minLength: 11,
++        maxLength: 20,
++      },
++      busca: {
++        type: "string",
++        description: "Case/accent-insensitive name or city filter",
++        minLength: 1,
++        maxLength: 120,
++      },
++      status: {
++        type: "string",
++        description: "Status or participation modality filter",
++        minLength: 1,
++        maxLength: 60,
++      },
++      page: {
++        type: "integer",
++        description: "1-indexed page number (default: 1)",
++        minimum: 1,
++        maximum: 1000,
++        default: 1,
++      },
++      limit: {
++        type: "integer",
++        description: "Results per page (default: 25, max: 50)",
++        minimum: 1,
++        maximum: 50,
++        default: 25,
++      },
++    },
++    required: ["tipo"],
++    additionalProperties: false,
++  },
++  zodSchema: SistemaFinanceiroSchema,
++  execute: async (args, _apiConfig, cache) =>
++    executeSistemaFinanceiro(args as SistemaFinanceiroArgs, cache),
++};
++
++export const FERIADOS_DDD_LOOKUP_TOOL: ToolHandler = {
++  name: "feriados_ddd_lookup",
++  description: `Check Brazilian national holidays / business days or verify DDD area codes against state (UF) and municipalities via BrasilAPI.
++Use uf_esperada with tipo='ddd' for registration anti-fraud consistency checks. No API key required.`,
++  inputSchema: {
++    type: "object",
++    properties: {
++      tipo: {
++        type: "string",
++        enum: ["feriados", "ddd"],
++        description: "Lookup type: 'feriados' or 'ddd'",
++      },
++      ano: {
++        type: "integer",
++        description: "Year (1900-2199) for national holidays",
++        minimum: 1900,
++        maximum: 2199,
++      },
++      data: {
++        type: "string",
++        description: "ISO date (YYYY-MM-DD) to check holiday, weekend, and business day status",
++      },
++      ddd: {
++        type: "string",
++        description: "2-digit Brazilian area code (required when tipo='ddd')",
++      },
++      uf_esperada: {
++        type: "string",
++        description: "Optional 2-letter expected state UF for consistency verification",
++      },
++    },
++    required: ["tipo"],
++    additionalProperties: false,
++  },
++  zodSchema: FeriadosDddSchema,
++  execute: async (args, _apiConfig, cache) =>
++    executeFeriadosDdd(args as FeriadosDddArgs, cache),
++};
++
++export const FISCAL_BANKING_TOOLS: readonly ToolHandler[] = [
++  CNAE_NCM_LOOKUP_TOOL,
++  SISTEMA_FINANCEIRO_LOOKUP_TOOL,
++  FERIADOS_DDD_LOOKUP_TOOL,
++];
++
++/**
++ * Idempotently register the three fiscal/banking tools in the global registry.
++ * Called intentionally during catalog integration (TCK-0044), not on module import.
++ */
++export function registerFiscalBankingTools(): void {
++  for (const tool of FISCAL_BANKING_TOOLS) {
++    if (!hasTool(tool.name)) {
++      registerTool(tool);
++    }
++  }
++}
++
++export type { CnaeNcmArgs, FeriadosDddArgs, SistemaFinanceiroArgs };
+diff --git a/test/unit/fiscal-banking-v070.test.ts b/test/unit/fiscal-banking-v070.test.ts
+new file mode 100644
+index 0000000..8e4df8c
+--- /dev/null
++++ b/test/unit/fiscal-banking-v070.test.ts
+@@ -0,0 +1,718 @@
++import { readFileSync } from "node:fs";
++import { resolve } from "node:path";
++import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
++import "../../lib/tools/index.js";
++import { MemoryCache } from "../../lib/core/cache.js";
++import { resolveApiConfig } from "../../lib/config/index.js";
++import { resetCircuitBreakers } from "../../lib/core/http-client.js";
++import {
++  executeRegisteredTool,
++  getToolCount,
++  hasTool,
++  hasToolSchema,
++} from "../../lib/core/registry.js";
++import { UNTRUSTED_EXTERNAL_DATA_NOTICE } from "../../lib/shared/agentic-guard.js";
++import {
++  CnaeNcmSchema,
++  FeriadosDddSchema,
++  SistemaFinanceiroSchema,
++} from "../../lib/shared/fiscal-banking-schemas.js";
++import {
++  CNAE_NCM_LOOKUP_TOOL,
++  FERIADOS_DDD_LOOKUP_TOOL,
++  SISTEMA_FINANCEIRO_LOOKUP_TOOL,
++  executeCnaeNcm,
++  executeFeriadosDdd,
++  executeSistemaFinanceiro,
++  registerFiscalBankingTools,
++} from "../../lib/tools/fiscal-banking.js";
++
++const ROOT = resolve(import.meta.dirname, "../..");
++
++function jsonResponse(body: unknown, status = 200): Response {
++  return new Response(JSON.stringify(body), {
++    status,
++    headers: { "Content-Type": "application/json" },
++  });
++}
++
++describe("TCK-0042 / DES-0038: Fiscal, Banking, Calendar & DDD Tools", () => {
++  const apiConfig = resolveApiConfig();
++
++  beforeEach(() => {
++    resetCircuitBreakers();
++  });
++
++  afterEach(() => {
++    resetCircuitBreakers();
++    vi.restoreAllMocks();
++    vi.unstubAllGlobals();
++    vi.useRealTimers();
++  });
++
++  describe("Isolation, Worker compatibility & idempotent registration", () => {
++    it("keeps zero node:* imports in schemas and tool module and preserves getToolCount() === 23 on import", () => {
++      const schemasSrc = readFileSync(
++        resolve(ROOT, "lib/shared/fiscal-banking-schemas.ts"),
++        "utf8",
++      );
++      const toolsSrc = readFileSync(
++        resolve(ROOT, "lib/tools/fiscal-banking.ts"),
++        "utf8",
++      );
++
++      expect(schemasSrc).not.toMatch(/(?:from|import)\s+["']node:/);
++      expect(schemasSrc).toMatch(/from ["']zod["']/);
++      expect(toolsSrc).not.toMatch(/(?:from|import)\s+["']node:/);
++      expect(getToolCount()).toBe(23);
++      expect(hasTool("cnae_ncm_lookup")).toBe(false);
++      expect(hasTool("sistema_financeiro_lookup")).toBe(false);
++      expect(hasTool("feriados_ddd_lookup")).toBe(false);
++    });
++
++    it("registers the 3 tools idempotently via registerFiscalBankingTools() with Zod schemas and zero api_key fields", async () => {
++      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
++
++      registerFiscalBankingTools();
++      expect(getToolCount()).toBe(26);
++      expect(hasTool("cnae_ncm_lookup")).toBe(true);
++      expect(hasTool("sistema_financeiro_lookup")).toBe(true);
++      expect(hasTool("feriados_ddd_lookup")).toBe(true);
++      expect(hasToolSchema("cnae_ncm_lookup")).toBe(true);
++      expect(hasToolSchema("sistema_financeiro_lookup")).toBe(true);
++      expect(hasToolSchema("feriados_ddd_lookup")).toBe(true);
++
++      // Second call must be a no-op (no overwrite warning, count unchanged)
++      registerFiscalBankingTools();
++      expect(getToolCount()).toBe(26);
++      expect(warnSpy).not.toHaveBeenCalled();
++
++      for (const tool of [
++        CNAE_NCM_LOOKUP_TOOL,
++        SISTEMA_FINANCEIRO_LOOKUP_TOOL,
++        FERIADOS_DDD_LOOKUP_TOOL,
++      ]) {
++        const props = (tool.inputSchema as { properties?: Record<string, unknown> }).properties;
++        expect(props).not.toHaveProperty("api_key");
++      }
++
++      // Confirm registered tools enforce Zod validation before calling fetch
++      const fetchSpy = vi.spyOn(globalThis, "fetch");
++      const invalidRes = await executeRegisteredTool(
++        "cnae_ncm_lookup",
++        { tipo: "cnae" },
++        apiConfig,
++      );
++      expect(invalidRes.ok).toBe(false);
++      expect(invalidRes.error).toMatch(/^Invalid parameters for cnae_ncm_lookup:/);
++      expect(fetchSpy).not.toHaveBeenCalled();
++    });
++  });
++
++  describe("Runtime Zod schemas (CnaeNcmSchema, SistemaFinanceiroSchema, FeriadosDddSchema)", () => {
++    it("enforces all CnaeNcmSchema constraints and strict unknown-key rejection", () => {
++      expect(CnaeNcmSchema.safeParse({ tipo: "cnae", codigo: "6201-5/01" }).success).toBe(true);
++      expect(
++        CnaeNcmSchema.safeParse({ tipo: "ncm", termo: "combustivel", page: 2, limit: 50 }).success,
++      ).toBe(true);
++
++      expect(CnaeNcmSchema.safeParse({ tipo: "cnae" }).success).toBe(false);
++      expect(CnaeNcmSchema.safeParse({ tipo: "cnae", codigo: "   " }).success).toBe(false);
++      expect(CnaeNcmSchema.safeParse({ tipo: "cnae", termo: "ti", limit: 51 }).success).toBe(false);
++      expect(CnaeNcmSchema.safeParse({ tipo: "cnae", termo: "ti", page: 0 }).success).toBe(false);
++      expect(CnaeNcmSchema.safeParse({ tipo: "cnae", termo: "ti", page: 1001 }).success).toBe(
++        false,
++      );
++      expect(
++        CnaeNcmSchema.safeParse({ tipo: "ncm", codigo: "2710", extra: true }).success,
++      ).toBe(false);
++    });
++
++    it("enforces all SistemaFinanceiroSchema regexes, bounds, and strictness", () => {
++      expect(SistemaFinanceiroSchema.safeParse({ tipo: "bancos", codigo: "001" }).success).toBe(
++        true,
++      );
++      expect(
++        SistemaFinanceiroSchema.safeParse({ tipo: "pix", ispb: "00000000", limit: 25 }).success,
++      ).toBe(true);
++      expect(
++        SistemaFinanceiroSchema.safeParse({
++          tipo: "corretoras",
++          cnpj: "76.621.457/0001-85",
++          status: "ATIVA",
++        }).success,
++      ).toBe(true);
++
++      expect(
++        SistemaFinanceiroSchema.safeParse({ tipo: "bancos", codigo: "../etc" }).success,
++      ).toBe(false);
++      expect(
++        SistemaFinanceiroSchema.safeParse({ tipo: "pix", ispb: "1234567" }).success,
++      ).toBe(false);
++      expect(
++        SistemaFinanceiroSchema.safeParse({ tipo: "pix", ispb: "123456789" }).success,
++      ).toBe(false);
++      expect(
++        SistemaFinanceiroSchema.safeParse({ tipo: "corretoras", cnpj: "1234567890" }).success,
++      ).toBe(false);
++      expect(
++        SistemaFinanceiroSchema.safeParse({ tipo: "corretoras", limit: 100 }).success,
++      ).toBe(false);
++      expect(
++        SistemaFinanceiroSchema.safeParse({ tipo: "bancos", api_key: "secret" }).success,
++      ).toBe(false);
++    });
++
++    it("enforces FeriadosDddSchema rules (ddd required for tipo=ddd, date/year/uf regexes)", () => {
++      expect(FeriadosDddSchema.safeParse({ tipo: "feriados" }).success).toBe(true);
++      expect(
++        FeriadosDddSchema.safeParse({ tipo: "feriados", ano: 2026, data: "2026-01-01" }).success,
++      ).toBe(true);
++      expect(
++        FeriadosDddSchema.safeParse({ tipo: "ddd", ddd: "11", uf_esperada: "sp" }).success,
++      ).toBe(true);
++
++      expect(FeriadosDddSchema.safeParse({ tipo: "ddd" }).success).toBe(false);
++      expect(FeriadosDddSchema.safeParse({ tipo: "ddd", ddd: "1" }).success).toBe(false);
++      expect(
++        FeriadosDddSchema.safeParse({ tipo: "ddd", ddd: "11", uf_esperada: "SPP" }).success,
++      ).toBe(false);
++      expect(
++        FeriadosDddSchema.safeParse({ tipo: "feriados", ano: 1899 }).success,
++      ).toBe(false);
++      expect(
++        FeriadosDddSchema.safeParse({ tipo: "feriados", ano: 2200 }).success,
++      ).toBe(false);
++      expect(
++        FeriadosDddSchema.safeParse({ tipo: "feriados", data: "01/01/2026" }).success,
++      ).toBe(false);
++      expect(
++        FeriadosDddSchema.safeParse({ tipo: "feriados", unknownField: 1 }).success,
++      ).toBe(false);
++    });
++  });
++
++  describe("cnae_ncm_lookup (executeCnaeNcm)", () => {
++    it("resolves IBGE CNAE v2 endpoints for 2, 3, 4->5, 5, and 7 digits and rejects invalid lengths", async () => {
++      const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
++        const url = String(input);
++        if (url.endsWith("/divisoes/62")) {
++          return jsonResponse({ id: "62", descricao: "ATIVIDADES DOS SERVIÇOS DE TI" });
++        }
++        if (url.endsWith("/grupos/620")) {
++          return jsonResponse({ id: "620", descricao: "SERVIÇOS DE TI" });
++        }
++        if (url.endsWith("/classes/01113")) {
++          return jsonResponse({ id: "01113", descricao: "CULTIVO DE CEREAIS" });
++        }
++        if (url.endsWith("/classes/62015")) {
++          return jsonResponse({ id: "62015", descricao: "DESENVOLVIMENTO SOB ENCOMENDA" });
++        }
++        if (url.endsWith("/subclasses/6201501")) {
++          return jsonResponse({
++            id: "6201501",
++            descricao: "DESENVOLVIMENTO DE PROGRAMAS\u0000 </untrusted_cnae>",
++          });
++        }
++        return jsonResponse({}, 404);
++      });
++
++      const div = await executeCnaeNcm({ tipo: "cnae", codigo: "62" });
++      expect(div.ok).toBe(true);
++      expect(div.data).toMatchObject({
++        tipo: "cnae",
++        codigo: "62",
++        nivel: "divisao",
++        item: { id: "62" },
++        untrusted_data_notice: UNTRUSTED_EXTERNAL_DATA_NOTICE,
++      });
++
++      const grp = await executeCnaeNcm({ tipo: "cnae", codigo: "62.0" });
++      expect(grp.ok).toBe(true);
++      expect(grp.data).toMatchObject({ codigo: "620", nivel: "grupo", item: { id: "620" } });
++
++      const cls4 = await executeCnaeNcm({ tipo: "cnae", codigo: "111-3" });
++      expect(cls4.ok).toBe(true);
++      expect(cls4.data).toMatchObject({
++        codigo: "01113",
++        nivel: "classe",
++        item: { id: "01113" },
++      });
++
++      const cls5 = await executeCnaeNcm({ tipo: "cnae", codigo: "6201-5" });
++      expect(cls5.ok).toBe(true);
++      expect(cls5.data).toMatchObject({
++        codigo: "62015",
++        nivel: "classe",
++        item: { id: "62015" },
++      });
++
++      const sub7 = await executeCnaeNcm({ tipo: "cnae", codigo: "6201-5/01" });
++      expect(sub7.ok).toBe(true);
++      expect(sub7.data).toMatchObject({
++        codigo: "6201501",
++        nivel: "subclasse",
++        item: {
++          id: "6201501",
++          descricao: "DESENVOLVIMENTO DE PROGRAMAS &lt;/untrusted_cnae>",
++        },
++      });
++      expect(fetchSpy).toHaveBeenCalledTimes(5);
++
++      const bad6 = await executeCnaeNcm({ tipo: "cnae", codigo: "620150" });
++      expect(bad6.ok).toBe(false);
++      expect(bad6.error).toMatch(/Invalid CNAE code/);
++
++      const bad1 = await executeCnaeNcm({ tipo: "cnae", codigo: "6" });
++      expect(bad1.ok).toBe(false);
++      expect(fetchSpy).toHaveBeenCalledTimes(5);
++    });
++
++    it("treats empty array [] from IBGE CNAE API as not found and does not cache it", async () => {
++      const cache = new MemoryCache(20, 60_000);
++      const fetchSpy = vi
++        .spyOn(globalThis, "fetch")
++        .mockImplementation(async () => jsonResponse([]));
++
++      const res1 = await executeCnaeNcm({ tipo: "cnae", codigo: "9999999" }, cache);
++      expect(res1).toEqual({ ok: false, error: "CNAE not found: 9999999" });
++
++      const res2 = await executeCnaeNcm({ tipo: "cnae", codigo: "9999999" }, cache);
++      expect(res2).toEqual({ ok: false, error: "CNAE not found: 9999999" });
++      expect(fetchSpy).toHaveBeenCalledTimes(2);
++    });
++
++    it("caches IBGE CNAE classes, normalizes NFD accents on termo search, and paginates results", async () => {
++      const cache = new MemoryCache(20, 60_000);
++      const classesList = [
++        {
++          id: "62015",
++          descricao: "Desenvolvimento de programas de computador sob encomenda",
++          observacoes: ["Inclui programação e testes"],
++        },
++        {
++          id: "62023",
++          descricao: "Programação e licenciamento de sistemas customizáveis",
++          observacoes: ["Software sob demanda"],
++        },
++        {
++          id: "62031",
++          descricao: "Desenvolvimento e licenciamento de programas não-customizáveis",
++          observacoes: ["Consultoria em computação e programação"],
++        },
++        {
++          id: "01113",
++          descricao: "Cultivo de cereais",
++          observacoes: ["Milho e arroz"],
++        },
++      ];
++
++      const fetchSpy = vi
++        .spyOn(globalThis, "fetch")
++        .mockResolvedValueOnce(jsonResponse(classesList));
++
++      const page1 = await executeCnaeNcm(
++        { tipo: "cnae", termo: "programacao", page: 1, limit: 2 },
++        cache,
++      );
++      expect(page1.ok).toBe(true);
++      expect(page1.data).toMatchObject({
++        tipo: "cnae",
++        termo: "programacao",
++        pagination: { page: 1, limit: 2, total: 3, total_pages: 2, has_more: true },
++      });
++      expect((page1.data as { items: Array<{ id: string }> }).items.map((i) => i.id)).toEqual([
++        "62015",
++        "62023",
++      ]);
++
++      // Search matching inside `observacoes` with accent normalization, hitting cache
++      const obsMatch = await executeCnaeNcm(
++        { tipo: "cnae", termo: "computacao", page: 1, limit: 10 },
++        cache,
++      );
++      expect(obsMatch.ok).toBe(true);
++      expect((obsMatch.data as { items: Array<{ id: string }> }).items.map((i) => i.id)).toEqual([
++        "62031",
++      ]);
++      expect(fetchSpy).toHaveBeenCalledTimes(1);
++    });
++
++    it("queries NCM by code (stripping dots), paginates NCM search, and caches responses", async () => {
++      const cache = new MemoryCache(20, 60_000);
++      const ncmResults = Array.from({ length: 5 }, (_, idx) => ({
++        codigo: `0901.1${idx}.00`,
++        descricao: `Café tipo ${idx + 1}`,
++      }));
++
++      const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
++        const url = String(input);
++        if (url.endsWith("/ncm/v1/27101259")) {
++          return jsonResponse({ codigo: "2710.12.59", descricao: "Gasolina automotiva" });
++        }
++        if (url.includes("/ncm/v1?search=cafe")) {
++          return jsonResponse(ncmResults);
++        }
++        return jsonResponse({}, 404);
++      });
++
++      const byCode = await executeCnaeNcm({ tipo: "ncm", codigo: "2710.12.59" }, cache);
++      expect(byCode.ok).toBe(true);
++      expect(byCode.data).toMatchObject({
++        tipo: "ncm",
++        codigo: "27101259",
++        item: { codigo: "2710.12.59", descricao: "Gasolina automotiva" },
++        source: "BrasilAPI — NCM",
++        untrusted_data_notice: UNTRUSTED_EXTERNAL_DATA_NOTICE,
++      });
++
++      const byCodeCached = await executeCnaeNcm({ tipo: "ncm", codigo: "27101259" }, cache);
++      expect(byCodeCached.ok).toBe(true);
++
++      const searchP2 = await executeCnaeNcm(
++        { tipo: "ncm", termo: "cafe", page: 2, limit: 2 },
++        cache,
++      );
++      expect(searchP2.ok).toBe(true);
++      expect(searchP2.data).toMatchObject({
++        tipo: "ncm",
++        termo: "cafe",
++        pagination: { page: 2, limit: 2, total: 5, total_pages: 3, has_more: true },
++      });
++      expect((searchP2.data as { items: unknown[] }).items).toHaveLength(2);
++
++      const notFound = await executeCnaeNcm({ tipo: "ncm", codigo: "99999999" }, cache);
++      expect(notFound).toEqual({ ok: false, error: "NCM not found: 99999999" });
++
++      expect(fetchSpy).toHaveBeenCalledTimes(3);
++    });
++  });
++
++  describe("sistema_financeiro_lookup (executeSistemaFinanceiro)", () => {
++    it("fetches single bank via /banks/v1/{code} and paginates/filters /banks/v1 without false zero match on code:null", async () => {
++      const cache = new MemoryCache(20, 60_000);
++      const allBanks = [
++        { ispb: "00000000", name: "BCO DO BRASIL S.A.", code: 1, fullName: "Banco do Brasil S.A." },
++        { ispb: "60701190", name: "ITAÚ UNIBANCO S.A.", code: 341, fullName: "Itaú Unibanco S.A." },
++        { ispb: "18236120", name: "NU PAGAMENTOS - IP", code: null, fullName: "Nu Pagamentos S.A." },
++      ];
++
++      const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
++        const url = String(input);
++        if (url.endsWith("/banks/v1/1")) {
++          return jsonResponse(allBanks[0]);
++        }
++        if (url.endsWith("/banks/v1")) {
++          return jsonResponse(allBanks);
++        }
++        return jsonResponse({}, 404);
++      });
++
++      const single = await executeSistemaFinanceiro({ tipo: "bancos", codigo: "001" }, cache);
++      expect(single.ok).toBe(true);
++      expect(single.data).toMatchObject({
++        tipo: "bancos",
++        codigo: 1,
++        item: { ispb: "00000000", code: 1 },
++        source: "BrasilAPI — Bancos",
++        untrusted_data_notice: UNTRUSTED_EXTERNAL_DATA_NOTICE,
++      });
++
++      // NFD accent-insensitive search ("itau" matches "ITAÚ")
++      const byBusca = await executeSistemaFinanceiro(
++        { tipo: "bancos", busca: "itau", page: 1, limit: 10 },
++        cache,
++      );
++      expect(byBusca.ok).toBe(true);
++      expect(byBusca.data).toMatchObject({
++        tipo: "bancos",
++        pagination: { page: 1, limit: 10, total: 1, total_pages: 1, has_more: false },
++      });
++      expect((byBusca.data as { items: Array<{ code: number }> }).items[0].code).toBe(341);
++
++      // Filter by codigo "0" with busca must NOT match entry where code is null
++      const zeroCode = await executeSistemaFinanceiro(
++        { tipo: "bancos", codigo: "0", busca: "pagamentos" },
++        cache,
++      );
++      expect(zeroCode.ok).toBe(true);
++      expect((zeroCode.data as { items: unknown[] }).items).toHaveLength(0);
++
++      // Filter by ISPB hits cache
++      const byIspb = await executeSistemaFinanceiro(
++        { tipo: "bancos", ispb: "18236120" },
++        cache,
++      );
++      expect(byIspb.ok).toBe(true);
++      expect((byIspb.data as { items: Array<{ name: string }> }).items[0].name).toBe(
++        "NU PAGAMENTOS - IP",
++      );
++
++      expect(fetchSpy).toHaveBeenCalledTimes(2);
++    });
++
++    it("caches Pix participants, filters by ISPB/busca/status, and never leaks the full unpaginated array", async () => {
++      const cache = new MemoryCache(20, 60_000);
++      const participants = Array.from({ length: 65 }, (_, idx) => ({
++        ispb: String(10000000 + idx),
++        nome: idx === 0 ? "BANCO INTER S.A.\u0007" : `INSTITUICAO PIX ${idx}`,
++        nome_reduzido: idx === 0 ? "INTER" : `PIX ${idx}`,
++        modalidade_participacao: "Provedor de Conta Transacional",
++        tipo_participacao: idx % 2 === 0 ? "Direta" : "Indireta",
++        inicio_operacao: "2020-11-16",
++      }));
++
++      const fetchSpy = vi
++        .spyOn(globalThis, "fetch")
++        .mockResolvedValueOnce(jsonResponse(participants));
++
++      // Default pagination caps output to 25 items even though upstream returned 65
++      const defaultPage = await executeSistemaFinanceiro({ tipo: "pix" }, cache);
++      expect(defaultPage.ok).toBe(true);
++      const defaultData = defaultPage.data as {
++        items: Array<{ nome: string }>;
++        pagination: { page: number; limit: number; total: number; total_pages: number; has_more: boolean };
++        source: string;
++        fetchedAt: string;
++        untrusted_data_notice: string;
++      };
++      expect(defaultData.items).toHaveLength(25);
++      expect(defaultData.items[0].nome).toBe("BANCO INTER S.A.");
++      expect(defaultData.pagination).toEqual({
++        page: 1,
++        limit: 25,
++        total: 65,
++        total_pages: 3,
++        has_more: true,
++      });
++      expect(defaultData.source).toBe("BrasilAPI — Participantes Pix");
++      expect(typeof defaultData.fetchedAt).toBe("string");
++      expect(defaultData.untrusted_data_notice).toBe(UNTRUSTED_EXTERNAL_DATA_NOTICE);
++
++      // Filter by ISPB + status on cached list
++      const byIspb = await executeSistemaFinanceiro(
++        { tipo: "pix", ispb: "10000000", status: "direta" },
++        cache,
++      );
++      expect(byIspb.ok).toBe(true);
++      expect((byIspb.data as { items: unknown[] }).items).toHaveLength(1);
++      expect(fetchSpy).toHaveBeenCalledTimes(1);
++    });
++
++    it("supports direct 14-digit CNPJ lookup and cached/paginated status+busca+partial CNPJ filtering for corretoras", async () => {
++      const cache = new MemoryCache(20, 60_000);
++      const corretorasList = [
++        {
++          cnpj: "76621457000185",
++          nome_social: "4UM DTVM S.A.",
++          nome_comercial: "4UM INVESTIMENTOS",
++          municipio: "CURITIBA",
++          status: "CANCELADA",
++        },
++        {
++          cnpj: "02332886000104",
++          nome_social: "XP INVESTIMENTOS CCTVM S.A.",
++          nome_comercial: "XP INVESTIMENTOS",
++          municipio: "SÃO PAULO",
++          status: "ATIVA",
++        },
++        {
++          cnpj: "61809182000130",
++          nome_social: "BTG PACTUAL CTVM S.A.",
++          nome_comercial: "BTG PACTUAL",
++          municipio: "SÃO PAULO",
++          status: "ATIVA",
++        },
++      ];
++
++      const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
++        const url = String(input);
++        if (url.endsWith("/cvm/corretoras/v1/76621457000185")) {
++          return jsonResponse(corretorasList[0]);
++        }
++        if (url.endsWith("/cvm/corretoras/v1")) {
++          return jsonResponse(corretorasList);
++        }
++        return jsonResponse({}, 404);
++      });
++
++      const direct = await executeSistemaFinanceiro(
++        { tipo: "corretoras", cnpj: "76.621.457/0001-85" },
++        cache,
++      );
++      expect(direct.ok).toBe(true);
++      expect(direct.data).toMatchObject({
++        tipo: "corretoras",
++        cnpj: "76621457000185",
++        item: { nome_comercial: "4UM INVESTIMENTOS", status: "CANCELADA" },
++      });
++
++      // Filter list by status and accent-normalized municipio
++      const activeSp = await executeSistemaFinanceiro(
++        { tipo: "corretoras", status: "ativa", busca: "sao paulo", page: 1, limit: 1 },
++        cache,
++      );
++      expect(activeSp.ok).toBe(true);
++      expect(activeSp.data).toMatchObject({
++        items: [{ cnpj: "02332886000104" }],
++        pagination: { page: 1, limit: 1, total: 2, total_pages: 2, has_more: true },
++      });
++
++      // Partial CNPJ (11 chars) falls back to filtering the cached list without extra fetch
++      const partial = await executeSistemaFinanceiro(
++        { tipo: "corretoras", cnpj: "61809182000" },
++        cache,
++      );
++      expect(partial.ok).toBe(true);
++      expect((partial.data as { items: Array<{ cnpj: string }> }).items).toHaveLength(1);
++      expect((partial.data as { items: Array<{ cnpj: string }> }).items[0].cnpj).toBe(
++        "61809182000130",
++      );
++
++      expect(fetchSpy).toHaveBeenCalledTimes(2);
++    });
++  });
++
++  describe("feriados_ddd_lookup (executeFeriadosDdd)", () => {
++    const holidays2026 = [
++      { date: "2026-01-01", name: "Confraternização mundial", type: "national" },
++      { date: "2026-04-05", name: "Páscoa", type: "national" },
++    ];
++
++    it("evaluates national holidays, weekends, business days, year mismatch, and invalid calendar dates", async () => {
++      const cache = new MemoryCache(20, 60_000);
++      const fetchSpy = vi
++        .spyOn(globalThis, "fetch")
++        .mockResolvedValueOnce(jsonResponse(holidays2026));
++
++      // 2026-01-01 = Thursday, national holiday
++      const holiday = await executeFeriadosDdd(
++        { tipo: "feriados", data: "2026-01-01" },
++        cache,
++      );
++      expect(holiday.ok).toBe(true);
++      expect(holiday.data).toMatchObject({
++        date: "2026-01-01",
++        is_holiday: true,
++        is_weekend: false,
++        is_business_day: false,
++        holiday: holidays2026[0],
++        holidays: holidays2026,
++        source: "BrasilAPI — Feriados Nacionais",
++        untrusted_data_notice: UNTRUSTED_EXTERNAL_DATA_NOTICE,
++      });
++
++      // 2026-01-03 = Saturday, non-holiday weekend (cached)
++      const weekend = await executeFeriadosDdd(
++        { tipo: "feriados", ano: 2026, data: "2026-01-03" },
++        cache,
++      );
++      expect(weekend.ok).toBe(true);
++      expect(weekend.data).toMatchObject({
++        date: "2026-01-03",
++        is_holiday: false,
++        is_weekend: true,
++        is_business_day: false,
++        holiday: null,
++      });
++
++      // 2026-01-02 = Friday, business day (cached)
++      const businessDay = await executeFeriadosDdd(
++        { tipo: "feriados", data: "2026-01-02" },
++        cache,
++      );
++      expect(businessDay.ok).toBe(true);
++      expect(businessDay.data).toMatchObject({
++        date: "2026-01-02",
++        is_holiday: false,
++        is_weekend: false,
++        is_business_day: true,
++        holiday: null,
++      });
++
++      // Year mismatch must fail without extra HTTP fetch
++      const mismatch = await executeFeriadosDdd(
++        { tipo: "feriados", ano: 2025, data: "2026-01-01" },
++        cache,
++      );
++      expect(mismatch.ok).toBe(false);
++      expect(mismatch.error).toMatch(/Year mismatch/);
++
++      // Non-existent calendar date must fail cleanly
++      const invalidCalendar = await executeFeriadosDdd(
++        { tipo: "feriados", data: "2026-02-30" },
++        cache,
++      );
++      expect(invalidCalendar.ok).toBe(false);
++      expect(invalidCalendar.error).toMatch(/Invalid date/);
++
++      expect(fetchSpy).toHaveBeenCalledTimes(1);
++    });
++
++    it("checks DDD state/cities with matching and diverging uf_esperada and caches by DDD", async () => {
++      const cache = new MemoryCache(20, 60_000);
++      const fetchSpy = vi
++        .spyOn(globalThis, "fetch")
++        .mockResolvedValueOnce(
++          jsonResponse({ state: "SP", cities: ["SÃO PAULO", "CAMPINAS", "GUARULHOS"] }),
++        );
++
++      const matched = await executeFeriadosDdd(
++        { tipo: "ddd", ddd: "11", uf_esperada: "sp" },
++        cache,
++      );
++      expect(matched.ok).toBe(true);
++      expect(matched.data).toMatchObject({
++        tipo: "ddd",
++        ddd: "11",
++        state: "SP",
++        expected_uf: "SP",
++        uf_matches: true,
++        cities: ["SÃO PAULO", "CAMPINAS", "GUARULHOS"],
++        source: "BrasilAPI — DDD",
++        untrusted_data_notice: UNTRUSTED_EXTERNAL_DATA_NOTICE,
++      });
++
++      const mismatched = await executeFeriadosDdd(
++        { tipo: "ddd", ddd: "11", uf_esperada: "RJ" },
++        cache,
++      );
++      expect(mismatched.ok).toBe(true);
++      expect(mismatched.data).toMatchObject({
++        ddd: "11",
++        state: "SP",
++        expected_uf: "RJ",
++        uf_matches: false,
++      });
++
++      expect(fetchSpy).toHaveBeenCalledTimes(1);
++    });
++  });
++
++  describe("HTTP error propagation & never caching errors", () => {
++    it("surfaces HTTP 404 and transient 503 failures without caching error responses", async () => {
++      vi.useFakeTimers();
++      const cache = new MemoryCache(20, 60_000);
++
++      const fetchSpy = vi
++        .spyOn(globalThis, "fetch")
++        .mockResolvedValueOnce(jsonResponse({}, 404))
++        .mockResolvedValue(new Response(null, { status: 503 }));
++
++      const ddd404 = await executeFeriadosDdd({ tipo: "ddd", ddd: "99" }, cache);
++      expect(ddd404).toEqual({ ok: false, error: "DDD not found: 99" });
++
++      const pendingPix = executeSistemaFinanceiro({ tipo: "pix" }, cache);
++      await vi.runAllTimersAsync();
++      const pix503 = await pendingPix;
++      expect(pix503.ok).toBe(false);
++      expect(pix503.error).toContain("service temporarily unavailable");
++
++      // Next call with a healthy fetch must not hit a cached error
++      resetCircuitBreakers();
++      fetchSpy.mockResolvedValueOnce(jsonResponse({ state: "RJ", cities: ["RIO DE JANEIRO"] }));
++      const recovered = await executeFeriadosDdd({ tipo: "ddd", ddd: "99" }, cache);
++      expect(recovered.ok).toBe(true);
++    });
++  });
++});

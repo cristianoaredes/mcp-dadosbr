@@ -121,29 +121,24 @@ OSINT value: Verify company digital presence, registration dates, nameservers.`,
 
 interface ConsumidorArgs { empresa: string; }
 
-async function executeConsumidor(args: ConsumidorArgs, cache?: Cache): Promise<LookupResult> {
+async function executeConsumidor(args: ConsumidorArgs): Promise<LookupResult> {
     const { empresa } = args;
-    const cacheKey = `consumidor:${empresa.trim().toLowerCase()}`;
-    const searchUrl = `https://www.consumidor.gov.br/pages/indicador/empresa/listar?nome=${encodeURIComponent(empresa)}`;
-    try {
-        if (cache) {
-            const cached = await cache.get(cacheKey);
-            if (cached) return { ok: true, data: cached };
-        }
-        const result = await httpJson(searchUrl);
-        if (result.ok) {
-            const payload = { empresa, results: result.data, source: "Consumidor.gov.br — SENACON" };
-            if (cache) await cache.set(cacheKey, payload);
-            return { ok: true, data: payload };
-        }
-    } catch { /* fall through */ }
     return {
-        ok: true, data: {
-            empresa, source: "Consumidor.gov.br",
-            search_url: searchUrl,
+        ok: true,
+        data: {
+            empresa,
+            source: "Consumidor.gov.br",
+            note: "Consumidor.gov.br enforces interactive anti-bot protection without a public JSON lookup API. Use the official portal or open datasets below.",
+            search_url: "https://www.consumidor.gov.br/",
             open_data: "https://dados.gov.br/dados/conjuntos-dados/reclamacoes-do-consumidor-gov-br",
-            indicators: { description: "Key metrics: complaint volume, resolution rate, response time, satisfaction score", note: `Search for "${empresa}" on Consumidor.gov.br.` },
-            complementary_sources: ["https://www.reclameaqui.com.br/", "https://www.procon.sp.gov.br/"],
+            indicators: {
+                description: "Key metrics: complaint volume, resolution rate, response time, satisfaction score",
+                note: `Search for "${empresa}" on Consumidor.gov.br.`,
+            },
+            complementary_sources: [
+                "https://www.reclameaqui.com.br/",
+                "https://www.procon.sp.gov.br/",
+            ],
         },
     };
 }
@@ -159,7 +154,7 @@ OSINT value: Assess company reputation and customer service quality.`,
         required: ["empresa"],
     },
     zodSchema: ConsumidorSchema,
-    execute: async (args, _apiConfig, cache) => executeConsumidor(args as ConsumidorArgs, cache),
+    execute: async (args) => executeConsumidor(args as ConsumidorArgs),
 });
 
 // ─── Deep Profile Orchestrator ──────────────────────────────────────────────
@@ -177,6 +172,7 @@ import { lookup } from "../core/lookup.js";
 import type { ToolExecutionContext } from "../core/registry.js";
 import { executeTransparencia } from "./government.js";
 import { executeDatajud, executeListaSuja } from "./legal.js";
+import { executeTcuCertidoes } from "./tcu.js";
 
 async function executeDeepProfile(
     args: DeepProfileArgs,
@@ -197,6 +193,7 @@ async function executeDeepProfile(
     );
     if (include_government) {
         tasks.push(executeTransparencia({ cnpj: cleanCnpj, tipo: "contratos" }, cache).then(r => { results.government_contracts = r.ok ? r.data : null; }));
+        tasks.push(executeTcuCertidoes({ cnpj: cleanCnpj }, cache).then(r => { results.tcu_certidoes = r.ok ? r.data : null; }));
     }
     if (include_legal) {
         tasks.push(executeDatajud({ query: cleanCnpj }, cache).then(r => { results.court_records = r.ok ? r.data : null; }));
@@ -223,7 +220,7 @@ async function executeDeepProfile(
 registerTool({
     name: "company_deep_profile",
     description: `Generate a comprehensive OSINT profile for a Brazilian company by orchestrating multiple data sources.
-Combines: CNPJ lookup, government transparency records, court records, domain WHOIS, slave labor blacklist, and web search.
+Combines: CNPJ lookup, government transparency records, TCU consolidated certificates, court records, domain WHOIS, slave labor blacklist, and web search.
 This is the most powerful tool for company due diligence.`,
     inputSchema: {
         type: "object",

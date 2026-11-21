@@ -1,0 +1,34 @@
+{
+  "id": "RUN-20261121-162558-tck-0043",
+  "design": "DES-0039",
+  "ticket": "TCK-0043",
+  "started_at": "2026-11-21T16:25:58Z",
+  "started_by": "ops",
+  "environment": "dev",
+  "mode": "live",
+  "status": "completed",
+  "current_step": 4,
+  "total_steps": 4,
+  "ended_at": "2026-11-21T16:48:00Z",
+  "result": "TCK-0043 completed: bcb_olinda and ibge_indicadores implemented with 16/16 unit tests (95.28% stmts) + 536/536 full tests PASS",
+  "loop_iterations": 0,
+  "attempt_count": 0,
+  "lessons_consulted": [
+    "Precisou de 2 iterações (re-execução)"
+  ],
+  "loop_cost_usd": null,
+  "cost_source": "unknown",
+  "loop_strategy": "default",
+  "context_peak": 0,
+  "final_judge_delta": 27,
+  "warmup": false,
+  "final_judge_delta_source": "judge",
+  "lesson_utility": {
+    "utility": 0.54,
+    "n_lessons": 1,
+    "lessons_consulted": [
+      "Precisou de 2 iterações (re-execução)"
+    ],
+    "signal": "computed"
+  }
+}

@@ -102,11 +102,11 @@ describe("TCK-0039 / FND-0024: createMCPServer handlers, MCP Apps & unexpected e
   });
 
   describe("ListTools, ListResources & ReadResource handlers", () => {
-    it("lists all 23 tools and attaches _meta.ui.resourceUri exclusively to the 5 MCP App tools", async () => {
+    it("lists all 29 tools and attaches _meta.ui.resourceUri exclusively to the 5 MCP App tools", async () => {
       await withMcpClient({}, async (client) => {
         const { tools } = await client.listTools();
 
-        expect(tools).toHaveLength(23);
+        expect(tools).toHaveLength(29);
         expect(tools).toHaveLength(TOOL_DEFINITIONS.length);
 
         const toolsWithUi = tools.filter((t) => t._meta?.ui !== undefined);

@@ -12,14 +12,14 @@ import { TOOL_SCHEMAS } from "../../lib/core/tool-schemas.js";
 import { CNPJ_INTELLIGENCE_TOOL } from "../../lib/core/intelligence.js";
 import { resolveApiConfig } from "../../lib/config/index.js";
 
-describe("TCK-0016: Runtime Zod Validation Across All 23 MCP Tools", () => {
+describe("TCK-0016 / TCK-0044: Runtime Zod Validation Across All 29 MCP Tools", () => {
   afterEach(() => {
     vi.restoreAllMocks();
   });
 
-  it("registers all 23 tools with a runtime Zod schema and zero api_key parameters", () => {
-    expect(getToolCount()).toBe(23);
-    expect(TOOL_DEFINITIONS).toHaveLength(23);
+  it("registers all 29 tools with a runtime Zod schema and zero api_key parameters", () => {
+    expect(getToolCount()).toBe(29);
+    expect(TOOL_DEFINITIONS).toHaveLength(29);
 
     for (const def of TOOL_DEFINITIONS) {
       expect(hasToolSchema(def.name)).toBe(true);
@@ -78,11 +78,17 @@ describe("TCK-0016: Runtime Zod Validation Across All 23 MCP Tools", () => {
       { tool: "fipe_veiculos", args: { tipo: "../../cnpj/v1/11222333000181" }, label: "traversal tipo" },
       { tool: "cnes_saude", args: { tipo: "invalid_type" }, label: "invalid cnes tipo" },
       { tool: "strategic_osint_prompt", args: { template: "unknown_tpl" }, label: "invalid template" },
+      { tool: "tcu_certidoes", args: { cnpj: "11222333000180" }, label: "bad checksum cnpj" },
+      { tool: "cnae_ncm_lookup", args: { tipo: "cnae" }, label: "missing codigo and termo" },
+      { tool: "sistema_financeiro_lookup", args: { tipo: "pix", ispb: "123" }, label: "short ispb" },
+      { tool: "feriados_ddd_lookup", args: { tipo: "ddd" }, label: "missing ddd" },
+      { tool: "bcb_olinda", args: { consulta: "ptax", data: "2026-02-30" }, label: "invalid calendar date" },
+      { tool: "ibge_indicadores", args: { codigo_ibge: "123" }, label: "invalid codigo_ibge length" },
     ];
 
-    // Confirm invalidCases covers all 23 registered tools at least once
+    // Confirm invalidCases covers all 29 registered tools at least once
     const testedTools = new Set(invalidCases.map((c) => c.tool));
-    expect(testedTools.size).toBe(23);
+    expect(testedTools.size).toBe(29);
 
     for (const { tool, args, label } of invalidCases) {
       const res = await executeRegisteredTool(tool, args, apiConfig);
@@ -95,7 +101,7 @@ describe("TCK-0016: Runtime Zod Validation Across All 23 MCP Tools", () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
-  it("versions valid .archagents/_capabilities.json and .archagents/mcp-tool-allowlist.json matching all 23 tools", () => {
+  it("versions valid .archagents/_capabilities.json and .archagents/mcp-tool-allowlist.json matching all 29 tools", () => {
     const capPath = resolve(process.cwd(), ".archagents/_capabilities.json");
     const allowlistPath = resolve(
       process.cwd(),
@@ -105,7 +111,7 @@ describe("TCK-0016: Runtime Zod Validation Across All 23 MCP Tools", () => {
     const cap = JSON.parse(readFileSync(capPath, "utf-8"));
     expect(cap.enabled).toBe(false);
     expect(cap.agentic?.mcp).toBe(true);
-    expect(cap.agentic?.tool_count).toBe(23);
+    expect(cap.agentic?.tool_count).toBe(29);
 
     const allowlist = JSON.parse(readFileSync(allowlistPath, "utf-8"));
     expect(
@@ -115,7 +121,7 @@ describe("TCK-0016: Runtime Zod Validation Across All 23 MCP Tools", () => {
     ).toBe(true);
 
     const entries = allowlist.entries as Array<Record<string, unknown>>;
-    expect(entries).toHaveLength(23);
+    expect(entries).toHaveLength(29);
 
     const ids = new Set<string>();
     const names: string[] = [];
@@ -128,7 +134,7 @@ describe("TCK-0016: Runtime Zod Validation Across All 23 MCP Tools", () => {
       ids.add(String(entry.id));
       names.push(String(entry.name));
     }
-    expect(ids.size).toBe(23);
+    expect(ids.size).toBe(29);
 
     const registeredNames = TOOL_DEFINITIONS.map((t) => t.name).sort();
     expect(names.sort()).toEqual(registeredNames);

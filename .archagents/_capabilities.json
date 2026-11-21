@@ -6,7 +6,7 @@
     "llm": false,
     "role": "mcp-server",
     "server_name": "mcp-dadosbr",
-    "tool_count": 23,
+    "tool_count": 29,
     "transports": [
       "stdio",
       "http",

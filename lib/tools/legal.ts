@@ -5,6 +5,7 @@
 import { registerTool } from "../core/registry.js";
 import { formatTimeoutMessage, httpJson } from "../core/http-client.js";
 import { executeWithConcurrencyLimit } from "../core/intelligence.js";
+import { SERVER_NAME, SERVER_VERSION } from "../config/index.js";
 import { TIMEOUTS } from "../config/timeouts.js";
 import {
     DatajudSchema,
@@ -14,8 +15,19 @@ import {
     ProcuradosSchema,
 } from "../core/tool-schemas.js";
 import { createTimeoutController, isAbortOrTimeoutError } from "../shared/utils/timeout.js";
-import { sanitizeUntrustedText } from "../shared/agentic-guard.js";
+import {
+    sanitizeUntrustedText,
+    UNTRUSTED_EXTERNAL_DATA_NOTICE,
+} from "../shared/agentic-guard.js";
 import { attachLgpdNotice, HOMONYM_HUMAN_REVIEW_NOTICE } from "../shared/compliance-notices.js";
+import {
+    decodeMteCsv,
+    LISTA_SUJA_CACHE_KEY,
+    matchMteListaSuja,
+    MTE_LISTA_SUJA_CSV_URL,
+    MteListaSujaEntry,
+    parseMteListaSujaCsv,
+} from "../shared/mte-lista-suja.js";
 import { Cache, LookupResult } from "../types/index.js";
 
 // ─── Datajud / CNJ ──────────────────────────────────────────────────────────
@@ -478,29 +490,75 @@ interface ListaSujaArgs { query: string; }
 
 async function executeListaSuja(args: ListaSujaArgs, cache?: Cache): Promise<LookupResult> {
     const { query } = args;
-    const cacheKey = `lista_suja:${query.trim().toLowerCase()}`;
-    const searchUrl = `https://portaldatransparencia.gov.br/sancoes/consulta?paginacaoSimples=true&tamanhoPagina=20&offset=0&direcaoOrdenacao=asc&colunaOrdenacao=sancionado_razaoSocial&sancionado=${encodeURIComponent(query)}`;
-    try {
-        if (cache) {
-            const cached = await cache.get(cacheKey);
-            if (cached) return { ok: true, data: cached };
+    let entries: MteListaSujaEntry[] | null = null;
+    let fromCache = false;
+
+    if (cache) {
+        const cached = await cache.get<MteListaSujaEntry[]>(LISTA_SUJA_CACHE_KEY);
+        if (Array.isArray(cached)) {
+            entries = cached;
+            fromCache = true;
         }
-        const result = await httpJson(searchUrl);
-        if (result.ok && result.data) {
-            const payload = { query, results: result.data, source: "Portal da Transparência — Lista Suja" };
-            if (cache) await cache.set(cacheKey, payload);
-            return { ok: true, data: payload };
+    }
+
+    if (entries === null) {
+        const ctrl = createTimeoutController(10_000);
+        try {
+            const res = await fetch(MTE_LISTA_SUJA_CSV_URL, {
+                headers: {
+                    "User-Agent": `${SERVER_NAME}/${SERVER_VERSION}`,
+                    Accept: "text/csv, text/plain, */*",
+                },
+                signal: ctrl.signal,
+            });
+            if (res.ok) {
+                const buffer = await res.arrayBuffer();
+                const csvText = decodeMteCsv(buffer);
+                const parsed = parseMteListaSujaCsv(csvText);
+                entries = parsed;
+                if (cache) {
+                    await cache.set(LISTA_SUJA_CACHE_KEY, entries);
+                }
+            }
+        } catch {
+            /* fall through to guided fallback without caching errors */
+        } finally {
+            ctrl.cleanup();
         }
-    } catch { /* fall through */ }
+    }
+
+    if (entries !== null) {
+        const { total_matches, matches } = matchMteListaSuja(entries, query);
+        return {
+            ok: true,
+            data: attachLgpdNotice({
+                query,
+                status: matches.length > 0 ? "FOUND" : "NOT_FOUND",
+                total_matches,
+                matches,
+                truncated: total_matches > matches.length,
+                total_employers_in_list: entries.length,
+                cached: Boolean(fromCache),
+                source: "MTE — Cadastro de Empregadores (Lista Suja)",
+                source_url: MTE_LISTA_SUJA_CSV_URL,
+                fetchedAt: new Date().toISOString(),
+                untrusted_data_notice: UNTRUSTED_EXTERNAL_DATA_NOTICE,
+            }),
+        };
+    }
+
     return {
-        ok: true, data: {
-            query, source: "Portal da Transparência / dados.gov.br",
-            instruction: `To verify if "${query}" appears on the Lista Suja (slave labor blacklist), check:`,
+        ok: true,
+        data: attachLgpdNotice({
+            query,
+            source: "Portal da Transparência / MTE",
+            instruction: `Unable to fetch the MTE Lista Suja CSV automatically. To verify if "${query}" appears on the Lista Suja (slave labor blacklist), check:`,
             manual_urls: [
+                MTE_LISTA_SUJA_CSV_URL,
                 "https://portaldatransparencia.gov.br/sancoes",
                 "https://dados.gov.br/dados/conjuntos-dados/cadastro-de-empregadores-que-tenham-submetido-trabalhadores-a-condicoes-analogas-a-de-escravo",
             ],
-        },
+        }),
     };
 }
 
@@ -519,5 +577,12 @@ OSINT value: Critical ESG/compliance indicator.`,
 });
 
 // Export functions needed by deep_profile orchestrator and unit tests
-export { executeDatajud, executeBnmp, executeProcurados, executeListaSuja };
+export {
+    executeDatajud,
+    executeBnmp,
+    executeProcurados,
+    executeListaSuja,
+    LISTA_SUJA_CACHE_KEY,
+    MTE_LISTA_SUJA_CSV_URL,
+};
 export type { DatajudArgs, BnmpArgs, ProcuradosArgs, ListaSujaArgs };

@@ -1,11 +1,30 @@
 /**
- * Runtime Zod validation schemas for all 23 registered MCP tools.
+ * Runtime Zod validation schemas for all 29 registered MCP tools.
  * Enforces runtime type safety, explicit min/max bounds, and format allowlists
  * before any registered tool handler executes.
  */
 
 import { z, type ZodType } from "zod";
 import { CnpjSchema, CepSchema } from "./validation.js";
+import { TcuCertidoesSchema } from "../shared/tcu-schema.js";
+import {
+  CnaeNcmSchema,
+  SistemaFinanceiroSchema,
+  FeriadosDddSchema,
+} from "../shared/fiscal-banking-schemas.js";
+import {
+  BcbOlindaSchema,
+  IbgeIndicadoresSchema,
+} from "../shared/olinda-ibge-schemas.js";
+
+export {
+  TcuCertidoesSchema,
+  CnaeNcmSchema,
+  SistemaFinanceiroSchema,
+  FeriadosDddSchema,
+  BcbOlindaSchema,
+  IbgeIndicadoresSchema,
+};
 
 export const DORK_CATEGORIES = [
   "government",
@@ -270,4 +289,10 @@ export const TOOL_SCHEMAS: Record<string, ZodType> = {
   fipe_veiculos: FipeSchema,
   cnes_saude: CnesSchema,
   strategic_osint_prompt: StrategicOsintPromptSchema,
+  tcu_certidoes: TcuCertidoesSchema,
+  cnae_ncm_lookup: CnaeNcmSchema,
+  sistema_financeiro_lookup: SistemaFinanceiroSchema,
+  feriados_ddd_lookup: FeriadosDddSchema,
+  bcb_olinda: BcbOlindaSchema,
+  ibge_indicadores: IbgeIndicadoresSchema,
 };

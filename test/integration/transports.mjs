@@ -17,9 +17,11 @@ const timeout = 5_000;
 // Keep this public catalogue explicit so a tool missing from both transports fails CI.
 const expectedTools = [
   "bacen_taxas",
+  "bcb_olinda",
   "bnmp_mandados",
   "ceis_cnep_lookup",
   "cep_lookup",
+  "cnae_ncm_lookup",
   "cnes_saude",
   "cnpj_intelligence",
   "cnpj_lookup",
@@ -29,7 +31,9 @@ const expectedTools = [
   "cpf_validate",
   "datajud_processos",
   "domain_whois",
+  "feriados_ddd_lookup",
   "fipe_veiculos",
+  "ibge_indicadores",
   "ibge_localidades",
   "lista_suja_lookup",
   "oab_advogado",
@@ -37,7 +41,9 @@ const expectedTools = [
   "procurados_lookup",
   "querido_diario",
   "sequentialthinking",
+  "sistema_financeiro_lookup",
   "strategic_osint_prompt",
+  "tcu_certidoes",
   "transparencia_lookup",
 ];
 

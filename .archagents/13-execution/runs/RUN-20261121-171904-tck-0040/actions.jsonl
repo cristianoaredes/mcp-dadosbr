@@ -1,0 +1,2 @@
+{"step":1,"ts":"2026-11-21T17:19:05Z","action":"aggregate_wave1_wave2_children","gate_status":"flow","children":["TCK-0041","TCK-0042","TCK-0043","TCK-0044"]}
+{"step":2,"ts":"2026-11-21T17:19:12Z","action":"consolidate_epic_tck_0040_evidence","gate_status":"flow","criteria":"6/6"}

@@ -1,0 +1,34 @@
+{
+  "id": "RUN-20261121-171904-tck-0040",
+  "design": "DES-0036",
+  "ticket": "TCK-0040",
+  "started_at": "2026-11-21T17:19:04Z",
+  "started_by": "ops",
+  "environment": "dev",
+  "mode": "live",
+  "status": "completed",
+  "current_step": 2,
+  "total_steps": 2,
+  "ended_at": "2026-11-21T17:19:12Z",
+  "result": "Epic SPC-0001 v0.7.0 closed by child aggregation: TCK-0041 (VER-20261121-165515-tck-0041), TCK-0042 (VER-20261121-165517-tck-0042), TCK-0043 (VER-20261121-165518-tck-0043), TCK-0044 (VER-20261121-171817-tck-0044) all done; 29 tools Worker-safe across stdio & HTTP/SSE, 5 MCP Apps, 536/536 Vitest tests passing.",
+  "loop_iterations": 1,
+  "attempt_count": 1,
+  "lessons_consulted": [
+    "Precisou de 2 iterações (re-execução)"
+  ],
+  "loop_cost_usd": null,
+  "cost_source": "unknown",
+  "loop_strategy": "default",
+  "context_peak": 0,
+  "final_judge_delta": 42,
+  "warmup": false,
+  "final_judge_delta_source": "judge",
+  "lesson_utility": {
+    "utility": 0.84,
+    "n_lessons": 1,
+    "lessons_consulted": [
+      "Precisou de 2 iterações (re-execução)"
+    ],
+    "signal": "computed"
+  }
+}
