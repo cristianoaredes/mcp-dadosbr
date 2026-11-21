@@ -361,6 +361,14 @@ Leia o [guia de contribuição](CONTRIBUTING.md) ou abra uma [issue](https://git
 
 ---
 
+## Privacidade e LGPD
+
+O MCP DadosBR realiza consultas sob demanda a fontes públicas brasileiras e não mantém banco de dados permanente próprio (utilizando apenas cache efêmero opcional em memória ou Cloudflare KV com TTL). Consulte a [Política de Privacidade e Transparência LGPD (`PRIVACY.md`)](PRIVACY.md) para detalhes sobre bases legais (LGPD Art. 6º e Art. 7º), direitos do titular (Art. 18), uso de provedores externos (Tavily, Perplexity e Cloudflare Workers) e salvaguardas contra homônimos com revisão humana obrigatória em ferramentas jurídicas e sancionatórias (Art. 20).
+
+- **Canal do Encarregado / DPO (LGPD Art. 41):** operadores que hospedam instâncias públicas ou privadas devem configurar a variável `MCP_DPO_CONTACT` (exposta em `GET /` no Cloudflare Worker em `privacy.dpo_contact`). Para contato com os mantenedores do projeto open source, consulte [`PRIVACY.md`](PRIVACY.md).
+
+---
+
 ## English
 
 ### MCP DadosBR `by Orqo` — Brazilian public data in AI conversations, with source, provenance, and explicit boundaries.

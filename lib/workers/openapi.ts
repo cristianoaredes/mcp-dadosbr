@@ -16,7 +16,12 @@ export function generateOpenAPISchema(requestUrl: string): unknown {
     info: {
       title: 'MCP DadosBR API',
       description: 'Brazilian public data lookup API for CNPJ (companies) and CEP (postal codes) with advanced search capabilities',
-      version: SERVER_VERSION
+      version: SERVER_VERSION,
+      contact: {
+        name: 'MCP DadosBR Maintainers / DPO',
+        url: 'https://github.com/cristianoaredes/mcp-dadosbr/blob/main/PRIVACY.md',
+      },
+      'x-privacy-policy': 'https://github.com/cristianoaredes/mcp-dadosbr/blob/main/PRIVACY.md',
     },
     servers: [{ url: origin }],
     security: [

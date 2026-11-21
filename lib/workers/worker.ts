@@ -95,6 +95,11 @@ async function routeRequest(
 
     case '/': {
       // Root endpoint with basic info
+      const rawDpoContact = (env as { MCP_DPO_CONTACT?: unknown } | undefined)?.MCP_DPO_CONTACT;
+      const dpoContact =
+        typeof rawDpoContact === 'string' && rawDpoContact.trim().length > 0
+          ? rawDpoContact.trim()
+          : 'See PRIVACY.md (LGPD Art. 41)';
       const info = {
         service: 'MCP DadosBR',
         description:
@@ -114,6 +119,10 @@ async function routeRequest(
         },
         tools: TOOL_DEFINITIONS.map((tool) => tool.name),
         documentation: 'https://github.com/cristianoaredes/mcp-dadosbr',
+        privacy: {
+          policy: 'https://github.com/cristianoaredes/mcp-dadosbr/blob/main/PRIVACY.md',
+          dpo_contact: dpoContact,
+        },
         cloudflare_docs: {
           agents: 'https://developers.cloudflare.com/agents/',
           sse: 'https://developers.cloudflare.com/agents/api-reference/http-sse/',
