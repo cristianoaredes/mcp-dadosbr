@@ -5,8 +5,8 @@ title: "[SPC-0001] Pacote v0.7.0 — 29 tools Worker-safe e reparo Lista Suja/Co
 source: spec
 created_at: 2026-11-21T16:23:35Z
 created_by: ops
-updated_at: 2026-11-21T16:27:20Z
-status: executing
+updated_at: 2026-11-21T17:19:45Z
+status: done
 severity: medium
 category: epic
 effort: L
@@ -16,7 +16,8 @@ business_impact: ""
 linked_findings: []
 linked_designs:
   - DES-0036
-linked_runs: []
+linked_runs:
+  - RUN-20261121-171904-tck-0040
 linked_verifications: []
 linked_docs:
   - .archagents/12-inception/specs/SPC-0001-pacote-fontes-transversais-v070.md
@@ -58,3 +59,5 @@ Antes da `v0.7.0`, `package.json` aponta `0.6.0`, `TOOL_DEFINITIONS` possui 23 t
 - 2026-11-21T16:24:37Z - **triaged** - Compiled from SPC-0001 (DoR 100/100)
 - 2026-11-21T16:27:20Z - **designed** - DES-0036 approved
 - 2026-11-21T16:27:20Z - **executing** - Epic tracking Wave 1+2
+- 2026-11-21T17:19:37Z - **verifying** - Wave 1 (TCK-0041..0043) and Wave 2 (TCK-0044) completed and verified
+- 2026-11-21T17:19:45Z - **done** - Epic SPC-0001 v0.7.0 closed by child aggregation (TCK-0041..0044 done)
