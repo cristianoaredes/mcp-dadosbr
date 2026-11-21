@@ -11,6 +11,12 @@ import {
   PROCURADOS_CONCURRENCY,
   executeProcurados,
 } from "../../lib/tools/legal.js";
+import { executeTcuCertidoes } from "../../lib/tools/tcu.js";
+
+const SAMPLE_MTE_CSV = [
+  "ID;Ano da ação fiscal;UF;Empregador;CNPJ/CPF;Estabelecimento;Trabalhadores envolvidos;CNAE;Decisão administrativa de procedência;Inclusão no Cadastro de Empregadores",
+  "1;2025;SP;ACME LTDA;11.222.333/0001-81;Matriz;8;0111-3/01;10/01/2025;01/04/2025",
+].join("\r\n");
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -241,10 +247,17 @@ describe("FND-0011 / TCK-0023: Caching, IBGE Pagination/Filtering, DeepProfile L
         if (url.includes("api-publica.datajud.cnj.jus.br")) return jsonResponse({ hits: [] });
         if (url.includes("cna.oab.org.br")) return jsonResponse({ Data: [] });
         if (url.includes("portalbnmp.cnj.jus.br")) return jsonResponse({ content: [] });
-        if (url.includes("portaldatransparencia.gov.br/sancoes/consulta")) return jsonResponse({ rows: [] });
+        if (url.includes("cadastro_de_empregadores.csv")) {
+          return new Response(SAMPLE_MTE_CSV, {
+            status: 200,
+            headers: { "Content-Type": "text/csv; charset=utf-8" },
+          });
+        }
+        if (url.includes("certidoes-apf.apps.tcu.gov.br")) {
+          return jsonResponse({ certidoes: [] });
+        }
         if (url.includes("apidadosabertos.saude.gov.br")) return jsonResponse({ estabelecimentos: [] });
         if (url.includes("rdap.registro.br")) return jsonResponse({ ldhName: "exemplo.com.br" });
-        if (url.includes("consumidor.gov.br")) return jsonResponse({ empresas: [] });
         return jsonResponse({}, 404);
       });
 
@@ -287,20 +300,24 @@ describe("FND-0011 / TCK-0023: Caching, IBGE Pagination/Filtering, DeepProfile L
       await executeTool("ceis_cnep_lookup", { query: "11222333000181", tipo: "all" }, apiConfig, spyCache);
       expect(fetchSpy.mock.calls.length).toBeGreaterThan(callsBeforeSecondPartial);
 
-      // Public read-heavy tools hit cache on 2nd call
+      // Public read-heavy tools hit cache on 2nd call; consumidor_reclamacoes triggers 0 fetches
       const callsBeforePublic = fetchSpy.mock.calls.length;
       await executeTool("oab_advogado", { inscricao: "12345" }, apiConfig, spyCache);
       await executeTool("oab_advogado", { inscricao: "12345" }, apiConfig, spyCache);
       await executeTool("bnmp_mandados", { nome: "Maria Souza" }, apiConfig, spyCache);
       await executeTool("bnmp_mandados", { nome: "Maria Souza" }, apiConfig, spyCache);
       await executeTool("lista_suja_lookup", { query: "ACME" }, apiConfig, spyCache);
-      await executeTool("lista_suja_lookup", { query: "ACME" }, apiConfig, spyCache);
+      await executeTool("lista_suja_lookup", { query: "OUTRA" }, apiConfig, spyCache);
       await executeTool("cnes_saude", { tipo: "estabelecimento", uf: "35" }, apiConfig, spyCache);
       await executeTool("cnes_saude", { tipo: "estabelecimento", uf: "35" }, apiConfig, spyCache);
       await executeTool("domain_whois", { domain: "exemplo.com.br" }, apiConfig, spyCache);
       await executeTool("domain_whois", { domain: "exemplo.com.br" }, apiConfig, spyCache);
+      await executeTcuCertidoes({ cnpj: "11222333000181" }, spyCache);
+      await executeTcuCertidoes({ cnpj: "11222333000181" }, spyCache);
+      const callsBeforeConsumidor = fetchSpy.mock.calls.length;
       await executeTool("consumidor_reclamacoes", { empresa: "ACME" }, apiConfig, spyCache);
       await executeTool("consumidor_reclamacoes", { empresa: "ACME" }, apiConfig, spyCache);
+      expect(fetchSpy.mock.calls.length - callsBeforeConsumidor).toBe(0);
       expect(fetchSpy.mock.calls.length - callsBeforePublic).toBe(6);
 
       // Missing TRANSPARENCIA_API_KEY on ceis_cnep_lookup must fall back rather than serving cached data
@@ -317,6 +334,7 @@ describe("FND-0011 / TCK-0023: Caching, IBGE Pagination/Filtering, DeepProfile L
 
       // Error/fallback responses on public tools must NOT be cached
       vi.spyOn(globalThis, "fetch").mockImplementation(async () => jsonResponse({}, 403));
+      baseCache.clear();
       const callsBeforeFallbacks = fetchSpy.mock.calls.length;
       await executeTool("oab_advogado", { inscricao: "99999" }, apiConfig, spyCache);
       await executeTool("oab_advogado", { inscricao: "99999" }, apiConfig, spyCache);
@@ -326,12 +344,15 @@ describe("FND-0011 / TCK-0023: Caching, IBGE Pagination/Filtering, DeepProfile L
       await executeTool("lista_suja_lookup", { query: "FALLBACK" }, apiConfig, spyCache);
       await executeTool("cnes_saude", { tipo: "estabelecimento", uf: "33" }, apiConfig, spyCache);
       await executeTool("cnes_saude", { tipo: "estabelecimento", uf: "33" }, apiConfig, spyCache);
+      const tcuFail1 = await executeTcuCertidoes({ cnpj: "11222333000181" }, spyCache);
+      const tcuFail2 = await executeTcuCertidoes({ cnpj: "11222333000181" }, spyCache);
+      expect(tcuFail1.ok || tcuFail2.ok).toBe(false);
       await executeTool("consumidor_reclamacoes", { empresa: "FALLBACK" }, apiConfig, spyCache);
       await executeTool("consumidor_reclamacoes", { empresa: "FALLBACK" }, apiConfig, spyCache);
       const whoisFail1 = await executeTool("domain_whois", { domain: "notfound.invalid" }, apiConfig, spyCache);
       const whoisFail2 = await executeTool("domain_whois", { domain: "notfound.invalid" }, apiConfig, spyCache);
       expect(whoisFail1.ok || whoisFail2.ok).toBe(false);
-      // 2 uncached attempts x (5 single-call tools + 2 RDAP hops for domain_whois) = 14 fetches
+      // 2 uncached attempts x (5 upstream single-call tools + 2 RDAP hops for domain_whois) + 0 consumidor = 14 fetches
       expect(fetchSpy.mock.calls.length - callsBeforeFallbacks).toBe(14);
 
       // Security invariant: cache keys must never contain API secrets

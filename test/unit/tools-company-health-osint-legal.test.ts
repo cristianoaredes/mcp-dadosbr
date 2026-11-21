@@ -4,6 +4,20 @@ import { MemoryCache } from "../../lib/core/cache.js";
 import { deduplicate, getPendingRequestCount, lookup } from "../../lib/tools/core.js";
 import { resetCircuitBreakers } from "../../lib/core/http-client.js";
 import { resolveApiConfig } from "../../lib/config/index.js";
+import { UNTRUSTED_EXTERNAL_DATA_NOTICE } from "../../lib/shared/agentic-guard.js";
+import { HOMONYM_HUMAN_REVIEW_NOTICE } from "../../lib/shared/compliance-notices.js";
+
+const SAMPLE_MTE_CSV = [
+  "ID;Ano da ação fiscal;UF;Empregador;CNPJ/CPF;Estabelecimento;Trabalhadores envolvidos;CNAE;Decisão administrativa de procedência;Inclusão no Cadastro de Empregadores",
+  "1;2025;SP;ACME AGRO LTDA;11.222.333/0001-81;Fazenda Modelo;12;0111-3/01;10/01/2025;01/04/2025",
+].join("\r\n");
+
+function csvResponse(body: string, status = 200): Response {
+  return new Response(body, {
+    status,
+    headers: { "Content-Type": "text/csv; charset=utf-8" },
+  });
+}
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -184,24 +198,22 @@ describe("MCP Tools (Company, Health, OSINT, Legal, Government) & Tool Orchestra
       expect(notFound).toEqual({ ok: false, error: "Domain not found in RDAP: missing.invalid" });
     });
 
-    it("consumidor_reclamacoes returns API results on 200 and structured portal fallback on error", async () => {
-      vi.spyOn(globalThis, "fetch")
-        .mockResolvedValueOnce(jsonResponse({ empresas: [{ nome: "ACME" }] }))
-        .mockResolvedValueOnce(jsonResponse({}, 404));
+    it("consumidor_reclamacoes returns guided portal fallback with zero fetch calls", async () => {
+      const fetchSpy = vi.spyOn(globalThis, "fetch");
 
-      const apiOk = await executeTool("consumidor_reclamacoes", { empresa: "ACME" }, apiConfig);
-      expect(apiOk.ok).toBe(true);
-      expect(apiOk.data).toMatchObject({ source: "Consumidor.gov.br — SENACON" });
-
-      const fallback = await executeTool("consumidor_reclamacoes", { empresa: "ACME" }, apiConfig);
-      expect(fallback.ok).toBe(true);
-      expect(fallback.data).toMatchObject({
+      const res = await executeTool("consumidor_reclamacoes", { empresa: "ACME" }, apiConfig);
+      expect(res.ok).toBe(true);
+      expect(fetchSpy).not.toHaveBeenCalled();
+      expect(res.data).toMatchObject({
+        empresa: "ACME",
         source: "Consumidor.gov.br",
+        note: expect.stringMatching(/anti-bot/i),
+        search_url: "https://www.consumidor.gov.br/",
         open_data: expect.stringContaining("dados.gov.br"),
       });
     });
 
-    it("company_deep_profile orchestrates full profile (with keys + domain) and partial failure recovery", async () => {
+    it("company_deep_profile orchestrates full profile (including tcu_certidoes + MTE CSV) and partial failure recovery", async () => {
       process.env.TRANSPARENCIA_API_KEY = "transp-key";
       process.env.DATAJUD_API_KEY = "datajud-key";
       process.env.PERPLEXITY_API_KEY = "pplx-key";
@@ -210,9 +222,25 @@ describe("MCP Tools (Company, Health, OSINT, Legal, Government) & Tool Orchestra
         const url = String(input);
         if (url.includes("api.opencnpj.org")) return jsonResponse({ cnpj: "11222333000181", uf: "SP" });
         if (url.includes("portaldatransparencia.gov.br/api-de-dados")) return jsonResponse([{ id: 1 }]);
+        if (url.includes("certidoes-apf.apps.tcu.gov.br")) {
+          return jsonResponse({
+            razaoSocial: "ACME AGRO LTDA",
+            certidoes: [
+              {
+                emissor: "TCU",
+                tipo: "Licitantes Inidôneos",
+                dataHoraEmissao: "2026-11-21 10:00:00",
+                descricao: "Certidão negativa",
+                situacao: "NADA_CONSTA",
+                observacao: null,
+                linkConsultaManual: "https://contas.tcu.gov.br/",
+              },
+            ],
+          });
+        }
         if (url.includes("api-publica.datajud.cnj.jus.br")) return jsonResponse({ hits: { total: 2 } });
         if (url.includes("rdap.registro.br")) return jsonResponse({ ldhName: "acme.com.br" });
-        if (url.includes("portaldatransparencia.gov.br/sancoes")) return jsonResponse({ itens: [] });
+        if (url.includes("cadastro_de_empregadores.csv")) return csvResponse(SAMPLE_MTE_CSV);
         if (url.includes("perplexity.ai")) {
           return jsonResponse({ choices: [{ message: { content: "news item" } }] });
         }
@@ -240,6 +268,7 @@ describe("MCP Tools (Company, Health, OSINT, Legal, Government) & Tool Orchestra
         expect.arrayContaining([
           "cnpj_data",
           "government_contracts",
+          "tcu_certidoes",
           "court_records",
           "domain_whois",
           "lista_suja",
@@ -247,7 +276,7 @@ describe("MCP Tools (Company, Health, OSINT, Legal, Government) & Tool Orchestra
         ])
       );
 
-      // Partial failures: CNPJ upstream 404 + flags false -> recovers cleanly & records errors_encountered
+      // Partial failures: CNPJ + TCU upstream 404 -> degrades tcu_certidoes to null cleanly
       delete process.env.TRANSPARENCIA_API_KEY;
       delete process.env.DATAJUD_API_KEY;
       vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
@@ -258,7 +287,7 @@ describe("MCP Tools (Company, Health, OSINT, Legal, Government) & Tool Orchestra
         "company_deep_profile",
         {
           cnpj: "11222333000181",
-          include_government: false,
+          include_government: true,
           include_legal: false,
           include_news: false,
         },
@@ -271,6 +300,7 @@ describe("MCP Tools (Company, Health, OSINT, Legal, Government) & Tool Orchestra
       };
       expect(partialData.errors_encountered?.length).toBeGreaterThan(0);
       expect(partialData.sources_unavailable).toContain("cnpj_data");
+      expect(partialData.sources_unavailable).toContain("tcu_certidoes");
     });
   });
 
@@ -393,8 +423,8 @@ describe("MCP Tools (Company, Health, OSINT, Legal, Government) & Tool Orchestra
         // BNMP ok + non-timeout 403 fallback
         .mockResolvedValueOnce(jsonResponse({ content: [] }))
         .mockResolvedValueOnce(jsonResponse({ message: "captcha" }, 403))
-        // Lista Suja ok + fallback
-        .mockResolvedValueOnce(jsonResponse({ data: [] }))
+        // Lista Suja MTE CSV ok + fallback
+        .mockResolvedValueOnce(csvResponse(SAMPLE_MTE_CSV))
         .mockResolvedValueOnce(jsonResponse({}, 403));
 
       const oabOk = await executeTool(
@@ -425,11 +455,24 @@ describe("MCP Tools (Company, Health, OSINT, Legal, Government) & Tool Orchestra
 
       const listaOk = await executeTool("lista_suja_lookup", { query: "ACME" }, apiConfig);
       expect(listaOk.ok).toBe(true);
-      expect(listaOk.data).toMatchObject({ source: "Portal da Transparência — Lista Suja" });
+      expect(listaOk.data).toMatchObject({
+        status: "FOUND",
+        total_matches: 1,
+        source: "MTE — Cadastro de Empregadores (Lista Suja)",
+        lgpd_notice: HOMONYM_HUMAN_REVIEW_NOTICE,
+        untrusted_data_notice: UNTRUSTED_EXTERNAL_DATA_NOTICE,
+      });
 
       const listaFallback = await executeTool("lista_suja_lookup", { query: "ACME" }, apiConfig);
       expect(listaFallback.ok).toBe(true);
-      expect(listaFallback.data).toMatchObject({ source: "Portal da Transparência / dados.gov.br" });
+      expect(listaFallback.data).toMatchObject({
+        source: "Portal da Transparência / MTE",
+        lgpd_notice: HOMONYM_HUMAN_REVIEW_NOTICE,
+        manual_urls: expect.arrayContaining([
+          expect.stringContaining("cadastro_de_empregadores.csv"),
+          "https://portaldatransparencia.gov.br/sancoes",
+        ]),
+      });
 
       // Procurados FOUND + NOT_FOUND (13 paginated pages each)
       vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
