@@ -1,0 +1,24 @@
+{
+  "id": "RUN-20261121-162556-tck-0042",
+  "design": "DES-0038",
+  "ticket": "TCK-0042",
+  "started_at": "2026-11-21T16:25:56Z",
+  "started_by": "ops",
+  "environment": "dev",
+  "mode": "live",
+  "status": "running",
+  "current_step": 0,
+  "total_steps": 4,
+  "ended_at": null,
+  "result": null,
+  "loop_iterations": 0,
+  "attempt_count": 0,
+  "lessons_consulted": [
+    "Precisou de 2 itera\u00e7\u00f5es (re-execu\u00e7\u00e3o)"
+  ],
+  "loop_cost_usd": null,
+  "cost_source": "unknown",
+  "loop_strategy": "default",
+  "context_peak": 0,
+  "final_judge_delta": 0
+}
