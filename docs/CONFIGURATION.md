@@ -128,15 +128,13 @@ MCP_TRANSPORT=http MCP_HTTP_PORT=3000 npx @aredes.me/mcp-dadosbr
 ```
 
 **Features:**
-- JSON-RPC over HTTP
-- CORS support
-- Health check endpoint
-- Metrics endpoint
+- MCP SSE + JSON-RPC over HTTP
+- Host and Origin/CORS validation
+- Per-IP rate limiting
 
 **Endpoints:**
-- `POST /mcp` - MCP JSON-RPC
-- `GET /health` - Health check
-- `GET /metrics` - Performance metrics
+- `GET /mcp` - Establish SSE stream (`SSEServerTransport`)
+- `POST /messages?sessionId=<id>` - MCP JSON-RPC messages for an active SSE session
 
 ## 🔗 API Customization
 
@@ -297,9 +295,10 @@ wrangler secret put MCP_API_KEY
 MCP_API_KEY=your-secret-key wrangler deploy
 ```
 
-**Protected Endpoints:**
+**Protected Endpoints (when `MCP_API_KEY` is configured):**
 - REST API endpoints: `/cnpj/*`, `/cep/*`, `/search`, `/intelligence`, `/thinking`
-- **Not Protected:** MCP protocol endpoints (`/mcp`, `/sse`) for AI assistant compatibility
+- MCP protocol endpoints: `/mcp`, `/sse`
+- **Public Endpoints:** `/health`, `/`, `/openapi.json`, `/.well-known/*`
 
 **Authentication Methods:**
 - `Authorization: Bearer <key>`

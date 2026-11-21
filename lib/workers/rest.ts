@@ -33,6 +33,10 @@ export async function handleLookupEndpoint(
     const mcpResponse = await handleMCPRequest(mcpRequest, env);
 
     if (mcpResponse.error) {
+      const isNotFound =
+        mcpResponse.error.code === -32603 &&
+        typeof mcpResponse.error.data === 'string' &&
+        /not found/i.test(mcpResponse.error.data);
       return new Response(
         JSON.stringify({
           error: mcpResponse.error.message,
@@ -40,7 +44,7 @@ export async function handleLookupEndpoint(
           data: mcpResponse.error.data
         }),
         {
-          status: mcpResponse.error.code === -32603 && mcpResponse.error.data === 'Not found' ? 404 : 400,
+          status: isNotFound ? 404 : 400,
           headers: {
             'Content-Type': 'application/json',
             ...corsHeaders,
@@ -146,7 +150,14 @@ export async function handleIntelligenceEndpoint(
 ): Promise<Response> {
   try {
     const body = await request.json() as IntelligenceRequestBody;
-    const { cnpj, categories, max_results_per_query = 5, max_queries = 10 } = body;
+    const {
+      cnpj,
+      categories,
+      provider,
+      max_results_per_query,
+      max_queries,
+      max_results,
+    } = body;
 
     if (!cnpj) {
       return new Response(
@@ -158,13 +169,20 @@ export async function handleIntelligenceEndpoint(
       );
     }
 
+    const args: Record<string, unknown> = { cnpj };
+    if (categories !== undefined) args.categories = categories;
+    if (provider !== undefined) args.provider = provider;
+    if (max_results_per_query !== undefined) args.max_results_per_query = max_results_per_query;
+    if (max_queries !== undefined) args.max_queries = max_queries;
+    if (max_results !== undefined) args.max_results = max_results;
+
     const mcpRequest: MCPRequest = {
       jsonrpc: '2.0',
       id: Date.now(),
       method: 'tools/call',
       params: {
         name: 'cnpj_intelligence',
-        arguments: { cnpj, categories, max_results_per_query, max_queries }
+        arguments: args
       }
     };
 
