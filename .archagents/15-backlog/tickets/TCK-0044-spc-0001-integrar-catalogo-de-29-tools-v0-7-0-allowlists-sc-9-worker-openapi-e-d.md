@@ -5,8 +5,8 @@ title: "[SPC-0001] Integrar catalogo de 29 tools v0.7.0, allowlists SC-9, Worker
 source: spec
 created_at: 2026-11-21T16:23:37Z
 created_by: ops
-updated_at: 2026-11-21T17:12:05Z
-status: verifying
+updated_at: 2026-11-21T17:19:03Z
+status: done
 severity: medium
 category: feature
 effort: M
@@ -18,7 +18,8 @@ linked_designs:
   - DES-0040
 linked_runs:
   - RUN-20261121-170002-tck-0044
-linked_verifications: []
+linked_verifications:
+  - VER-20261121-171817-tck-0044
 linked_docs:
   - .archagents/12-inception/specs/SPC-0001-pacote-fontes-transversais-v070.md
 external_refs: []
@@ -59,3 +60,4 @@ Antes desta integração, `TOOL_DEFINITIONS` lista 23 tools, `package.json` decl
 - 2026-11-21T17:00:02Z - **designed** - DES-0040 approved
 - 2026-11-21T17:00:03Z - **executing** - Wave 2 integration execution (RUN-20261121-170002-tck-0044)
 - 2026-11-21T17:12:05Z - **verifying** - 29-tool catalog v0.7.0, allowlists, tests and docs committed; ready for P10 verify
+- 2026-11-21T17:19:03Z - **done** - P10 verified and judged for v0.7.0 catalog integration
