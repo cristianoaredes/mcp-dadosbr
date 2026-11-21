@@ -5,8 +5,8 @@ title: "[SPC-0001] Reparar lista_suja_lookup (CSV MTE), sanear consumidor_reclam
 source: spec
 created_at: 2026-11-21T16:23:36Z
 created_by: ops
-updated_at: 2026-11-21T16:27:20Z
-status: executing
+updated_at: 2026-11-21T16:50:36Z
+status: verifying
 severity: medium
 category: feature
 effort: M
@@ -51,3 +51,4 @@ Antes do fix, `lib/tools/legal.ts:L482` consulta `portaldatransparencia.gov.br/s
 - 2026-11-21T16:24:37Z - **triaged** - Compiled from SPC-0001 (DoR 100/100)
 - 2026-11-21T16:25:55Z - **designed** - DES-0037 approved
 - 2026-11-21T16:27:20Z - **executing** - Wave 1 parallel execution (RUN-20261121-162555-tck-0041)
+- 2026-11-21T16:50:36Z - **verifying** - Wave 1 merged and 536/536 tests green
