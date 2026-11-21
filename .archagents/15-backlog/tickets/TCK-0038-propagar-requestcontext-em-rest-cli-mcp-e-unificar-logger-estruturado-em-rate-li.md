@@ -5,8 +5,8 @@ title: "Propagar requestContext em REST/CLI-MCP e unificar Logger estruturado em
 source: audit
 created_at: 2026-11-21T13:09:45Z
 created_by: ops
-updated_at: 2026-11-21T13:09:45Z
-status: raw
+updated_at: 2026-11-21T14:20:53Z
+status: verifying
 severity: medium
 category: observability
 effort: M
@@ -15,8 +15,10 @@ ceremony: full
 business_impact: ""
 linked_findings:
   - FND-0023
-linked_designs: []
-linked_runs: []
+linked_designs:
+  - DES-0034
+linked_runs:
+  - RUN-20261121-141121-tck-0038
 linked_verifications: []
 linked_docs:
   - .archagents/10-runbooks.md
@@ -25,7 +27,21 @@ external_sync: []
 blocks: []
 blocked_by: []
 related: []
-acceptance: []
+acceptance:
+  - check: "npx vitest run test/unit/observability.test.ts test/unit/legal-timeouts-intelligence.test.ts test/unit/session-thinking-redaction-ratelimit.test.ts test/unit/worker-rest-cloudflare.test.ts test/unit/worker-sse-kv-shutdown.test.ts && echo OBS_TESTS_OK"
+    expect: OBS_TESTS_OK
+  - check: "npm run test && echo ALL_TESTS_OK"
+    expect: ALL_TESTS_OK
+  - check: "npx tsc --noEmit && npx tsc -p tsconfig.worker.json --noEmit && echo TYPECHECK_OK"
+    expect: TYPECHECK_OK
+  - check: "npm run build && npm run build:worker && npm run test:transport && echo TRANSPORT_OK"
+    expect: TRANSPORT_OK
+depth_decision:
+  workflow: lightweight
+  design: lightweight
+  verify: completo
+  source: routing-classifier
+  classified_at: 2026-11-21T14:09:00Z
 ---
 # TCK-0038 - Propagar requestContext em REST/CLI-MCP e unificar Logger estruturado em rate-limit/search/intelligence
 
@@ -56,3 +72,8 @@ Antes do fix, `lib/workers/worker.ts:L139,L144,L148,L152`, `lib/workers/rest.ts:
 ## Log de transicoes
 
 - 2026-11-21T13:09:45Z - **raw** - criado via scripts/ops/ticket/create.py.
+- 2026-11-21T14:09:00Z - **triaged** - triaged in wave 2 parallel remediation [aceite reescrito: 4 critério(s)] [depth_decision do routing-classifier: workflow lightweight, design lightweight, verify completo]
+- 2026-11-21T14:11:21Z - **designed** - DES-0034 created
+- 2026-11-21T14:11:21Z - **executing** - executing TCK-0038
+- 2026-11-21T14:11:49Z - **executing** - executing TCK-0038 with RUN-20261121-141121-tck-0038
+- 2026-11-21T14:20:53Z - **verifying** - TCK-0038 implemented and verified in wave 2 (RUN-20261121-141121-tck-0038)

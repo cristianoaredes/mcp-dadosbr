@@ -12,6 +12,8 @@ import {
   resetMetrics,
 } from "../../lib/core/tools.js";
 import { resetCircuitBreakers } from "../../lib/core/http-client.js";
+import { executeIntelligence } from "../../lib/core/intelligence.js";
+import { executeSearch } from "../../lib/core/search.js";
 import { createLogger, Logger, LogLevel } from "../../lib/infrastructure/logger.js";
 import {
   extractRequestId,
@@ -22,6 +24,7 @@ import {
 import { createCliHttpApp, type CliHttpContext } from "../../lib/adapters/cli-http.js";
 import { handleHealthCheck, type Env } from "../../lib/adapters/cloudflare.js";
 import { authenticateRequest } from "../../lib/workers/auth.js";
+import { checkRateLimit } from "../../lib/workers/rate-limit.js";
 import { handleSSEEndpoint } from "../../lib/workers/sse.js";
 import worker from "../../lib/workers/worker.js";
 
@@ -478,6 +481,517 @@ describe("FND-0013 / TCK-0025: Observability (Logger, Tracing, RED Metrics, Auth
         requestId: "req-sse-to",
         context: { reason: "timeout" },
       });
+    });
+  });
+
+  describe("FND-0023 / TCK-0038: End-to-End Request Correlation & Unified Structured Logger", () => {
+    function parseJsonLogs(errSpy: ReturnType<typeof vi.spyOn>): Array<Record<string, unknown>> {
+      const entries: Array<Record<string, unknown>> = [];
+      for (const call of errSpy.mock.calls) {
+        try {
+          const parsed = JSON.parse(String(call[0])) as Record<string, unknown>;
+          if (parsed && typeof parsed === "object") {
+            entries.push(parsed);
+          }
+        } catch {
+          // Ignore non-JSON stderr entries (e.g. periodic [metrics])
+        }
+      }
+      return entries;
+    }
+
+    it("propagates X-Request-Id across Worker REST endpoints through rest.ts -> handleMCPRequest -> tools.ts (INFO tool.executed)", async () => {
+      const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+      const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      delete process.env.TAVILY_API_KEY;
+      process.env.PERPLEXITY_API_KEY = "pplx-test-key";
+
+      vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+        const url = String(input);
+        if (url.includes("perplexity.ai")) {
+          return jsonResponse({
+            choices: [{ message: { content: "Registro para 11222333000181" } }],
+            citations: ["https://dados.gov.br/doc"],
+          });
+        }
+        return jsonResponse({
+          cnpj: "11222333000181",
+          razao_social: "EMPRESA CORRELACAO LTDA",
+          nome_fantasia: "CORRELACAO",
+          municipio: "SAO PAULO",
+          uf: "SP",
+        });
+      });
+
+      const ctx = {
+        waitUntil: vi.fn(),
+        passThroughOnException: vi.fn(),
+      } as unknown as ExecutionContext;
+      const env: Env = {
+        MCP_DISABLE_RATE_LIMIT: "true",
+        PERPLEXITY_API_KEY: "pplx-test-key",
+      };
+
+      // 1. GET /cnpj/:cnpj
+      const cnpjRes = await worker.fetch(
+        new Request("https://worker.example/cnpj/11222333000181", {
+          headers: { [REQUEST_ID_HEADER]: "worker-rest-cnpj-01" },
+        }),
+        env,
+        ctx
+      );
+      expect(cnpjRes.status).toBe(200);
+      expect(cnpjRes.headers.get(REQUEST_ID_HEADER)).toBe("worker-rest-cnpj-01");
+
+      // 2. POST /search
+      const searchRes = await worker.fetch(
+        new Request("https://worker.example/search", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            [REQUEST_ID_HEADER]: "worker-rest-search-02",
+          },
+          body: JSON.stringify({ query: "JOAO SILVA 123.456.789-00", max_results: 2 }),
+        }),
+        env,
+        ctx
+      );
+      expect(searchRes.status).toBe(200);
+      expect(searchRes.headers.get(REQUEST_ID_HEADER)).toBe("worker-rest-search-02");
+
+      // 3. POST /intelligence
+      const intelRes = await worker.fetch(
+        new Request("https://worker.example/intelligence", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            [REQUEST_ID_HEADER]: "worker-rest-intel-03",
+          },
+          body: JSON.stringify({
+            cnpj: "11222333000181",
+            categories: ["government"],
+            provider: "perplexity",
+            max_queries: 1,
+            max_results_per_query: 2,
+          }),
+        }),
+        env,
+        ctx
+      );
+      expect(intelRes.status).toBe(200);
+      expect(intelRes.headers.get(REQUEST_ID_HEADER)).toBe("worker-rest-intel-03");
+
+      // 4. POST /thinking
+      const thinkRes = await worker.fetch(
+        new Request("https://worker.example/thinking", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            [REQUEST_ID_HEADER]: "worker-rest-think-04",
+          },
+          body: JSON.stringify({
+            thought: "Verificar trace REST",
+            thoughtNumber: 1,
+            totalThoughts: 1,
+            nextThoughtNeeded: false,
+          }),
+        }),
+        env,
+        ctx
+      );
+      expect(thinkRes.status).toBe(200);
+      expect(thinkRes.headers.get(REQUEST_ID_HEADER)).toBe("worker-rest-think-04");
+
+      expect(logSpy).not.toHaveBeenCalled();
+      const entries = parseJsonLogs(errSpy);
+
+      expect(
+        entries.find(
+          (e) =>
+            e.module === "tools" &&
+            e.level === "info" &&
+            e.message === "tool.executed" &&
+            e.requestId === "worker-rest-cnpj-01"
+        )
+      ).toMatchObject({
+        context: { tool: "cnpj_lookup", ok: true },
+      });
+
+      expect(
+        entries.find(
+          (e) =>
+            e.module === "tools" &&
+            e.level === "info" &&
+            e.message === "tool.executed" &&
+            e.requestId === "worker-rest-search-02"
+        )
+      ).toMatchObject({
+        context: { tool: "cnpj_search", ok: true },
+      });
+      expect(
+        entries.find(
+          (e) =>
+            e.module === "search" &&
+            e.level === "info" &&
+            e.message === "search.completed" &&
+            e.requestId === "worker-rest-search-02"
+        )
+      ).toBeDefined();
+
+      expect(
+        entries.find(
+          (e) =>
+            e.module === "tools" &&
+            e.level === "info" &&
+            e.message === "tool.executed" &&
+            e.requestId === "worker-rest-intel-03"
+        )
+      ).toMatchObject({
+        context: { tool: "cnpj_intelligence", ok: true },
+      });
+      expect(
+        entries.find(
+          (e) =>
+            e.module === "intelligence" &&
+            e.level === "info" &&
+            e.message === "intelligence.completed" &&
+            e.requestId === "worker-rest-intel-03"
+        )
+      ).toBeDefined();
+
+      expect(
+        entries.find(
+          (e) =>
+            e.module === "tools" &&
+            e.level === "info" &&
+            e.message === "tool.executed" &&
+            e.requestId === "worker-rest-think-04"
+        )
+      ).toMatchObject({
+        context: { tool: "sequentialthinking", ok: true },
+      });
+
+      const combinedLogs = errSpy.mock.calls.map((c) => String(c[0])).join("\n");
+      expect(combinedLogs).not.toContain("JOAO SILVA");
+      expect(combinedLogs).not.toContain("123.456.789-00");
+    });
+
+    it("propagates X-Request-Id from CLI POST /messages via AsyncLocalStorage into createMCPServer -> tools.ts", async () => {
+      const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+      const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+      const ctx = createCliHttpApp({
+        apiConfig,
+        cache: new MemoryCache(10, 1000),
+        host: "127.0.0.1",
+      });
+      const server = http.createServer(ctx.app);
+      await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", () => resolve()));
+      activeServers.push({ server, ctx });
+      const addr = server.address() as { port: number };
+      const baseUrl = `http://127.0.0.1:${addr.port}`;
+
+      const abortController = new AbortController();
+      const sseResponse = await fetch(`${baseUrl}/mcp`, {
+        headers: { Host: `127.0.0.1:${addr.port}`, Accept: "text/event-stream" },
+        signal: abortController.signal,
+      });
+      expect(sseResponse.status).toBe(200);
+      const reader = sseResponse.body!.getReader();
+      const decoder = new TextDecoder();
+      let sseBuffer = "";
+
+      async function readUntil(predicate: (buffer: string) => boolean): Promise<string> {
+        while (!predicate(sseBuffer)) {
+          const { value, done } = await reader.read();
+          if (done) {
+            throw new Error("SSE stream closed before expected event");
+          }
+          sseBuffer += decoder.decode(value, { stream: true });
+        }
+        return sseBuffer;
+      }
+
+      await readUntil((buf) => /data:\s*\/messages\?sessionId=/.test(buf));
+      const endpointMatch = /data:\s*(\/messages\?sessionId=[^\r\n]+)/.exec(sseBuffer);
+      expect(endpointMatch).not.toBeNull();
+      const messagesPath = endpointMatch![1];
+
+      try {
+        // Initialize MCP session
+        const initResp = await fetch(`${baseUrl}${messagesPath}`, {
+          method: "POST",
+          headers: {
+            Host: `127.0.0.1:${addr.port}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            jsonrpc: "2.0",
+            id: 1,
+            method: "initialize",
+            params: {
+              protocolVersion: "2024-11-05",
+              capabilities: {},
+              clientInfo: { name: "obs-cli-test", version: "1.0.0" },
+            },
+          }),
+        });
+        expect(initResp.status).toBe(202);
+        await readUntil((buf) => buf.includes('"id":1'));
+
+        await fetch(`${baseUrl}${messagesPath}`, {
+          method: "POST",
+          headers: {
+            Host: `127.0.0.1:${addr.port}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            jsonrpc: "2.0",
+            method: "notifications/initialized",
+          }),
+        });
+
+        // Two consecutive tools/call requests on the same SSE session with distinct X-Request-Id values
+        const call1Resp = await fetch(`${baseUrl}${messagesPath}`, {
+          method: "POST",
+          headers: {
+            Host: `127.0.0.1:${addr.port}`,
+            "Content-Type": "application/json",
+            [REQUEST_ID_HEADER]: "cli-als-req-01",
+          },
+          body: JSON.stringify({
+            jsonrpc: "2.0",
+            id: 2,
+            method: "tools/call",
+            params: {
+              name: "cpf_validate",
+              arguments: { cpf: "52998224725" },
+            },
+          }),
+        });
+        expect(call1Resp.status).toBe(202);
+        expect(call1Resp.headers.get("x-request-id")).toBe("cli-als-req-01");
+        await readUntil((buf) => buf.includes('"id":2'));
+
+        const call2Resp = await fetch(`${baseUrl}${messagesPath}`, {
+          method: "POST",
+          headers: {
+            Host: `127.0.0.1:${addr.port}`,
+            "Content-Type": "application/json",
+            [REQUEST_ID_HEADER]: "cli-als-req-02",
+          },
+          body: JSON.stringify({
+            jsonrpc: "2.0",
+            id: 3,
+            method: "tools/call",
+            params: {
+              name: "cpf_validate",
+              arguments: { cpf: "52998224725" },
+            },
+          }),
+        });
+        expect(call2Resp.status).toBe(202);
+        expect(call2Resp.headers.get("x-request-id")).toBe("cli-als-req-02");
+        await readUntil((buf) => buf.includes('"id":3'));
+      } finally {
+        abortController.abort();
+        await reader.cancel().catch(() => {});
+      }
+
+      expect(logSpy).not.toHaveBeenCalled();
+      const entries = parseJsonLogs(errSpy);
+      expect(
+        entries.find(
+          (e) =>
+            e.module === "tools" &&
+            e.level === "info" &&
+            e.message === "tool.executed" &&
+            e.requestId === "cli-als-req-01"
+        )
+      ).toMatchObject({
+        context: { tool: "cpf_validate", ok: true },
+      });
+      expect(
+        entries.find(
+          (e) =>
+            e.module === "tools" &&
+            e.level === "info" &&
+            e.message === "tool.executed" &&
+            e.requestId === "cli-als-req-02"
+        )
+      ).toMatchObject({
+        context: { tool: "cpf_validate", ok: true },
+      });
+    });
+
+    it("emits structured redacted JSON stderr logs from rate-limit.ts, search.ts, and intelligence.ts", async () => {
+      const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+      const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      delete process.env.TAVILY_API_KEY;
+      process.env.PERPLEXITY_API_KEY = "pplx-test-key";
+
+      // 1. rate-limit.ts KV error path
+      const failingKv = {
+        get: vi
+          .fn()
+          .mockRejectedValue(new Error("KV outage for 11.222.333/0001-81 user@example.com\nline2")),
+        put: vi.fn(),
+        delete: vi.fn(),
+      } as unknown as KVNamespace;
+      const rlRes = await checkRateLimit(
+        new Request("https://worker.example/cnpj/11222333000181"),
+        { MCP_KV: failingKv },
+        new RequestContext("rl-corr-77")
+      );
+      expect(rlRes.allowed).toBe(true);
+
+      // 2. search.ts error + success + cache hit paths
+      const cache = new MemoryCache(10, 60_000);
+      vi.spyOn(globalThis, "fetch")
+        .mockResolvedValueOnce(new Response("bad gateway", { status: 502 }))
+        .mockResolvedValueOnce(
+          jsonResponse({
+            choices: [{ message: { content: "Empresa encontrada" } }],
+            citations: ["https://dados.gov.br/1"],
+          })
+        )
+        .mockResolvedValueOnce(
+          jsonResponse({
+            choices: [{ message: { content: "Registro 11222333000181" } }],
+            citations: ["https://dados.gov.br/2"],
+          })
+        );
+
+      const errSearch = await executeSearch(
+        "SIGILOSO CPF 123.456.789-00",
+        3,
+        cache,
+        "search-corr-88"
+      );
+      expect(errSearch.ok).toBe(false);
+
+      const okSearch = await executeSearch(
+        "SIGILOSO CPF 123.456.789-00",
+        3,
+        cache,
+        "search-corr-88"
+      );
+      expect(okSearch.ok).toBe(true);
+
+      const cachedSearch = await executeSearch(
+        "SIGILOSO CPF 123.456.789-00",
+        3,
+        cache,
+        "search-corr-88"
+      );
+      expect(cachedSearch.ok).toBe(true);
+
+      // 3. intelligence.ts debug + info paths with redaction
+      process.env.LOG_LEVEL = "debug";
+      const intelRes = await executeIntelligence(
+        {
+          cnpj: "11222333000181",
+          cachedCompanyData: {
+            cnpj: "11222333000181",
+            razao_social: "EMPRESA PRIVADA SA",
+            qsa: [{ nome_socio: "SOCIO OCULTO" }],
+          },
+          categories: ["government"],
+          provider: "perplexity",
+          maxQueries: 1,
+        },
+        apiConfig,
+        undefined,
+        "intel-corr-99"
+      );
+      expect(intelRes.ok).toBe(true);
+
+      expect(logSpy).not.toHaveBeenCalled();
+      const entries = parseJsonLogs(errSpy);
+
+      expect(
+        entries.find(
+          (e) =>
+            e.module === "worker-rate-limit" &&
+            e.level === "error" &&
+            e.message === "rate_limit.check_failed" &&
+            e.requestId === "rl-corr-77"
+        )
+      ).toMatchObject({
+        context: {
+          error: "KV outage for [REDACTED] [REDACTED] line2",
+        },
+      });
+
+      expect(
+        entries.find(
+          (e) =>
+            e.module === "search" &&
+            e.level === "error" &&
+            e.message === "search.error" &&
+            e.requestId === "search-corr-88"
+        )
+      ).toMatchObject({
+        context: { querySummary: "query(len=27)" },
+      });
+      expect(
+        entries.find(
+          (e) =>
+            e.module === "search" &&
+            e.level === "info" &&
+            e.message === "search.completed" &&
+            e.requestId === "search-corr-88"
+        )
+      ).toMatchObject({
+        context: { querySummary: "query(len=27)", provider: "perplexity", results: 1 },
+      });
+      expect(
+        entries.find(
+          (e) =>
+            e.module === "search" &&
+            e.level === "info" &&
+            e.message === "search.cache_hit" &&
+            e.requestId === "search-corr-88"
+        )
+      ).toMatchObject({
+        context: { querySummary: "query(len=27)", cacheHit: true },
+      });
+
+      expect(
+        entries.find(
+          (e) =>
+            e.module === "intelligence" &&
+            e.level === "info" &&
+            e.message === "intelligence.completed" &&
+            e.requestId === "intel-corr-99"
+        )
+      ).toMatchObject({
+        context: { cnpj: "***0181", provider: "perplexity" },
+      });
+      expect(
+        entries.find(
+          (e) =>
+            e.module === "intelligence" &&
+            e.level === "debug" &&
+            e.message === "intelligence.dork_searching" &&
+            e.requestId === "intel-corr-99"
+        )
+      ).toMatchObject({
+        context: {
+          cnpj: "***0181",
+          category: "government",
+          querySummary: expect.stringMatching(/^query\(len=\d+\)$/),
+        },
+      });
+
+      const combinedLogs = errSpy.mock.calls.map((c) => String(c[0])).join("\n");
+      expect(combinedLogs).not.toContain("11.222.333/0001-81");
+      expect(combinedLogs).not.toContain("user@example.com");
+      expect(combinedLogs).not.toContain("SIGILOSO");
+      expect(combinedLogs).not.toContain("123.456.789-00");
+      expect(combinedLogs).not.toContain("11222333000181");
+      expect(combinedLogs).not.toContain("EMPRESA PRIVADA SA");
+      expect(combinedLogs).not.toContain("SOCIO OCULTO");
     });
   });
 });

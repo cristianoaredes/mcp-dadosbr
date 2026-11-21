@@ -135,7 +135,7 @@ export async function executeTool(
     const elapsedMs = Date.now() - startTime;
     recordMetrics(elapsedMs, cacheHit, !result.ok, name);
     if (result.ok) {
-      toolsLogger.debug(
+      toolsLogger.info(
         "tool.executed",
         { tool: name, ok: true, cacheHit, elapsedMs },
         requestContext.requestId,

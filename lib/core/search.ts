@@ -1,6 +1,9 @@
-import { Cache, LookupResult } from '../types/index.js';
+import { Cache } from '../types/index.js';
 import { getAvailableProvider, SearchResult } from './search-providers.js';
+import { createLogger } from '../infrastructure/logger.js';
 import { maskSensitiveText, summarizeQueryForLog } from '../shared/log-redaction.js';
+
+const searchLogger = createLogger('search');
 
 export interface SearchResponseData {
   results: SearchResult[];
@@ -18,11 +21,13 @@ export type SearchResponse =
 export async function executeSearch(
   query: string,
   maxResults: number = 5,
-  cache?: Cache
+  cache?: Cache,
+  requestId?: string
 ): Promise<SearchResponse> {
   const startTime = Date.now();
   const cacheKey = `search:${query}:${maxResults}`;
-  const transportMode = process.env.MCP_TRANSPORT || "stdio";
+  const transportMode =
+    (typeof process !== "undefined" && process.env?.MCP_TRANSPORT) || "stdio";
 
   const querySummary = summarizeQueryForLog(query);
 
@@ -31,8 +36,15 @@ export async function executeSearch(
     const cached = await cache.get<SearchResponseData>(cacheKey);
     if (cached) {
       const elapsed = Date.now() - startTime;
-      console.error(
-        `[${new Date().toISOString()}] [search] [${querySummary}] [cache_hit] [${elapsed}ms] [${transportMode}]`
+      searchLogger.info(
+        "search.cache_hit",
+        {
+          querySummary,
+          elapsedMs: elapsed,
+          transportMode,
+          cacheHit: true,
+        },
+        requestId
       );
       return { ok: true, data: cached };
     }
@@ -46,8 +58,15 @@ export async function executeSearch(
     if (!searchResult.ok) {
       // All providers failed, return error
       const elapsed = Date.now() - startTime;
-      console.error(
-        `[${new Date().toISOString()}] [search] [${querySummary}] [error: ${maskSensitiveText(searchResult.error.message)}] [${elapsed}ms] [${transportMode}]`
+      searchLogger.error(
+        "search.error",
+        {
+          querySummary,
+          elapsedMs: elapsed,
+          transportMode,
+          error: maskSensitiveText(searchResult.error.message),
+        },
+        requestId
       );
 
       return {
@@ -73,8 +92,16 @@ export async function executeSearch(
     }
 
     const elapsed = Date.now() - startTime;
-    console.error(
-      `[${new Date().toISOString()}] [search] [${querySummary}] [success] [${elapsed}ms] [${transportMode}] [provider: ${providerName}] [results: ${searchResult.value.length}]`
+    searchLogger.info(
+      "search.completed",
+      {
+        querySummary,
+        elapsedMs: elapsed,
+        transportMode,
+        provider: providerName,
+        results: searchResult.value.length,
+      },
+      requestId
     );
 
     return {
@@ -86,8 +113,15 @@ export async function executeSearch(
     const err = error as Error;
     const errorMessage = err.message || 'Search failed';
 
-    console.error(
-      `[${new Date().toISOString()}] [search] [${querySummary}] [error: ${maskSensitiveText(errorMessage)}] [${elapsed}ms] [${transportMode}]`
+    searchLogger.error(
+      "search.exception",
+      {
+        querySummary,
+        elapsedMs: elapsed,
+        transportMode,
+        error: maskSensitiveText(errorMessage),
+      },
+      requestId
     );
 
     return {
