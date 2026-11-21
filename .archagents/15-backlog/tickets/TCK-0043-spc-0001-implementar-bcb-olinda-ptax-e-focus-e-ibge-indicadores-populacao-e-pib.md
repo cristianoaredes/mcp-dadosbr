@@ -5,8 +5,8 @@ title: "[SPC-0001] Implementar bcb_olinda (PTAX e Focus) e ibge_indicadores (Pop
 source: spec
 created_at: 2026-11-21T16:23:37Z
 created_by: ops
-updated_at: 2026-11-21T16:50:36Z
-status: verifying
+updated_at: 2026-11-21T16:57:03Z
+status: done
 severity: medium
 category: feature
 effort: M
@@ -18,7 +18,8 @@ linked_designs:
   - DES-0039
 linked_runs:
   - RUN-20261121-162558-tck-0043
-linked_verifications: []
+linked_verifications:
+  - VER-20261121-165518-tck-0043
 linked_docs:
   - .archagents/12-inception/specs/SPC-0001-pacote-fontes-transversais-v070.md
 external_refs: []
@@ -52,3 +53,4 @@ Antes da entrega, `lib/shared/olinda-ibge-schemas.ts`, `lib/tools/olinda.ts`, `l
 - 2026-11-21T16:25:55Z - **designed** - DES-0039 approved
 - 2026-11-21T16:27:21Z - **executing** - Wave 1 parallel execution (RUN-20261121-162558-tck-0043)
 - 2026-11-21T16:50:36Z - **verifying** - Wave 1 merged and 536/536 tests green
+- 2026-11-21T16:57:03Z - **done** - P10 fresh verify approved-with-notes + judge pass (ACCEPTABLE 77, safety 100)

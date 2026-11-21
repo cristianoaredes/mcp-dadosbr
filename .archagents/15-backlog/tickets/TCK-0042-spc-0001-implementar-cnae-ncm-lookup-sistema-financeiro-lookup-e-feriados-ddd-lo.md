@@ -5,8 +5,8 @@ title: "[SPC-0001] Implementar cnae_ncm_lookup, sistema_financeiro_lookup e feri
 source: spec
 created_at: 2026-11-21T16:23:36Z
 created_by: ops
-updated_at: 2026-11-21T16:50:36Z
-status: verifying
+updated_at: 2026-11-21T16:57:01Z
+status: done
 severity: medium
 category: feature
 effort: M
@@ -18,7 +18,8 @@ linked_designs:
   - DES-0038
 linked_runs:
   - RUN-20261121-162556-tck-0042
-linked_verifications: []
+linked_verifications:
+  - VER-20261121-165517-tck-0042
 linked_docs:
   - .archagents/12-inception/specs/SPC-0001-pacote-fontes-transversais-v070.md
 external_refs: []
@@ -52,3 +53,4 @@ Antes da entrega, `lib/shared/fiscal-banking-schemas.ts`, `lib/tools/fiscal-bank
 - 2026-11-21T16:25:55Z - **designed** - DES-0038 approved
 - 2026-11-21T16:27:20Z - **executing** - Wave 1 parallel execution (RUN-20261121-162556-tck-0042)
 - 2026-11-21T16:50:36Z - **verifying** - Wave 1 merged and 536/536 tests green
+- 2026-11-21T16:57:01Z - **done** - P10 fresh verify approved-with-notes + judge pass (ACCEPTABLE 77, safety 100)
