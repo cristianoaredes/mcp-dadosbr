@@ -10,7 +10,7 @@
   "current_step": 4,
   "total_steps": 4,
   "ended_at": "2026-11-21T14:18:10Z",
-  "result": "TCK-0039 completed: added cli-http-runtime-coverage.test.ts (11 tests) and mcp-server-handlers.test.ts (7 tests); 35 files / 482 tests PASS; cli-http.ts 99.65%/92.23%/100%/99.65%, mcp-server.ts 100%/93.15%/100%/100%, All files 94.97%/86.42%/97.26%/95.59%",
+  "result": "TCK-0039 completed: cli-http 99.66% stmts/100% funcs and mcp-server 100% stmts/100% funcs, 36 files / 491 tests PASS",
   "loop_iterations": 0,
   "attempt_count": 0,
   "lessons_consulted": [
@@ -20,7 +20,16 @@
   "cost_source": "unknown",
   "loop_strategy": "default",
   "context_peak": 0,
-  "final_judge_delta": 0,
+  "final_judge_delta": 29,
   "lesson_consult_attempted": true,
-  "warmup": false
+  "warmup": false,
+  "final_judge_delta_source": "judge",
+  "lesson_utility": {
+    "utility": 0.58,
+    "n_lessons": 1,
+    "lessons_consulted": [
+      "Precisou de 2 iterações (re-execução)"
+    ],
+    "signal": "computed"
+  }
 }

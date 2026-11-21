@@ -5,8 +5,8 @@ title: "Tratar JSON invalido como 400 e alinhar headers defensivos/Cache-Control
 source: audit
 created_at: 2026-11-21T13:09:43Z
 created_by: ops
-updated_at: 2026-11-21T14:17:20Z
-status: verifying
+updated_at: 2026-11-21T14:29:02Z
+status: done
 severity: low
 category: security
 effort: S
@@ -19,7 +19,8 @@ linked_designs:
   - DES-0033
 linked_runs:
   - RUN-20261121-141008-tck-0035
-linked_verifications: []
+linked_verifications:
+  - VER-20261121-142719-tck-0035
 linked_docs:
   - .archagents/07-security-compliance.md
 external_refs: []
@@ -70,3 +71,4 @@ Antes do fix, `lib/workers/rest.ts:L59-L73,L84,L126-L137,L148,L190-L201,L212,L24
 - 2026-11-21T14:10:08Z - **designed** - DES-0033 created
 - 2026-11-21T14:10:15Z - **executing** - executing TCK-0035
 - 2026-11-21T14:17:20Z - **verifying** - implementation verified locally, ready for P10 verify
+- 2026-11-21T14:29:02Z - **done** - P10 verify approved-with-notes (9a9153c5) + judge pass

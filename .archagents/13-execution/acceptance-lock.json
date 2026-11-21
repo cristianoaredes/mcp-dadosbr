@@ -269,6 +269,15 @@
     "updated_at": "2026-11-21T14:01:42Z",
     "updated_by": "criteria-check"
   },
+  "TCK-0035": {
+    "content_digest": "sha256:2e69c0efa497e419e3c6adaae8d7ff828a70d580d0b6d6071f602988aef2df16",
+    "criteria_digest": "sha256:3c56fa7c17b7cd6dbe17a70cb87b81d2b774e918c528ec39f03451c991a96797",
+    "head": "a7fd8e43314468d048742e1554dfa99d4ecd91c7",
+    "passes": true,
+    "tree": "4e79b1fa133de32dd86286dac2e92891c86344d9",
+    "updated_at": "2026-11-21T14:28:50Z",
+    "updated_by": "criteria-check"
+  },
   "TCK-0036": {
     "content_digest": "sha256:ff0f53a26084babba5e123c8b3f0bff90a775d6cbc6b8c4189a0c465dedc729b",
     "criteria_digest": "sha256:3e3dd1a21c9f4cddb1418b1ee802b49d6b77a514c2e53304ae5ac22d57255d4e",
@@ -285,6 +294,24 @@
     "passes": true,
     "tree": "b844cb653b1eb417dab889c4993e2c7ae1de34ae",
     "updated_at": "2026-11-21T14:01:51Z",
+    "updated_by": "criteria-check"
+  },
+  "TCK-0038": {
+    "content_digest": "sha256:2e69c0efa497e419e3c6adaae8d7ff828a70d580d0b6d6071f602988aef2df16",
+    "criteria_digest": "sha256:3c1927812250bd724e0e4c679af894faeeb7583b08b9d75f0004161ae7f6de4d",
+    "head": "a7fd8e43314468d048742e1554dfa99d4ecd91c7",
+    "passes": true,
+    "tree": "4e79b1fa133de32dd86286dac2e92891c86344d9",
+    "updated_at": "2026-11-21T14:28:56Z",
+    "updated_by": "criteria-check"
+  },
+  "TCK-0039": {
+    "content_digest": "sha256:2e69c0efa497e419e3c6adaae8d7ff828a70d580d0b6d6071f602988aef2df16",
+    "criteria_digest": "sha256:4e139a9eb79e986b0aa5760da6a68e457476d14eb56a8749a3e41d2689bcbe40",
+    "head": "a7fd8e43314468d048742e1554dfa99d4ecd91c7",
+    "passes": true,
+    "tree": "4e79b1fa133de32dd86286dac2e92891c86344d9",
+    "updated_at": "2026-11-21T14:29:01Z",
     "updated_by": "criteria-check"
   }
 }
