@@ -3,9 +3,14 @@
  * Supports multiple search engines: DuckDuckGo, Tavily, SerpAPI
  */
 
-import { Result, RateLimitError } from "../shared/types/result.js";
+import { Result, RateLimitError, TimeoutError } from "../shared/types/result.js";
 import { SEARCH } from "../shared/utils/constants.js";
 import { TIMEOUTS } from "../config/timeouts.js";
+import {
+  createTimeoutController,
+  isAbortOrTimeoutError,
+  raceWithTimeoutAndSignal,
+} from "../shared/utils/timeout.js";
 
 export interface SearchResult {
   title: string;
@@ -13,11 +18,17 @@ export interface SearchResult {
   snippet: string;
 }
 
+export interface SearchOptions {
+  signal?: AbortSignal;
+  timeoutMs?: number;
+}
+
 export interface SearchProvider {
   name: string;
   search(
     query: string,
-    maxResults: number
+    maxResults: number,
+    options?: SearchOptions
   ): Promise<Result<SearchResult[], Error>>;
   isAvailable(): Promise<boolean>;
 }
@@ -44,7 +55,8 @@ export class TavilyProvider implements SearchProvider {
 
   async search(
     query: string,
-    maxResults: number = 5
+    maxResults: number = 5,
+    options?: SearchOptions
   ): Promise<Result<SearchResult[], Error>> {
     if (!this.apiKey || !this.client) {
       return Result.err(
@@ -54,15 +66,28 @@ export class TavilyProvider implements SearchProvider {
       );
     }
 
+    const rawTimeout = options?.timeoutMs ?? TIMEOUTS.SEARCH_REQUEST_MS;
+    const timeoutMs =
+      Number.isFinite(rawTimeout) && rawTimeout > 0 ? rawTimeout : TIMEOUTS.SEARCH_REQUEST_MS;
+
+    if (options?.signal?.aborted) {
+      return Result.err(new TimeoutError("Tavily search aborted", timeoutMs));
+    }
+
     try {
-      const response = await this.client.search({
-        query: query,
-        max_results: maxResults,
-        search_depth: "basic",
-        include_answer: false,
-        include_raw_content: false,
-        include_images: false,
-      });
+      const response = await raceWithTimeoutAndSignal(
+        this.client.search({
+          query: query,
+          max_results: maxResults,
+          search_depth: "basic",
+          include_answer: false,
+          include_raw_content: false,
+          include_images: false,
+        }),
+        timeoutMs,
+        options?.signal,
+        "Tavily search"
+      );
 
       if (!response || !response.results) {
         return Result.ok([]);
@@ -79,6 +104,10 @@ export class TavilyProvider implements SearchProvider {
 
       return Result.ok(mapped);
     } catch (error: unknown) {
+      if (error instanceof TimeoutError) {
+        return Result.err(error);
+      }
+
       const err = error as Error & { statusCode?: number };
       // Check for rate limiting
       if (err.statusCode === 429 || err.message?.includes("rate limit")) {
@@ -114,7 +143,8 @@ export class PerplexityProvider implements SearchProvider {
 
   async search(
     query: string,
-    maxResults: number = SEARCH.DEFAULT_MAX_RESULTS
+    maxResults: number = SEARCH.DEFAULT_MAX_RESULTS,
+    options?: SearchOptions
   ): Promise<Result<SearchResult[], Error>> {
     if (!this.apiKey) {
       return Result.err(
@@ -124,6 +154,16 @@ export class PerplexityProvider implements SearchProvider {
       );
     }
 
+    const rawTimeout = options?.timeoutMs ?? TIMEOUTS.SEARCH_REQUEST_MS;
+    const timeoutMs =
+      Number.isFinite(rawTimeout) && rawTimeout > 0 ? rawTimeout : TIMEOUTS.SEARCH_REQUEST_MS;
+
+    if (options?.signal?.aborted) {
+      return Result.err(new TimeoutError("Perplexity search aborted", timeoutMs));
+    }
+
+    const ctrl = createTimeoutController(timeoutMs, options?.signal);
+
     try {
       const response = await fetch("https://api.perplexity.ai/chat/completions", {
         method: "POST",
@@ -131,6 +171,7 @@ export class PerplexityProvider implements SearchProvider {
           "Authorization": `Bearer ${this.apiKey}`,
           "Content-Type": "application/json"
         },
+        signal: ctrl.signal,
         body: JSON.stringify({
           model: "sonar",
           messages: [
@@ -181,8 +222,19 @@ export class PerplexityProvider implements SearchProvider {
         }
       ]);
     } catch (error: unknown) {
+      if (ctrl.didTimeout()) {
+        return Result.err(new TimeoutError(`Perplexity search timed out after ${timeoutMs}ms`, timeoutMs));
+      }
+      if (ctrl.wasAbortedByParent()) {
+        return Result.err(new TimeoutError("Perplexity search aborted", timeoutMs));
+      }
+      if (isAbortOrTimeoutError(error)) {
+        return Result.err(new TimeoutError(`Perplexity search timed out after ${timeoutMs}ms`, timeoutMs));
+      }
       const err = error as Error;
       return Result.err(new Error(`Perplexity search failed: ${err.message}`));
+    } finally {
+      ctrl.cleanup();
     }
   }
 }
@@ -232,11 +284,12 @@ export async function getAvailableProvider(
 export async function searchWithFallback(
   query: string,
   maxResults: number = SEARCH.DEFAULT_MAX_RESULTS,
-  preferredProvider?: ProviderType
+  preferredProvider?: ProviderType,
+  options?: SearchOptions
 ): Promise<Result<SearchResult[], Error>> {
   try {
     const provider = await getAvailableProvider(preferredProvider);
-    return provider.search(query, maxResults);
+    return provider.search(query, maxResults, options);
   } catch (error) {
     return Result.err(error as Error);
   }

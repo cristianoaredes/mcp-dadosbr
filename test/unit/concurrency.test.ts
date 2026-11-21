@@ -1,49 +1,17 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { executeWithConcurrencyLimit } from '../../lib/core/intelligence.js';
 
-/**
- * Test concurrent execution with limit
- * This replicates the executeWithConcurrencyLimit function for testing
- */
+describe('Concurrency Limiter (lib/core/intelligence)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-11-20T18:00:00.000Z'));
+  });
 
-async function executeWithConcurrencyLimit<T>(
-  tasks: (() => Promise<T>)[],
-  limit: number = 3
-): Promise<PromiseSettledResult<T>[]> {
-  const results: PromiseSettledResult<T>[] = new Array(tasks.length);
-  const executing: Set<Promise<void>> = new Set();
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.useRealTimers();
+  });
 
-  for (let i = 0; i < tasks.length; i++) {
-    const task = tasks[i];
-
-    // Create a promise that stores result and removes itself when done
-    const promise = task()
-      .then(
-        value => {
-          results[i] = { status: 'fulfilled', value };
-        },
-        reason => {
-          results[i] = { status: 'rejected', reason };
-        }
-      )
-      .then(() => {
-        executing.delete(promise);
-      });
-
-    executing.add(promise);
-
-    // If we hit the concurrency limit, wait for one to complete
-    if (executing.size >= limit) {
-      await Promise.race(executing);
-    }
-  }
-
-  // Wait for all remaining promises
-  await Promise.all(executing);
-
-  return results;
-}
-
-describe('Concurrency Limiter', () => {
   describe('executeWithConcurrencyLimit', () => {
     it('should execute all tasks and return results', async () => {
       const tasks = [
@@ -63,7 +31,7 @@ describe('Concurrency Limiter', () => {
       expect(values).toEqual([1, 2, 3, 4, 5]);
     });
 
-    it('should respect concurrency limit', async () => {
+    it('should respect concurrency limit using fake timers', async () => {
       let currentlyRunning = 0;
       let maxConcurrent = 0;
 
@@ -72,7 +40,6 @@ describe('Concurrency Limiter', () => {
           currentlyRunning++;
           maxConcurrent = Math.max(maxConcurrent, currentlyRunning);
 
-          // Simulate async work
           await new Promise(resolve => setTimeout(resolve, 10));
 
           currentlyRunning--;
@@ -81,11 +48,12 @@ describe('Concurrency Limiter', () => {
       });
 
       const limit = 3;
-      await executeWithConcurrencyLimit(tasks, limit);
+      const runPromise = executeWithConcurrencyLimit(tasks, limit);
+      await vi.runAllTimersAsync();
+      const results = await runPromise;
 
-      // Maximum concurrent should not exceed limit
-      expect(maxConcurrent).toBeLessThanOrEqual(limit);
-      expect(maxConcurrent).toBeGreaterThan(0);
+      expect(results).toHaveLength(10);
+      expect(maxConcurrent).toBe(limit);
     });
 
     it('should handle task failures gracefully', async () => {
@@ -100,13 +68,10 @@ describe('Concurrency Limiter', () => {
       const results = await executeWithConcurrencyLimit(tasks, 2);
 
       expect(results).toHaveLength(5);
-
-      // Check successful tasks
       expect(results[0]).toEqual({ status: 'fulfilled', value: 'success1' });
       expect(results[2]).toEqual({ status: 'fulfilled', value: 'success2' });
       expect(results[4]).toEqual({ status: 'fulfilled', value: 'success3' });
 
-      // Check failed tasks
       expect(results[1].status).toBe('rejected');
       expect(results[3].status).toBe('rejected');
 
@@ -150,10 +115,11 @@ describe('Concurrency Limiter', () => {
         };
       });
 
-      const results = await executeWithConcurrencyLimit(tasks, 10);
+      const runPromise = executeWithConcurrencyLimit(tasks, 10);
+      await vi.runAllTimersAsync();
+      const results = await runPromise;
 
       expect(results).toHaveLength(3);
-      // All tasks should run concurrently since limit > task count
       expect(maxConcurrent).toBe(3);
     });
 
@@ -168,9 +134,10 @@ describe('Concurrency Limiter', () => {
         };
       });
 
-      await executeWithConcurrencyLimit(tasks, 1);
+      const runPromise = executeWithConcurrencyLimit(tasks, 1);
+      await vi.runAllTimersAsync();
+      await runPromise;
 
-      // With limit 1, tasks should execute in order
       expect(executionOrder).toEqual([0, 1, 2, 3, 4]);
     });
 
@@ -190,45 +157,63 @@ describe('Concurrency Limiter', () => {
         },
       ];
 
-      const results = await executeWithConcurrencyLimit(tasks, 3);
+      const runPromise = executeWithConcurrencyLimit(tasks, 3);
+      await vi.runAllTimersAsync();
+      const results = await runPromise;
 
-      // Results should be in original task order, not completion order
       expect(results[0]).toEqual({ status: 'fulfilled', value: 'slow' });
       expect(results[1]).toEqual({ status: 'fulfilled', value: 'fast' });
       expect(results[2]).toEqual({ status: 'fulfilled', value: 'medium' });
     });
 
-    it('should handle varying task durations with concurrency limit', async () => {
+    it('should handle varying task durations with concurrency limit under virtual time', async () => {
       const durations = [50, 10, 30, 15, 25, 5];
-      const startTimes: number[] = [];
-      const endTimes: number[] = [];
 
       const tasks = durations.map((duration, i) => {
         return async () => {
-          startTimes[i] = Date.now();
           await new Promise(resolve => setTimeout(resolve, duration));
-          endTimes[i] = Date.now();
           return i;
         };
       });
 
       const startTime = Date.now();
-      const results = await executeWithConcurrencyLimit(tasks, 2);
+      const runPromise = executeWithConcurrencyLimit(tasks, 2);
+      await vi.runAllTimersAsync();
+      const results = await runPromise;
       const totalTime = Date.now() - startTime;
 
-      // All tasks should complete
       expect(results).toHaveLength(6);
       expect(results.every(r => r.status === 'fulfilled')).toBe(true);
 
-      // Total time should be less than sequential execution
       const sequentialTime = durations.reduce((sum, d) => sum + d, 0);
       expect(totalTime).toBeLessThan(sequentialTime);
     });
+
+    it('stops scheduling remaining tasks when AbortSignal aborts', async () => {
+      const controller = new AbortController();
+      const started: number[] = [];
+
+      const tasks = Array.from({ length: 6 }, (_, i) => async () => {
+        started.push(i);
+        if (i === 1) {
+          controller.abort();
+        }
+        await new Promise(resolve => setTimeout(resolve, 10));
+        return i;
+      });
+
+      const runPromise = executeWithConcurrencyLimit(tasks, 2, controller.signal);
+      await vi.runAllTimersAsync();
+      const results = await runPromise;
+
+      expect(started).toEqual([0, 1]);
+      expect(results.slice(2).every(r => r === undefined)).toBe(true);
+    });
   });
 
-  describe('Performance characteristics', () => {
-    it('should provide significant speedup over sequential execution', async () => {
-      const taskDuration = 20; // ms
+  describe('Performance characteristics (virtual clock)', () => {
+    it('should provide deterministic speedup over sequential execution', async () => {
+      const taskDuration = 20;
       const taskCount = 10;
       const concurrencyLimit = 5;
 
@@ -240,17 +225,14 @@ describe('Concurrency Limiter', () => {
       });
 
       const startTime = Date.now();
-      await executeWithConcurrencyLimit(tasks, concurrencyLimit);
+      const runPromise = executeWithConcurrencyLimit(tasks, concurrencyLimit);
+      await vi.runAllTimersAsync();
+      await runPromise;
       const concurrentTime = Date.now() - startTime;
 
-      // Expected time should be approximately:
-      // (taskCount / concurrencyLimit) * taskDuration
       const expectedTime = Math.ceil(taskCount / concurrencyLimit) * taskDuration;
+      expect(concurrentTime).toBe(expectedTime);
 
-      // Allow 50% margin for overhead and timing variability
-      expect(concurrentTime).toBeLessThan(expectedTime * 1.5);
-
-      // Should be significantly faster than sequential
       const sequentialTime = taskCount * taskDuration;
       expect(concurrentTime).toBeLessThan(sequentialTime * 0.7);
     });

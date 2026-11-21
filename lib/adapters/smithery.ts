@@ -1,7 +1,13 @@
 import { z } from "zod";
 import { createMCPServer } from "../core/mcp-server.js";
 import { MemoryCache } from "../core/cache.js";
-import { resolveApiConfig } from "../config/index.js";
+import {
+  DEFAULT_CEP_URL,
+  DEFAULT_CNPJ_URL,
+  isAllowedCepUrl,
+  isAllowedCnpjUrl,
+  resolveApiConfig,
+} from "../config/index.js";
 import { ApiConfig } from "../types/index.js";
 import { CACHE } from "../shared/utils/constants.js";
 
@@ -10,17 +16,21 @@ export const configSchema = z
     cnpjBaseUrl: z
       .string()
       .url()
-      .describe("Custom CNPJ API base URL (default: https://opencnpj.org/api/v1)")
-      .default("https://opencnpj.org/api/v1")
-      .optional(),
+      .refine(isAllowedCnpjUrl, {
+        message: "Disallowed CNPJ API URL (must be an allowlisted HTTPS host)",
+      })
+      .describe(`Custom CNPJ API base URL (default: ${DEFAULT_CNPJ_URL})`)
+      .default(DEFAULT_CNPJ_URL),
     cepBaseUrl: z
       .string()
       .url()
-      .describe("Custom CEP API base URL (default: https://opencep.com/v1)")
-      .default("https://opencep.com/v1")
-      .optional(),
+      .refine(isAllowedCepUrl, {
+        message: "Disallowed CEP API URL (must be an allowlisted HTTPS host)",
+      })
+      .describe(`Custom CEP API base URL (default: ${DEFAULT_CEP_URL})`)
+      .default(DEFAULT_CEP_URL),
     authHeaders: z
-      .record(z.string())
+      .record(z.string(), z.string())
       .describe("Extra headers for API requests (optional)")
       .optional(),
   })

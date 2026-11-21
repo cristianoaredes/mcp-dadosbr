@@ -24,6 +24,9 @@ on:
           - staging
           - production
 
+permissions:
+  contents: read
+
 jobs:
   deploy:
     if: github.ref == 'refs/heads/main'
@@ -33,6 +36,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -63,7 +68,7 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           environment: ${{ github.event.inputs.environment || 'staging' }}
           workingDirectory: "."
-          wranglerVersion: "3.95.0"
+          wranglerVersion: "4.166.0"
           command: deploy --env ${{ github.event.inputs.environment || 'staging' }}
 
       - name: Get worker URL

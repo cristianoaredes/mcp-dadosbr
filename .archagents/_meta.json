@@ -22,12 +22,12 @@
       {
         "path": "package.json",
         "sha1": "ecf86b08666fef537ffe4cc35c313937a2abe29e",
-        "lines_cited": "L109-L114"
+        "lines_cited": "L109-L111"
       },
       {
         "path": "lib/core/mcp-server.ts",
         "sha1": "ca2fd0fa21c7c18bc08f972684f31ce1dbf9f85d",
-        "lines_cited": "L17-L64"
+        "lines_cited": "L17-L66"
       }
     ],
     ".archagents/01-business-domain.md": [
@@ -270,25 +270,25 @@
     ]
   },
   "metrics": {
-    "total_tickets": 12,
-    "done_tickets": 12,
+    "total_tickets": 29,
+    "done_tickets": 29,
     "archived_tickets": 0,
-    "avg_cycle_time": 0.24,
+    "avg_cycle_time": 1.77,
     "avg_cycle_time_coverage": {
-      "measured": 12,
-      "total": 12,
+      "measured": 29,
+      "total": 29,
       "ratio": 1.0
     },
     "success_rate": 0.0,
     "success_rate_coverage": {
       "measured": 0,
-      "total": 7,
-      "discarded_non_outcome": 7,
+      "total": 8,
+      "discarded_non_outcome": 8,
       "ratio": 0.0,
       "source": "learning_log + taxonomia TCK-0820"
     },
     "status_breakdown": {
-      "done": 12
+      "done": 29
     }
   },
   "active_runs": [],
@@ -304,16 +304,16 @@
       "backlog_health": {
         "value": 100.0,
         "weight": 0.4,
-        "measured": 12,
-        "total": 12,
+        "measured": 29,
+        "total": 29,
         "ratio": 1.0
       },
       "recent_success": {
         "value": 0.0,
         "weight": 0.4,
         "measured": 0,
-        "total": 7,
-        "discarded_non_outcome": 7,
+        "total": 8,
+        "discarded_non_outcome": 8,
         "ratio": 0.0,
         "source": "learning_log (últimos 10) + taxonomia TCK-0820"
       },
@@ -333,7 +333,7 @@
       "source": "zombie-run-scan.py (TCK-1447/TCK-2477) via .archagents/.zombie-runs-baseline.json"
     }
   },
-  "last_updated": "2026-11-19T18:12:46.343321Z",
+  "last_updated": "2026-11-20T21:17:59.786289Z",
   "learning_log": [
     {
       "run": "RUN-20261117-224844-querido-diario",
@@ -374,6 +374,77 @@
       "ticket": "TCK-0012",
       "run": "RUN-20261119-174741-ephemeral-runner-supervisor",
       "learning": "Em repositórios públicos com self-hosted runners em Docker sobre host dual-stack, regras apenas IPv4 deixam bypass via fe80::/64 contra sockets [::]:22 (exige disable_ipv6 sysctl + ip6tables DROP); além disso, default labels (self-hosted/linux/x64) exigem approval_policy=all_external_contributors somado a guarda pré-spawn contra label-subset hijacking."
+    },
+    {
+      "ticket": "TCK-0025",
+      "run": "RUN-20261120-210540-tck-0025",
+      "learning": "No ciclo de remediação TCK-0013..TCK-0029: (1) testes reais importando os módulos de lib/ + vi.useFakeTimers() revelam bugs invisíveis em suites replicadas (SSE finally, AbortController, async abort race); (2) Logger em MCP stdio deve usar 100% stderr com Web Crypto portable em Cloudflare Workers; (3) Observe handoff (48h pós-deploy, owner operador): validar métricas RED/cacheHits, /health com sonda KV real, wrangler tail sem vazamento de segredos e npm run test:integration."
     }
-  ]
+  ],
+  "framework_version": "2.25.0",
+  "applied_migrations": [
+    {
+      "id": "0001-sqlite-index",
+      "sha256": "9187483d69940a59b6549cc4611de95372c743788efae869bba677035f4a9a70"
+    },
+    {
+      "id": "0002-adapters-sync",
+      "sha256": "f5e2849a0a321b25ee5e81527ca0eb0950c1ce2611dc335fe4aa2b73c54f1718"
+    },
+    {
+      "id": "0003-meta-framework-version",
+      "sha256": "bcf838830a2ad9aebacb6642b14125d445f509878fa89ffdbd1e50673ef656cd"
+    },
+    {
+      "id": "0004-observability-and-version-sync",
+      "sha256": "c9f725a5c5c1aa27b841cfa947fefef74bc9510a452cd009c5b8ac2c43338e55"
+    },
+    {
+      "id": "0005-gitignore-snapshots-brownfield",
+      "sha256": "e98ef989450a25bf27620facbf5a612d669b096cbcbd910fc606e8ad2c380773"
+    },
+    {
+      "id": "0006-knowledge-pack",
+      "sha256": "20825fa36ff95428cc53cd8f99b26da9a9dc7cf8a404d399978950f5ab1ce94c"
+    }
+  ],
+  "asis_sync": {
+    "last": {
+      "synced_at": "2026-11-20T15:26:00Z",
+      "git_head": "6c74db6",
+      "facts_hash": "f241c69ffe1194c0",
+      "docs_touched": [
+        "03-modules.md",
+        "02-architecture.md",
+        "08-conventions.md",
+        "05-integrations.md",
+        "07-security-compliance.md"
+      ]
+    },
+    "03-modules.md": {
+      "synced_at": "2026-11-20T15:26:00Z",
+      "git_head": "6c74db6",
+      "facts_hash": "f241c69ffe1194c0"
+    },
+    "02-architecture.md": {
+      "synced_at": "2026-11-20T15:26:00Z",
+      "git_head": "6c74db6",
+      "facts_hash": "f241c69ffe1194c0"
+    },
+    "08-conventions.md": {
+      "synced_at": "2026-11-20T15:26:00Z",
+      "git_head": "6c74db6",
+      "facts_hash": "f241c69ffe1194c0"
+    },
+    "05-integrations.md": {
+      "synced_at": "2026-11-20T15:26:00Z",
+      "git_head": "6c74db6",
+      "facts_hash": "f241c69ffe1194c0"
+    },
+    "07-security-compliance.md": {
+      "synced_at": "2026-11-20T15:26:00Z",
+      "git_head": "6c74db6",
+      "facts_hash": "f241c69ffe1194c0"
+    }
+  }
 }

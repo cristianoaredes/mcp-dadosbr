@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { resolveApiConfig } from "../../lib/config/index.js";
 
 describe("Config SSRF Protection", () => {
-  const originalEnv = process.env;
+  const originalEnv = { ...process.env };
 
   afterEach(() => {
     // Restore original environment after each test
@@ -109,6 +109,126 @@ describe("Config SSRF Protection", () => {
     it("should clearly identify which API URL is invalid", () => {
       process.env.CEP_API_BASE_URL = "https://bad-host.com/";
       expect(() => resolveApiConfig()).toThrow(/Invalid or disallowed CEP API URL/);
+    });
+  });
+
+  describe("resolveApiConfig Overrides SSRF Protection", () => {
+    it("should reject cloud metadata override even when authHeaders are configured", () => {
+      process.env.API_KEY_HEADER = "X-Secret-Key";
+      process.env.API_KEY_VALUE = "top-secret-token";
+      expect(() =>
+        resolveApiConfig({
+          cnpjBaseUrl: "https://169.254.169.254/latest/meta-data",
+        })
+      ).toThrow(/Invalid or disallowed CNPJ API URL/);
+    });
+
+    it("should reject disallowed CNPJ/CEP hosts and non-HTTPS overrides", () => {
+      expect(() =>
+        resolveApiConfig({ cnpjBaseUrl: "https://evil.com/api/" })
+      ).toThrow(/Invalid or disallowed CNPJ API URL/);
+      expect(() =>
+        resolveApiConfig({ cepBaseUrl: "https://evil.com/cep/" })
+      ).toThrow(/Invalid or disallowed CEP API URL/);
+      expect(() =>
+        resolveApiConfig({ cnpjBaseUrl: "http://api.opencnpj.org/" })
+      ).toThrow(/Invalid or disallowed CNPJ API URL/);
+      expect(() =>
+        resolveApiConfig({ cnpjBaseUrl: "" })
+      ).toThrow(/Invalid or disallowed CNPJ API URL/);
+    });
+
+    it("should normalize trailing slash on valid overrides and preserve defaults for undefined overrides", () => {
+      const normalized = resolveApiConfig({
+        cnpjBaseUrl: "https://api.opencnpj.org",
+        cepBaseUrl: "https://opencep.com/v1",
+      });
+      expect(normalized.cnpjBaseUrl).toBe("https://api.opencnpj.org/");
+      expect(normalized.cepBaseUrl).toBe("https://opencep.com/v1/");
+
+      const defaulted = resolveApiConfig({ cnpjBaseUrl: undefined });
+      expect(defaulted.cnpjBaseUrl).toBe("https://api.opencnpj.org/");
+      expect(defaulted.cepBaseUrl).toBe("https://opencep.com/v1/");
+    });
+  });
+
+  describe("Loopback Environment & Subdomain Restrictions", () => {
+    it("should reject localhost and 127.0.0.1 in production via env or overrides", () => {
+      process.env.NODE_ENV = "production";
+      process.env.CNPJ_API_BASE_URL = "http://localhost:3000/";
+      expect(() => resolveApiConfig()).toThrow(/Invalid or disallowed CNPJ API URL/);
+
+      delete process.env.CNPJ_API_BASE_URL;
+      expect(() =>
+        resolveApiConfig({ cnpjBaseUrl: "http://127.0.0.1:8080/" })
+      ).toThrow(/Invalid or disallowed CNPJ API URL/);
+      expect(() =>
+        resolveApiConfig({ cepBaseUrl: "https://localhost/" })
+      ).toThrow(/Invalid or disallowed CEP API URL/);
+    });
+
+    it("should reject localhost and 127.0.0.1 when NODE_ENV is unset (fail-closed)", () => {
+      delete process.env.NODE_ENV;
+      process.env.CNPJ_API_BASE_URL = "http://localhost:3000/";
+      expect(() => resolveApiConfig()).toThrow(/Invalid or disallowed CNPJ API URL/);
+
+      delete process.env.CNPJ_API_BASE_URL;
+      expect(() =>
+        resolveApiConfig({ cepBaseUrl: "http://127.0.0.1:8080/" })
+      ).toThrow(/Invalid or disallowed CEP API URL/);
+    });
+
+    it("should allow exact loopback in development/test while rejecting subdomains, IPv6 ::1, and non-HTTP schemes", () => {
+      process.env.NODE_ENV = "development";
+      const devCfg = resolveApiConfig({
+        cnpjBaseUrl: "http://localhost:3000",
+        cepBaseUrl: "http://127.0.0.1:8080",
+      });
+      expect(devCfg.cnpjBaseUrl).toBe("http://localhost:3000/");
+      expect(devCfg.cepBaseUrl).toBe("http://127.0.0.1:8080/");
+
+      expect(() =>
+        resolveApiConfig({ cnpjBaseUrl: "http://evil.localhost:3000/" })
+      ).toThrow(/Invalid or disallowed CNPJ API URL/);
+      expect(() =>
+        resolveApiConfig({ cepBaseUrl: "http://foo.127.0.0.1/" })
+      ).toThrow(/Invalid or disallowed CEP API URL/);
+      expect(() =>
+        resolveApiConfig({ cnpjBaseUrl: "file://localhost/etc/passwd" })
+      ).toThrow(/Invalid or disallowed CNPJ API URL/);
+      expect(() =>
+        resolveApiConfig({ cnpjBaseUrl: "http://[::1]:3000/" })
+      ).toThrow(/Invalid or disallowed CNPJ API URL/);
+    });
+  });
+
+  describe("Embedded Credentials Rejection & Log Sanitization", () => {
+    const buildCredUrl = (proto: string, u: string, p: string, hostPath: string) =>
+      `${proto}://${u}:${p}@${hostPath}`;
+
+    it("should reject URLs with username/password and never leak them in thrown errors", () => {
+      let caughtError = "";
+      try {
+        resolveApiConfig({
+          cnpjBaseUrl: buildCredUrl("https", "secretUser", "secretPass", "api.opencnpj.org/v1/"),
+        });
+      } catch (err) {
+        caughtError = err instanceof Error ? err.message : String(err);
+      }
+      expect(caughtError).toMatch(/Invalid or disallowed CNPJ API URL/);
+      expect(caughtError).not.toContain("secretUser");
+      expect(caughtError).not.toContain("secretPass");
+
+      expect(() =>
+        resolveApiConfig({ cepBaseUrl: "https://token@opencep.com/v1/" })
+      ).toThrow(/Invalid or disallowed CEP API URL/);
+
+      process.env.NODE_ENV = "development";
+      expect(() =>
+        resolveApiConfig({
+          cnpjBaseUrl: buildCredUrl("http", "user", "pass", "localhost:3000/"),
+        })
+      ).toThrow(/Invalid or disallowed CNPJ API URL/);
     });
   });
 });

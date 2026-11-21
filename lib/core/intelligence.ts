@@ -2,13 +2,14 @@
  * CNPJ Intelligence - Automatic intelligent search based on CNPJ data
  */
 
-import { lookup } from '../tools/core.js';
+import { lookup } from './lookup.js';
 import { ApiConfig, Cache, LookupResult } from '../types/index.js';
 import { getAvailableProvider, SearchProvider, SearchResult, ProviderType } from './search-providers.js';
 import { buildDorks, DorkCategory, CNPJData } from './dork-templates.js';
 import { TimeoutError } from '../shared/types/result.js';
 import { SEARCH } from '../shared/utils/constants.js';
 import { TIMEOUTS } from '../config/timeouts.js';
+import { maskCnpj, maskSensitiveText, summarizeQueryForLog } from '../shared/log-redaction.js';
 
 /**
  * Execute tasks with concurrency limit
@@ -17,14 +18,19 @@ import { TIMEOUTS } from '../config/timeouts.js';
  * @param limit - Maximum number of concurrent tasks (default: 3)
  * @returns Array of settled results
  */
-async function executeWithConcurrencyLimit<T>(
+export async function executeWithConcurrencyLimit<T>(
   tasks: (() => Promise<T>)[],
-  limit: number = 3
+  limit: number = 3,
+  signal?: AbortSignal
 ): Promise<PromiseSettledResult<T>[]> {
   const results: PromiseSettledResult<T>[] = new Array(tasks.length);
   const executing: Set<Promise<void>> = new Set();
 
   for (let i = 0; i < tasks.length; i++) {
+    if (signal?.aborted) {
+      break;
+    }
+
     const task = tasks[i];
 
     // Create a promise that stores result and removes itself when done
@@ -47,10 +53,16 @@ async function executeWithConcurrencyLimit<T>(
     if (executing.size >= limit) {
       await Promise.race(executing);
     }
+
+    if (signal?.aborted) {
+      break;
+    }
   }
 
-  // Wait for all remaining promises
-  await Promise.all(executing);
+  // Wait for remaining tasks unless aborted by parent deadline
+  if (!signal?.aborted && executing.size > 0) {
+    await Promise.all(executing);
+  }
 
   return results;
 }
@@ -61,7 +73,6 @@ export interface IntelligenceOptions {
   provider?: ProviderType;
   maxResultsPerQuery?: number;
   maxQueries?: number;
-  apiKey?: string;
   cachedCompanyData?: CNPJData; // Reuse company data if already fetched
 }
 
@@ -81,7 +92,7 @@ export interface SearchResultWithMeta extends SearchResult {
 /**
  * Normalize CNPJ to digits only for comparison
  */
-function normalizeCnpj(cnpj: string): string {
+export function normalizeCnpj(cnpj: string): string {
   return cnpj.replace(/\D/g, '');
 }
 
@@ -129,7 +140,7 @@ function getCnpjPatterns(cnpj: string): RegExp[] {
  * Check if a text contains the CNPJ (with or without formatting)
  * Uses word boundaries to avoid false positives
  */
-function containsCnpj(text: string, cnpj: string): boolean {
+export function containsCnpj(text: string, cnpj: string): boolean {
   const patterns = getCnpjPatterns(cnpj);
   return patterns.some(pattern => pattern.test(text));
 }
@@ -137,7 +148,7 @@ function containsCnpj(text: string, cnpj: string): boolean {
 /**
  * Filter search results to only include those that mention the CNPJ
  */
-function filterResultsByCnpj(results: SearchResult[], cnpj: string): SearchResult[] {
+export function filterResultsByCnpj(results: SearchResult[], cnpj: string): SearchResult[] {
   return results.filter(result => {
     // Check title, URL, and snippet for CNPJ
     const searchText = `${result.title} ${result.url} ${result.snippet}`.toLowerCase();
@@ -151,10 +162,14 @@ export async function executeIntelligence(
   cache?: Cache
 ): Promise<LookupResult> {
   const TOTAL_TIMEOUT_MS = TIMEOUTS.INTELLIGENCE_TOTAL_MS;
+  const controller = new AbortController();
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
 
-  // Create timeout promise
+  // Create timeout promise that aborts in-flight searches on expiration
   const timeoutPromise = new Promise<never>((_, reject) => {
-    setTimeout(() => {
+    timeoutId = setTimeout(() => {
+      timeoutId = undefined;
+      controller.abort();
       reject(new TimeoutError(
         'Intelligence search timed out',
         TOTAL_TIMEOUT_MS
@@ -162,42 +177,69 @@ export async function executeIntelligence(
     }, TOTAL_TIMEOUT_MS);
   });
 
-  // Create main execution promise
-  const executionPromise = executeIntelligenceInternal(options, apiConfig, cache);
+  // Create main execution promise linked to controller.signal
+  const executionPromise = executeIntelligenceInternal(
+    options,
+    apiConfig,
+    cache,
+    controller.signal
+  );
+  // Prevent unhandled rejection if execution rejects after timeout wins Promise.race
+  executionPromise.catch(() => {});
 
-  // Race between timeout and execution
-  return Promise.race([executionPromise, timeoutPromise]);
+  try {
+    return await Promise.race([executionPromise, timeoutPromise]);
+  } catch (error: unknown) {
+    if (error instanceof TimeoutError) {
+      const maskedCnpj = maskCnpj(options.cnpj);
+      console.error(
+        `[intelligence] [${maskedCnpj}] Timeout reached (limit: ${error.timeoutMs}ms)`
+      );
+      return {
+        ok: false,
+        error: `Intelligence search timed out after ${error.timeoutMs}ms. Try reducing max_queries or using a faster provider.`
+      };
+    }
+    throw error;
+  } finally {
+    if (timeoutId !== undefined) {
+      clearTimeout(timeoutId);
+      timeoutId = undefined;
+    }
+  }
 }
 
 async function executeIntelligenceInternal(
   options: IntelligenceOptions,
   apiConfig: ApiConfig,
-  cache?: Cache
+  cache: Cache | undefined,
+  signal: AbortSignal
 ): Promise<LookupResult> {
   const startTime = Date.now();
-  const transportMode = process.env.MCP_TRANSPORT || "stdio";
+  const normalizedCnpj = normalizeCnpj(options.cnpj);
+  const maskedCnpj = maskCnpj(normalizedCnpj);
 
   try {
     // Step 1: Get company data (reuse cached if provided)
-    console.error(`[intelligence] [${options.cnpj}] Starting CNPJ intelligence search...`);
+    console.error(`[intelligence] [${maskedCnpj}] Starting CNPJ intelligence search...`);
 
     let companyData: CNPJData;
 
     if (options.cachedCompanyData) {
       // Reuse provided company data
       companyData = options.cachedCompanyData;
-      console.error(`[intelligence] [${options.cnpj}] Using cached company data`);
+      console.error(`[intelligence] [${maskedCnpj}] Using cached company data`);
     } else {
-      // Try to get from cache first
-      const cacheKey = `cnpj:${apiConfig.cnpjBaseUrl}:${options.cnpj}`;
+      // Try to get from cache first using normalized CNPJ key (matching lookup())
+      const cacheKey = `cnpj:${apiConfig.cnpjBaseUrl}:${normalizedCnpj}`;
       const cachedData = cache ? await cache.get<CNPJData>(cacheKey) : null;
 
       if (cachedData) {
         companyData = cachedData;
-        console.error(`[intelligence] [${options.cnpj}] Using cache hit for company data`);
+        console.error(`[intelligence] [${maskedCnpj}] Using cache hit for company data`);
       } else {
         // Fetch from API only if not in cache
-        const cnpjResult = await lookup('cnpj', options.cnpj, apiConfig, cache);
+        const cnpjResult = await lookup('cnpj', normalizedCnpj, apiConfig, cache);
 
         if (!cnpjResult.ok) {
           return {
@@ -209,21 +251,30 @@ async function executeIntelligenceInternal(
         companyData = cnpjResult.data as CNPJData;
       }
     }
+
+    if (signal.aborted) {
+      throw new TimeoutError('Intelligence search timed out', TIMEOUTS.INTELLIGENCE_TOTAL_MS);
+    }
+
     const company = companyData as { razao_social?: string };
-    console.error(`[intelligence] [${options.cnpj}] Company: ${company.razao_social || 'Unknown'}`);
+    console.error(`[intelligence] [${maskedCnpj}] Company resolved (has_name=${Boolean(company.razao_social)})`);
 
     // Step 2: Build dorks based on company data
     const dorks = buildDorks(companyData, options.categories);
     const maxQueries = options.maxQueries || SEARCH.DEFAULT_MAX_QUERIES;
     const selectedDorks = dorks.slice(0, maxQueries);
 
-    console.error(`[intelligence] [${options.cnpj}] Generated ${dorks.length} dorks, using ${selectedDorks.length}`);
+    console.error(`[intelligence] [${maskedCnpj}] Generated ${dorks.length} dorks, using ${selectedDorks.length}`);
 
     // Step 3: Resolve provider (requires Tavily API key from server config)
     const provider: SearchProvider = await getAvailableProvider(options.provider);
 
+    if (signal.aborted) {
+      throw new TimeoutError('Intelligence search timed out', TIMEOUTS.INTELLIGENCE_TOTAL_MS);
+    }
+
     console.error(
-      `[intelligence] [${options.cnpj}] Using provider: ${provider.name}`
+      `[intelligence] [${maskedCnpj}] Using provider: ${provider.name}`
     );
 
     // Step 4: Execute searches with concurrency limit
@@ -244,26 +295,36 @@ async function executeIntelligenceInternal(
     const maxResultsPerQuery = options.maxResultsPerQuery || SEARCH.DEFAULT_MAX_RESULTS;
 
     // Get concurrency limit from environment or use default
-    const concurrencyLimit = parseInt(process.env.MCP_INTELLIGENCE_CONCURRENCY || '3', 10);
+    const rawConcurrency = Number.parseInt(process.env.MCP_INTELLIGENCE_CONCURRENCY || '3', 10);
+    const concurrencyLimit = Number.isFinite(rawConcurrency) && rawConcurrency > 0 ? rawConcurrency : 3;
 
     console.error(
-      `[intelligence] [${options.cnpj}] Executing ${selectedDorks.length} queries ` +
+      `[intelligence] [${maskedCnpj}] Executing ${selectedDorks.length} queries ` +
       `with concurrency limit: ${concurrencyLimit}`
     );
 
     // Create tasks for concurrent execution
     const searchTasks = selectedDorks.map(dork => {
       return async () => {
+        if (signal.aborted) {
+          return {
+            category: dork.category,
+            results: [],
+            success: false
+          };
+        }
+
         try {
-          console.error(`[intelligence] [${dork.category}] Searching: ${dork.query}`);
+          console.error(`[intelligence] [${dork.category}] Searching (${summarizeQueryForLog(dork.query)})`);
           const searchResult = await provider.search(
             dork.query,
-            maxResultsPerQuery
+            maxResultsPerQuery,
+            { signal }
           );
 
           if (searchResult.ok) {
             // Filter results to ensure they contain the CNPJ
-            const filteredResults = filterResultsByCnpj(searchResult.value, options.cnpj);
+            const filteredResults = filterResultsByCnpj(searchResult.value, normalizedCnpj);
 
             const resultsWithMeta: SearchResultWithMeta[] = filteredResults.map(r => ({
               ...r,
@@ -283,7 +344,7 @@ async function executeIntelligenceInternal(
             };
           } else {
             // Log error but continue with other searches
-            console.error(`[intelligence] [${dork.category}] Search failed: ${searchResult.error.message}`);
+            console.error(`[intelligence] [${dork.category}] Search failed: ${maskSensitiveText(searchResult.error.message)}`);
             return {
               category: dork.category,
               results: [],
@@ -292,7 +353,7 @@ async function executeIntelligenceInternal(
           }
         } catch (error: unknown) {
           const err = error as Error;
-          console.error(`[intelligence] [${dork.category}] Unexpected error: ${err.message}`);
+          console.error(`[intelligence] [${dork.category}] Unexpected error: ${maskSensitiveText(err.message)}`);
           return {
             category: dork.category,
             results: [],
@@ -302,13 +363,21 @@ async function executeIntelligenceInternal(
       };
     });
 
-    // Execute all searches with concurrency limit
-    const searchTaskResults = await executeWithConcurrencyLimit(searchTasks, concurrencyLimit);
+    // Execute all searches with concurrency limit and abort propagation
+    const searchTaskResults = await executeWithConcurrencyLimit(
+      searchTasks,
+      concurrencyLimit,
+      signal
+    );
+
+    if (signal.aborted) {
+      throw new TimeoutError('Intelligence search timed out', TIMEOUTS.INTELLIGENCE_TOTAL_MS);
+    }
 
     // Aggregate results
     let queriesExecuted = 0;
     for (const result of searchTaskResults) {
-      if (result.status === 'fulfilled') {
+      if (result && result.status === 'fulfilled') {
         const { category, results, success } = result.value;
         searchResults[category].push(...results);
         if (success) {
@@ -336,7 +405,7 @@ async function executeIntelligenceInternal(
     const duplicatesRemoved = Object.values(searchResults).reduce((sum, results) => sum + results.length, 0) - totalResults;
 
     if (duplicatesRemoved > 0) {
-      console.error(`[intelligence] [${options.cnpj}] Removed ${duplicatesRemoved} duplicate results`);
+      console.error(`[intelligence] [${maskedCnpj}] Removed ${duplicatesRemoved} duplicate results`);
     }
 
     // Step 6: Build response
@@ -351,7 +420,7 @@ async function executeIntelligenceInternal(
     };
 
     console.error(
-      `[intelligence] [${options.cnpj}] Complete [${elapsed}ms] [${queriesExecuted} queries] [${providerUsed}]`
+      `[intelligence] [${maskedCnpj}] Complete [${elapsed}ms] [${queriesExecuted} queries] [${providerUsed}]`
     );
 
     return {
@@ -365,7 +434,7 @@ async function executeIntelligenceInternal(
     // Handle timeout errors specifically
     if (error instanceof TimeoutError) {
       console.error(
-        `[intelligence] [${options.cnpj}] Timeout after ${elapsed}ms (limit: ${error.timeoutMs}ms)`
+        `[intelligence] [${maskedCnpj}] Timeout after ${elapsed}ms (limit: ${error.timeoutMs}ms)`
       );
       return {
         ok: false,
@@ -375,7 +444,7 @@ async function executeIntelligenceInternal(
 
     const err = error as Error;
     console.error(
-      `[intelligence] [${options.cnpj}] Error: ${err.message} [${elapsed}ms]`
+      `[intelligence] [${maskedCnpj}] Error: ${maskSensitiveText(err.message)} [${elapsed}ms]`
     );
 
     return {
@@ -401,8 +470,9 @@ Perfect for: Due diligence, company research, background checks, investigations.
 
 Provider options:
 - tavily (requires TAVILY_API_KEY env var)
+- perplexity (requires PERPLEXITY_API_KEY env var)
 
-Note: You must set TAVILY_API_KEY to enable web search queries.`,
+Note: Set TAVILY_API_KEY or PERPLEXITY_API_KEY on the server to enable web search queries.`,
   inputSchema: {
     type: "object",
     properties: {
@@ -414,14 +484,25 @@ Note: You must set TAVILY_API_KEY to enable web search queries.`,
         type: "array",
         items: {
           type: "string",
-          enum: ["government", "legal", "news", "documents", "social", "partners"]
+          enum: [
+            "government",
+            "legal",
+            "news",
+            "documents",
+            "social",
+            "partners",
+            "security",
+            "databases",
+            "infrastructure",
+            "social_media"
+          ]
         },
         description: "Search categories to include (default: all)"
       },
       provider: {
         type: "string",
-        enum: ["tavily"],
-        description: "Search provider to use (requires TAVILY_API_KEY)",
+        enum: ["tavily", "perplexity"],
+        description: "Search provider to use (server-configured API key required)",
         default: "tavily"
       },
       max_results_per_query: {
@@ -437,10 +518,6 @@ Note: You must set TAVILY_API_KEY to enable web search queries.`,
         minimum: 1,
         maximum: 20,
         default: 10
-      },
-      api_key: {
-        type: "string",
-        description: "Optional Tavily API key (if not provided, uses server configuration)"
       }
     },
     required: ["cnpj"]

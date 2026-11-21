@@ -1,0 +1,20 @@
+{
+  "enabled": false,
+  "schema_version": "1.0",
+  "agentic": {
+    "mcp": true,
+    "llm": false,
+    "role": "mcp-server",
+    "server_name": "mcp-dadosbr",
+    "tool_count": 23,
+    "transports": [
+      "stdio",
+      "http",
+      "sse",
+      "cloudflare-worker",
+      "smithery"
+    ],
+    "runtime_validation": "zod",
+    "allowlist_path": ".archagents/mcp-tool-allowlist.json"
+  }
+}

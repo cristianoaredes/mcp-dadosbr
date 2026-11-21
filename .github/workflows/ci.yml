@@ -113,6 +113,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=high
+
       - name: Check TypeScript
         run: npx tsc --noEmit
 

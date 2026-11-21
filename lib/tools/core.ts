@@ -1,44 +1,20 @@
 /**
- * Core tools — CNPJ lookup, CEP lookup, search, intelligence
+ * Core tools — CNPJ lookup, CEP lookup, search, intelligence, thinking
  */
 
 import { registerTool } from "../core/registry.js";
-import { httpJson } from "../core/http-client.js";
+import { deduplicate, getPendingRequestCount, lookup } from "../core/lookup.js";
 import { CnpjSchema, CepSchema } from "../core/validation.js";
-import { Cache, LookupResult, ApiConfig } from "../types/index.js";
+import {
+    CnpjIntelligenceSchema,
+    CnpjSearchSchema,
+    DORK_CATEGORIES,
+    SEARCH_PROVIDERS,
+    SequentialThinkingSchema,
+} from "../core/tool-schemas.js";
 import { SEARCH_TOOL, executeSearch } from "../core/search.js";
-
-// ─── Shared lookup with caching and deduplication ───────────────────────────
-
-interface PendingRequest { promise: Promise<LookupResult>; timestamp: number; timeoutId: NodeJS.Timeout; }
-const pendingRequests = new Map<string, PendingRequest>();
-
-async function deduplicate<T>(key: string, fn: () => Promise<T>): Promise<T> {
-    const existing = pendingRequests.get(key);
-    if (existing && Date.now() - existing.timestamp < 30000) return existing.promise as Promise<T>;
-    const promise = fn();
-    const timeoutId = setTimeout(() => pendingRequests.delete(key), 30000);
-    pendingRequests.set(key, { promise: promise as Promise<LookupResult>, timestamp: Date.now(), timeoutId });
-    try { return await promise; } finally { clearTimeout(timeoutId); pendingRequests.delete(key); }
-}
-
-async function lookup(type: "cnpj" | "cep", input: string, apiConfig: ApiConfig, cache?: Cache): Promise<LookupResult> {
-    const baseUrl = type === "cnpj" ? apiConfig.cnpjBaseUrl : apiConfig.cepBaseUrl;
-    const cacheKey = `${type}:${baseUrl}:${input}`;
-    if (cache) {
-        const cached = await cache.get(cacheKey);
-        if (cached) return { ok: true, data: cached };
-    }
-    return await deduplicate(cacheKey, async () => {
-        const result = await httpJson(`${baseUrl}${input}`, apiConfig.authHeaders);
-        if (result.ok && result.data) {
-            const responseData = { ...result.data, source: result.source, fetchedAt: new Date().toISOString() };
-            if (cache) await cache.set(cacheKey, responseData);
-            return { ok: true, data: responseData };
-        }
-        return { ok: false, error: result.error === "not found" ? `${type.toUpperCase()} not found` : result.error || "unknown error" };
-    });
-}
+import { CNPJ_INTELLIGENCE_TOOL, executeIntelligence } from "../core/intelligence.js";
+import { SequentialThinkingProcessor, SEQUENTIAL_THINKING_TOOL } from "../core/sequential-thinking.js";
 
 // ─── CNPJ Lookup ────────────────────────────────────────────────────────────
 
@@ -50,8 +26,9 @@ registerTool({
         properties: { cnpj: { type: "string", description: "Brazilian CNPJ number (with or without formatting)" } },
         required: ["cnpj"],
     },
+    zodSchema: CnpjSchema,
     execute: async (args, apiConfig, cache) => {
-        const parsed = CnpjSchema.parse(args);
+        const parsed = args as { cnpj: string };
         return await lookup("cnpj", parsed.cnpj, apiConfig, cache);
     },
 });
@@ -66,8 +43,9 @@ registerTool({
         properties: { cep: { type: "string", description: "Brazilian CEP postal code (with or without formatting)" } },
         required: ["cep"],
     },
+    zodSchema: CepSchema,
     execute: async (args, apiConfig, cache) => {
-        const parsed = CepSchema.parse(args);
+        const parsed = args as { cep: string };
         return await lookup("cep", parsed.cep, apiConfig, cache);
     },
 });
@@ -76,6 +54,7 @@ registerTool({
 
 registerTool({
     ...SEARCH_TOOL,
+    zodSchema: CnpjSearchSchema,
     execute: async (args, _apiConfig, cache) => {
         const { query, max_results = 5 } = args as { query: string; max_results?: number };
         return await executeSearch(query, max_results, cache);
@@ -85,33 +64,40 @@ registerTool({
 // ─── CNPJ Intelligence ──────────────────────────────────────────────────────
 
 registerTool({
-    name: "cnpj_intelligence",
-    description: "Intelligent automatic search about a Brazilian company using CNPJ.",
-    inputSchema: {
-        type: "object",
-        properties: {
-            cnpj: { type: "string", description: "Brazilian CNPJ number (with or without formatting)" },
-            categories: { type: "array", items: { type: "string" }, description: "Categories to search" },
-            max_results: { type: "number", description: "Maximum results per category", default: 10 },
-            api_key: { type: "string", description: "Optional Tavily API key" },
-        },
-        required: ["cnpj"],
-    },
+    ...CNPJ_INTELLIGENCE_TOOL,
+    zodSchema: CnpjIntelligenceSchema,
     execute: async (args, apiConfig, cache) => {
-        const mod = await import("../core/intelligence.js");
-        return await mod.executeIntelligence(args as unknown as Parameters<typeof mod.executeIntelligence>[0], apiConfig, cache);
+        const parsed = args as {
+            cnpj: string;
+            categories?: typeof DORK_CATEGORIES[number][];
+            provider?: typeof SEARCH_PROVIDERS[number];
+            max_results_per_query?: number;
+            max_results?: number;
+            max_queries?: number;
+        };
+        return await executeIntelligence(
+            {
+                cnpj: parsed.cnpj,
+                categories: parsed.categories,
+                provider: parsed.provider,
+                maxResultsPerQuery: parsed.max_results_per_query ?? parsed.max_results,
+                maxQueries: parsed.max_queries,
+            },
+            apiConfig,
+            cache,
+        );
     },
 });
 
 // ─── Sequential Thinking ────────────────────────────────────────────────────
 
-import { SequentialThinkingProcessor, SEQUENTIAL_THINKING_TOOL } from "../core/sequential-thinking.js";
-
-const thinkingProcessor = new SequentialThinkingProcessor();
-
 registerTool({
     ...SEQUENTIAL_THINKING_TOOL,
-    execute: async (args) => thinkingProcessor.processThought(args),
+    zodSchema: SequentialThinkingSchema,
+    execute: async (args, _apiConfig, _cache, context) => {
+        const processor = context?.thinkingProcessor ?? new SequentialThinkingProcessor();
+        return processor.processThought(args);
+    },
 });
 
-export { lookup };
+export { deduplicate, getPendingRequestCount, lookup };

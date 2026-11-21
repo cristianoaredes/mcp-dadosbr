@@ -14,23 +14,29 @@ export default defineConfig({
         coverage: {
             provider: 'v8',
             reporter: ['text', 'json', 'html', 'lcov'],
+            include: ['lib/**/*.ts'],
             exclude: [
                 'node_modules/',
                 'build/',
                 'test/',
                 '**/*.test.ts',
                 '**/*.spec.ts',
-                'lib/workers/', // Cloudflare Workers specific
-                'lib/adapters/cloudflare.ts',
                 'lib/bin/',
+                'lib/index.ts',
+                'lib/types/',
+                'lib/workers/types.ts',
+                'lib/adapters/cli.ts',
                 'scripts/',
                 'examples/',
+                'apps/',
             ],
+            // Baseline measured in TCK-0025 across lib/**/*.ts (incl. logger.ts, tracing.ts, workers/ & cloudflare.ts):
+            // 91.32% stmts, 83.57% branches, 93.25% funcs, 92.09% lines
             thresholds: {
-                lines: 80,
-                functions: 80,
-                branches: 75,
-                statements: 80,
+                lines: 85,
+                functions: 85,
+                branches: 80,
+                statements: 85,
             },
         },
         testTimeout: 10000,

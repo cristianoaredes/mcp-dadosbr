@@ -1,0 +1,30 @@
+{
+  "id": "RUN-20261120-164654-zod-runtime-validation-capabilities-allowlist",
+  "design": "DES-0015",
+  "ticket": "TCK-0016",
+  "started_at": "2026-11-20T16:46:54Z",
+  "started_by": "ops",
+  "environment": "dev",
+  "mode": "live",
+  "status": "completed",
+  "current_step": 4,
+  "total_steps": 4,
+  "ended_at": "2026-11-20T16:53:03Z",
+  "result": "3/3 novos testes Zod/allowlist (23 tools), 318/318 Vitest (20 arquivos), tsc + tsc.worker TYPECHECK_OK, npm run build + build:worker BUILD_OK, verify-tool-allowlist 0 violacoes",
+  "loop_iterations": 1,
+  "attempt_count": 0,
+  "lessons_consulted": [],
+  "loop_cost_usd": null,
+  "cost_source": "unknown",
+  "loop_strategy": "default",
+  "context_peak": 0,
+  "final_judge_delta": 25,
+  "warmup": false,
+  "final_judge_delta_source": "judge",
+  "lesson_utility": {
+    "utility": 0.0,
+    "n_lessons": 0,
+    "lessons_consulted": [],
+    "signal": "no-lessons"
+  }
+}

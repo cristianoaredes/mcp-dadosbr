@@ -9,10 +9,26 @@ import {
   ReadResourceRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import { SERVER_NAME, SERVER_VERSION } from "../config/index.js";
-import { TOOL_DEFINITIONS, executeTool, resetMetrics } from "./tools.js";
+import { TIMEOUTS } from "../config/timeouts.js";
+import { TOOL_DEFINITIONS, executeTool } from "./tools.js";
+import { SequentialThinkingProcessor } from "./sequential-thinking.js";
+import { RateLimiter } from "../infrastructure/rate-limiter.js";
+import { createLogger } from "../infrastructure/logger.js";
+import { RequestContext } from "../infrastructure/tracing.js";
+
+const mcpLogger = createLogger("mcp-server");
 import { Cache, ApiConfig } from "../types/index.js";
-import { formatErrorResponse } from "../shared/errors.js";
+import { formatErrorResponse, RateLimitError } from "../shared/errors.js";
 import { readCnpjProfile } from "../shared/cnpj-profile.js";
+
+const DEFAULT_MCP_TOOL_RATE_LIMIT_MAX = 120;
+
+function parsePositiveIntEnv(name: string): number | undefined {
+  const raw = typeof process !== "undefined" ? process.env?.[name] : undefined;
+  if (!raw) return undefined;
+  const parsed = parseInt(raw, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
+}
 
 const appMimeType = "text/html;profile=mcp-app";
 const apps = [
@@ -66,13 +82,30 @@ const apps = [
 export interface MCPServerOptions {
   apiConfig: ApiConfig;
   cache?: Cache;
+  rateLimit?: { windowMs: number; maxRequests: number } | false;
 }
 
 export function createMCPServer(options: MCPServerOptions): Server {
-  const { apiConfig, cache } = options;
-  
-  // Reset metrics on server creation
-  resetMetrics();
+  const { apiConfig, cache, rateLimit } = options;
+
+  // Session-local sequential thinking state (isolated per server/connection)
+  const thinkingProcessor = new SequentialThinkingProcessor();
+
+  // Session-local tool execution rate limiter covering stdio/SSE/Smithery
+  const disableRateLimit =
+    rateLimit === false ||
+    (typeof process !== "undefined" && process.env?.MCP_DISABLE_RATE_LIMIT === "true");
+  const toolRateLimiter = disableRateLimit
+    ? null
+    : new RateLimiter({
+        windowMs:
+          typeof rateLimit === "object" ? rateLimit.windowMs : TIMEOUTS.RATE_LIMIT_WINDOW_MS,
+        maxRequests:
+          typeof rateLimit === "object"
+            ? rateLimit.maxRequests
+            : (parsePositiveIntEnv("MCP_TOOL_RATE_LIMIT_MAX") ?? DEFAULT_MCP_TOOL_RATE_LIMIT_MAX),
+        enableCleanupTimer: false,
+      });
 
   const server = new Server(
     { name: SERVER_NAME, version: SERVER_VERSION },
@@ -108,9 +141,45 @@ export function createMCPServer(options: MCPServerOptions): Server {
   // Register call tool handler
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const { name, arguments: args } = request.params;
+    const requestContext = new RequestContext();
+    requestContext.addMetadata("tool", name);
+
+    if (toolRateLimiter && !toolRateLimiter.checkLimit("mcp-session")) {
+      const retryAfter = Math.max(
+        1,
+        Math.ceil(toolRateLimiter.getResetTime("mcp-session") / 1000)
+      );
+      mcpLogger.warn(
+        "mcp.rate_limited",
+        { tool: name, retryAfter },
+        requestContext.requestId,
+      );
+      const errorDetails = formatErrorResponse(new RateLimitError(retryAfter));
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              {
+                error: errorDetails.message,
+                code: errorDetails.code,
+                ...(errorDetails.data ? { details: errorDetails.data } : {}),
+              },
+              null,
+              2
+            ),
+          },
+        ],
+        isError: true,
+      };
+    }
 
     try {
-      const result = await executeTool(name, args, apiConfig, cache);
+      const result = await executeTool(name, args, apiConfig, cache, {
+        thinkingProcessor,
+        requestId: requestContext.requestId,
+        requestContext,
+      });
 
       if (result.ok) {
         const appCapability = server.getClientCapabilities()?.extensions?.["io.modelcontextprotocol/ui"];
@@ -123,8 +192,17 @@ export function createMCPServer(options: MCPServerOptions): Server {
           if (profile) structuredContent = { profile };
         }
         if (result.source && Array.isArray(appMimeTypes) && appMimeTypes.includes(appMimeType)) {
-          if (name === "ibge_localidades" && Array.isArray(result.data)) {
-            structuredContent = { items: result.data, source: result.source };
+          if (name === "ibge_localidades") {
+            if (Array.isArray(result.data)) {
+              structuredContent = { items: result.data, source: result.source };
+            } else if (
+              result.data &&
+              typeof result.data === "object" &&
+              "items" in result.data &&
+              Array.isArray((result.data as { items?: unknown }).items)
+            ) {
+              structuredContent = { ...(result.data as Record<string, unknown>), source: result.source };
+            }
           }
           if ((name === "querido_diario" || name === "bacen_taxas" || name === "pncp_licitacoes")
             && result.data && typeof result.data === "object" && !Array.isArray(result.data)) {
