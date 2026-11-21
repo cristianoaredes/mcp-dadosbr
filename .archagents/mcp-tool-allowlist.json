@@ -53,7 +53,7 @@
       "destructive": false,
       "requires_approval": false,
       "description": "Multi-dork OSINT research orchestrated around a validated CNPJ.",
-      "rationale": "Read-only search bounded to 10 queries/10 results per query; api_key input strictly rejected.",
+      "rationale": "Read-only search bounded to 20 queries/10 results per query; api_key input strictly rejected.",
       "network_access": "external-https",
       "api_key_env": "TAVILY_API_KEY|PERPLEXITY_API_KEY"
     },
