@@ -484,7 +484,8 @@ describe('Search Functionality', () => {
           expect(result.value[0]).toEqual({
             title: 'Test Title',
             url: 'http://test.com',
-            snippet: 'Test Content'
+            snippet: 'Test Content',
+            untrusted_source: true,
           });
         }
       });
@@ -508,7 +509,8 @@ describe('Search Functionality', () => {
           expect(result.value[0]).toEqual({
             title: '',
             url: '',
-            snippet: ''
+            snippet: '',
+            untrusted_source: true,
           });
         }
       });
