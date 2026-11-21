@@ -15,6 +15,7 @@ import {
   type CliHttpContext,
   DEFAULT_CLI_HTTP_HOST,
   DEFAULT_MAX_SSE_SESSIONS,
+  isLoopbackHost,
   parseCommaSeparatedList,
 } from "./cli-http.js";
 
@@ -73,6 +74,7 @@ Environment Variables:
   MCP_TRANSPORT         Transport mode: stdio (default) or http
   MCP_HTTP_PORT         HTTP server port (default: 3000)
   MCP_HTTP_HOST         HTTP bind host (default: 127.0.0.1)
+  MCP_API_KEY           API key for HTTP/SSE auth (required outside loopback)
   MCP_ALLOWED_ORIGINS   Comma-separated allowed Origin URLs for CORS
   MCP_ALLOWED_HOSTS     Comma-separated allowed Host headers
   MCP_MAX_SSE_SESSIONS  Maximum concurrent SSE sessions (default: 100)
@@ -116,6 +118,13 @@ For more information, visit: https://github.com/cristianoaredes/mcp-dadosbr`);
   const transportMode = serverConfig.transport;
   if (transportMode === "http") {
     const host = serverConfig.httpHost || DEFAULT_CLI_HTTP_HOST;
+    const apiKey = process.env.MCP_API_KEY?.trim() || undefined;
+    if (!isLoopbackHost(host) && !apiKey) {
+      console.error(
+        `[Security] Refusing to bind HTTP/SSE transport on non-loopback host "${host}" without MCP_API_KEY configured.`
+      );
+      process.exit(1);
+    }
     if (host === "0.0.0.0" || host === "::") {
       console.error(
         `[Security] WARNING: HTTP+SSE transport bound to wildcard interface (${host}). ` +
@@ -133,6 +142,7 @@ For more information, visit: https://github.com/cristianoaredes/mcp-dadosbr`);
       apiConfig,
       cache,
       host,
+      apiKey,
       allowedOrigins: parseCommaSeparatedList(process.env.MCP_ALLOWED_ORIGINS),
       allowedHosts: parseCommaSeparatedList(process.env.MCP_ALLOWED_HOSTS),
       maxSessions,
@@ -141,11 +151,14 @@ For more information, visit: https://github.com/cristianoaredes/mcp-dadosbr`);
     runtimeState.httpContext = httpContext;
 
     const port = serverConfig.httpPort;
-    runtimeState.httpServer = httpContext.app.listen(port, host, () =>
+    runtimeState.httpServer = httpContext.app.listen(port, host, () => {
       console.error(
         `${SERVER_NAME} v${SERVER_VERSION} started on HTTP+SSE transport (port ${port}) [${host}]`
-      )
-    );
+      );
+      console.error(
+        `  HTTP+SSE auth: ${apiKey ? "enabled (MCP_API_KEY)" : "disabled (loopback-only)"}`
+      );
+    });
   } else {
     const transport = new StdioServerTransport();
     await mcpServer.connect(transport);

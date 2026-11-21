@@ -1,5 +1,6 @@
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 import express from "express";
+import { createHash, timingSafeEqual } from "node:crypto";
 import type http from "node:http";
 import { createMCPServer } from "../core/mcp-server.js";
 import { RateLimiter } from "../infrastructure/rate-limiter.js";
@@ -31,6 +32,7 @@ export interface CliHttpOptions {
   apiConfig: ApiConfig;
   cache: Cache;
   host?: string;
+  apiKey?: string;
   allowedOrigins?: string[];
   allowedHosts?: string[];
   maxSessions?: number;
@@ -209,7 +211,47 @@ export function isValidSessionId(value: unknown): value is string {
   return typeof value === "string" && SESSION_ID_REGEX.test(value);
 }
 
+/**
+ * Return true only for explicit loopback bind hosts.
+ */
+export function isLoopbackHost(host: string): boolean {
+  if (typeof host !== "string") {
+    return false;
+  }
+  const normalized = host.trim().toLowerCase();
+  return (
+    normalized === "127.0.0.1" ||
+    normalized === "localhost" ||
+    normalized === "::1" ||
+    normalized === "[::1]"
+  );
+}
+
+/**
+ * Constant-time API key comparison via SHA-256 digests so key length is never leaked.
+ */
+export function isValidApiKey(provided: string, expected: string): boolean {
+  if (typeof provided !== "string" || typeof expected !== "string" || !provided || !expected) {
+    return false;
+  }
+  const providedDigest = createHash("sha256").update(provided, "utf8").digest();
+  const expectedDigest = createHash("sha256").update(expected, "utf8").digest();
+  return timingSafeEqual(providedDigest, expectedDigest);
+}
+
 export function createCliHttpApp(options: CliHttpOptions): CliHttpContext {
+  const bindHost = options.host ?? DEFAULT_CLI_HTTP_HOST;
+  const apiKey =
+    typeof options.apiKey === "string" && options.apiKey.trim().length > 0
+      ? options.apiKey.trim()
+      : undefined;
+
+  if (!isLoopbackHost(bindHost) && !apiKey) {
+    throw new Error(
+      `Refusing to start HTTP/SSE server on non-loopback host "${bindHost}" without MCP_API_KEY`,
+    );
+  }
+
   const debug = options.debug ?? (() => {});
   const maxSessions =
     options.maxSessions !== undefined && Number.isFinite(options.maxSessions) && options.maxSessions > 0
@@ -268,7 +310,7 @@ export function createCliHttpApp(options: CliHttpOptions): CliHttpContext {
       res.setHeader("Access-Control-Allow-Origin", originCheck.allowOriginHeader);
       res.setHeader("Vary", "Origin");
       res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-      res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+      res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-API-Key");
     }
 
     if (req.method === "OPTIONS") {
@@ -278,6 +320,45 @@ export function createCliHttpApp(options: CliHttpOptions): CliHttpContext {
 
     next();
   });
+
+  // Require Bearer or X-API-Key authentication on all non-preflight routes when apiKey is configured
+  if (apiKey) {
+    app.use((req, res, next) => {
+      const rawAuth = req.headers.authorization;
+      const rawApiKey = req.headers["x-api-key"];
+
+      let token: string | undefined;
+      if (!Array.isArray(rawAuth) && !Array.isArray(rawApiKey)) {
+        const trimmedAuth = typeof rawAuth === "string" ? rawAuth.trim() : "";
+        const bearerMatch = trimmedAuth ? /^bearer\s+(.+)$/i.exec(trimmedAuth) : null;
+        if (bearerMatch) {
+          const candidate = bearerMatch[1].trim();
+          if (candidate.length > 0) {
+            token = candidate;
+          }
+        } else if (typeof rawApiKey === "string" && rawApiKey.trim().length > 0) {
+          token = rawApiKey.trim();
+        }
+      }
+
+      if (!token || !isValidApiKey(token, apiKey)) {
+        const requestContext = res.locals.requestContext as RequestContext | undefined;
+        cliHttpLogger.warn(
+          "auth.unauthorized",
+          { path: req.path },
+          requestContext?.requestId,
+        );
+        res.setHeader("WWW-Authenticate", "Bearer");
+        res.status(401).json({
+          error: "Unauthorized",
+          message: "Valid API key required",
+        });
+        return;
+      }
+
+      next();
+    });
+  }
 
   // Parse JSON payloads only after security headers, Host, and Origin checks pass
   app.use(express.json({ limit: "1mb" }));

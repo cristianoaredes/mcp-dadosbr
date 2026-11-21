@@ -5,8 +5,8 @@ title: "Suportar e exigir MCP_API_KEY no transporte HTTP/SSE do CLI fora de loop
 source: audit
 created_at: 2026-11-21T13:09:42Z
 created_by: ops
-updated_at: 2026-11-21T13:09:42Z
-status: raw
+updated_at: 2026-11-21T13:51:13Z
+status: verifying
 severity: medium
 category: security
 effort: M
@@ -15,8 +15,10 @@ ceremony: full
 business_impact: ""
 linked_findings:
   - FND-0019
-linked_designs: []
-linked_runs: []
+linked_designs:
+  - DES-0030
+linked_runs:
+  - RUN-20261121-134623-tck-0034
 linked_verifications: []
 linked_docs:
   - .archagents/07-security-compliance.md
@@ -25,7 +27,19 @@ external_sync: []
 blocks: []
 blocked_by: []
 related: []
-acceptance: []
+acceptance:
+  - check: "npx vitest run test/unit/cli-http-security.test.ts && echo CLI_HTTP_AUTH_TESTS_OK"
+    expect: CLI_HTTP_AUTH_TESTS_OK
+  - check: "npm run test && echo FULL_UNIT_TESTS_OK"
+    expect: FULL_UNIT_TESTS_OK
+  - check: "npx tsc --noEmit && npx tsc -p tsconfig.worker.json --noEmit && echo TYPECHECK_OK"
+    expect: TYPECHECK_OK
+depth_decision:
+  workflow: lightweight
+  design: lightweight
+  verify: completo
+  source: routing-classifier
+  classified_at: 2026-11-21T13:45:53Z
 ---
 # TCK-0034 - Suportar e exigir MCP_API_KEY no transporte HTTP/SSE do CLI fora de loopback
 
@@ -51,3 +65,7 @@ Antes do fix, `lib/adapters/cli.ts:L118-L148` e `lib/adapters/cli-http.ts:L212-L
 ## Log de transicoes
 
 - 2026-11-21T13:09:42Z - **raw** - criado via scripts/ops/ticket/create.py.
+- 2026-11-21T13:45:53Z - **triaged** - triaged in wave 1 parallel remediation [aceite reescrito: 3 critério(s)] [depth_decision do routing-classifier: workflow lightweight, design lightweight, verify completo]
+- 2026-11-21T13:46:23Z - **designed** - DES-0030 created
+- 2026-11-21T13:46:24Z - **executing** - executing TCK-0034
+- 2026-11-21T13:51:13Z - **verifying** - Implementation, unit tests, transport smoke check, tsc, worker tsc, and secret-scan complete; ready for independent verification
