@@ -1,0 +1,34 @@
+{
+  "id": "RUN-20261122-020104-tck-0045",
+  "design": "DES-0041",
+  "ticket": "TCK-0045",
+  "started_at": "2026-11-22T02:01:04Z",
+  "started_by": "ops",
+  "environment": "dev",
+  "mode": "live",
+  "status": "completed",
+  "current_step": 5,
+  "total_steps": 5,
+  "ended_at": "2026-11-22T02:05:14Z",
+  "result": "Etapa 1A (DES-0041): pncp_licitacoes (/api/search/), cnes_saude (27-UF IBGE map), datajud_processos (numeroProcesso 20-digit / query_string), errors.ts (customMessage). 540/540 Vitest tests PASS, build + build:worker + tsc Node/Worker PASS, test:transport PASS, criteria-check 4/4 PASS, live stdio E2E PASS (pncp 79160 hits/10 items, cnes codigo_uf=35/10 items).",
+  "loop_iterations": 1,
+  "attempt_count": 1,
+  "lessons_consulted": [
+    "Precisou de 2 iterações (re-execução)"
+  ],
+  "loop_cost_usd": null,
+  "cost_source": "unknown",
+  "loop_strategy": "default",
+  "context_peak": 0,
+  "final_judge_delta": 32,
+  "warmup": false,
+  "final_judge_delta_source": "judge",
+  "lesson_utility": {
+    "utility": 0.64,
+    "n_lessons": 1,
+    "lessons_consulted": [
+      "Precisou de 2 iterações (re-execução)"
+    ],
+    "signal": "computed"
+  }
+}

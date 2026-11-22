@@ -60,11 +60,15 @@ async function executeDatajud(args: DatajudArgs, cache?: Cache): Promise<LookupR
     const url = `${DATAJUD_BASE}/${apiName}/_search`;
     const timeoutMs = TIMEOUTS.HTTP_REQUEST_MS;
     const ctrl = createTimeoutController(timeoutMs);
+    const digits = query.replace(/\D/g, "");
+    const esQuery = digits.length === 20
+        ? { match: { numeroProcesso: digits } }
+        : { query_string: { query } };
     try {
         const resp = await fetch(url, {
             method: "POST",
             headers: { "Content-Type": "application/json", "Authorization": `APIKey ${apiKey}` },
-            body: JSON.stringify({ query: { match: { "_all": query } }, size: tamanho }),
+            body: JSON.stringify({ query: esQuery, size: tamanho }),
             signal: ctrl.signal,
         });
         if (!resp.ok) return { ok: false, error: `Datajud API error: HTTP ${resp.status}` };

@@ -322,6 +322,7 @@ Requires TRANSPARENCIA_API_KEY — falls back to manual check URLs without it.`,
 // ─── PNCP ───────────────────────────────────────────────────────────────────
 
 const PNCP_PUBLICACOES = PNCP_ORIGIN + "/api/consulta/v1/contratacoes/publicacao";
+const PNCP_SEARCH = PNCP_ORIGIN + "/api/search/";
 const PNCP_SOURCE = "Portal Nacional de Contratações Públicas (PNCP)";
 
 interface PncpArgs {
@@ -379,13 +380,19 @@ async function executePncpPublication(args: PncpArgs, cache?: Cache): Promise<Lo
 
 async function executePncp(args: PncpArgs, cache?: Cache): Promise<LookupResult> {
     if (args.modalidade_id !== undefined) return executePncpPublication(args, cache);
-    const { query, cnpj_orgao, data_inicial, data_final, pagina = 1 } = args;
-    const params = new URLSearchParams({ q: query, pagina: String(pagina), tamanhoPagina: "10" });
-    if (cnpj_orgao) params.set("cnpjOrgao", cnpj_orgao);
-    if (data_inicial) params.set("dataInicial", data_inicial);
-    if (data_final) params.set("dataFinal", data_final);
-    const url = `${PNCP_PUBLICACOES}?${params.toString()}`;
-    const cacheKey = `pncp:legacy:${url}`;
+    const { query, cnpj_orgao, pagina = 1 } = args;
+    const params = new URLSearchParams({
+        q: query,
+        tipos_documento: "edital",
+        ordenacao: "-data",
+        pagina: String(pagina),
+        tam_pagina: "10",
+        status: "todos",
+    });
+    const cnpj = pncpCnpj(cnpj_orgao);
+    if (cnpj) params.set("orgao_cnpj", cnpj);
+    const url = `${PNCP_SEARCH}?${params.toString()}`;
+    const cacheKey = `pncp:search:${url}`;
     try {
         if (cache) {
             const cached = await cache.get(cacheKey);

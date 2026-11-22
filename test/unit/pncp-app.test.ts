@@ -8,6 +8,7 @@ import { pncpCnpj, pncpDate, pncpNoticeUrl } from "../../lib/shared/pncp.js";
 const mime = "text/html;profile=mcp-app";
 const source = "Portal Nacional de Contratações Públicas (PNCP)";
 const endpoint = "https://pncp.gov.br/api/consulta/v1/contratacoes/publicacao";
+const searchEndpoint = "https://pncp.gov.br/api/search/";
 const results = { data: [{ anoCompra: 2026, sequencialCompra: 27, orgaoEntidade: { cnpj: "37115375000107" } }],
   totalRegistros: 1, totalPaginas: 1, numeroPagina: 1, paginasRestantes: 0, empty: false };
 const filters = {
@@ -59,11 +60,13 @@ it("returns the same textual JSON for filtered requests regardless of app suppor
   expect(enhanced.content).toEqual(plain.content);
 });
 
-it("preserves the legacy keyword request and its portal fallback", async () => {
+it("queries /api/search/ for keyword requests and preserves the portal fallback", async () => {
   const upstream = vi.fn(async (_url: string) => new Response(null, { status: 400 }));
   vi.stubGlobal("fetch", upstream);
   const legacy = await call({ query: "informática e TI" }, true);
-  expect(upstream.mock.calls[0][0]).toBe(endpoint + "?q=inform%C3%A1tica+e+TI&pagina=1&tamanhoPagina=10");
+  expect(upstream.mock.calls[0][0]).toBe(
+    searchEndpoint + "?q=inform%C3%A1tica+e+TI&tipos_documento=edital&ordenacao=-data&pagina=1&tam_pagina=10&status=todos"
+  );
   expect(legacy).toEqual({
     content: [{
       type: "text",
@@ -73,6 +76,27 @@ it("preserves the legacy keyword request and its portal fallback", async () => {
       }, null, 2),
     }],
   });
+});
+
+it("passes normalized orgao_cnpj to /api/search/ when cnpj_orgao is valid and omits it when invalid", async () => {
+  const upstream = vi.fn(async (_url: string) => Response.json(results));
+  vi.stubGlobal("fetch", upstream);
+  await call({ query: "computador", cnpj_orgao: "37.115.375/0001-07", pagina: 2 });
+  const validUrl = new URL(upstream.mock.calls[0][0]);
+  expect(validUrl.origin + validUrl.pathname).toBe(searchEndpoint);
+  expect(Object.fromEntries(validUrl.searchParams)).toEqual({
+    q: "computador",
+    tipos_documento: "edital",
+    ordenacao: "-data",
+    pagina: "2",
+    tam_pagina: "10",
+    status: "todos",
+    orgao_cnpj: "37115375000107",
+  });
+
+  await call({ query: "computador", cnpj_orgao: "invalido" });
+  const invalidUrl = new URL(upstream.mock.calls[1][0]);
+  expect(invalidUrl.searchParams.has("orgao_cnpj")).toBe(false);
 });
 
 it("preserves the prior success envelope when the legacy endpoint returns results", async () => {

@@ -109,6 +109,14 @@ describe("Error Classes", () => {
       expect(error.message).toBe("Operation 'fetchCNPJ' timed out after 8000ms");
       expect(error.name).toBe("TimeoutError");
     });
+
+    it("should accept custom message when provided", () => {
+      const error = new TimeoutError("fetchCNPJ", 8000, "Datajud request timeout after 15000ms");
+
+      expect(error.code).toBe(ErrorCode.TIMEOUT_ERROR);
+      expect(error.message).toBe("Datajud request timeout after 15000ms");
+      expect(error.name).toBe("TimeoutError");
+    });
   });
 
   describe("NetworkError", () => {
@@ -138,6 +146,14 @@ describe("Error Classes", () => {
       expect(error.message).toBe("CNPJ not found: 12345678000190");
       expect(error.data).toEqual({ resource: "CNPJ", identifier: "12345678000190" });
     });
+
+    it("should accept custom message when provided", () => {
+      const error = new ResourceNotFoundError("CNPJ", "12345678000190", "CNPJ 12345678000190 returned HTTP 404");
+
+      expect(error.code).toBe(ErrorCode.RESOURCE_NOT_FOUND);
+      expect(error.message).toBe("CNPJ 12345678000190 returned HTTP 404");
+      expect(error.data).toEqual({ resource: "CNPJ", identifier: "12345678000190" });
+    });
   });
 });
 
@@ -155,6 +171,7 @@ describe("categorizeError", () => {
 
     expect(categorized).toBeInstanceOf(TimeoutError);
     expect(categorized.code).toBe(ErrorCode.TIMEOUT_ERROR);
+    expect(categorized.message).toBe("Operation timed out after 5000ms");
   });
 
   it("should categorize rate limit errors", () => {
@@ -195,6 +212,7 @@ describe("categorizeError", () => {
 
     expect(categorized).toBeInstanceOf(ResourceNotFoundError);
     expect(categorized.code).toBe(ErrorCode.RESOURCE_NOT_FOUND);
+    expect(categorized.message).toBe("Resource not found: 404");
   });
 
   it("should default to external API error for unknown errors", () => {
@@ -231,7 +249,7 @@ describe("formatErrorResponse", () => {
     const formatted = formatErrorResponse(error);
 
     expect(formatted.code).toBe(ErrorCode.TIMEOUT_ERROR);
-    expect(formatted.message).toContain("timed out");
+    expect(formatted.message).toBe("API timeout");
   });
 
   it("should handle non-Error objects", () => {
