@@ -1,0 +1,357 @@
+diff --git a/.archagents/05-integrations.md b/.archagents/05-integrations.md
+index ddb53c8..587318a 100644
+--- a/.archagents/05-integrations.md
++++ b/.archagents/05-integrations.md
+@@ -4,7 +4,8 @@ Base revisada: `133dbd5` (`0.7.0`, `SPC-0001`; base inicial: `037dae4c`).
+ 
+ - **CNPJ e CEP (configuráveis com allowlist SSRF):** padrão `https://api.opencnpj.org/` e `https://opencep.com/v1/`, com hosts adicionais permitidos em `lib/config/index.ts` (ReceitaWS, BrasilAPI, CNPJ.ws, Minha Receita, ViaCEP, AwesomeAPI).
+ - **IBGE Localidades & Indicadores:** `https://servicodados.ibge.gov.br/api/v1/localidades` (sem chave) para regiões/UFs/municípios (com filtro acento/case-insensitive e paginação opcional em `TCK-0023`); `https://servicodados.ibge.gov.br/api/v2/cnae` para hierarquia CNAE `v2` (`cnae_ncm_lookup`); e `https://servicodados.ibge.gov.br/api/v3/agregados` para População (`6579/9324`) e PIB (`5938/37`) por UF (`N3`) ou município (`N6`) em `ibge_indicadores`.
+-- **PNCP (Publicações):** `https://pncp.gov.br/api/consulta/v1/contratacoes/publicacao` (sem chave), com HTTP 204 tratado como página vazia no modo filtrado (`options.noContent` em `lib/core/http-client.ts`) e cache apenas de respostas `ok: true` preservando `source`.
++- **PNCP (Publicações & Busca):** `https://pncp.gov.br/api/consulta/v1/contratacoes/publicacao` (modo filtrado com `modalidade_id`, HTTP 204 tratado como página vazia via `options.noContent` em `lib/core/http-client.ts` e cache preservando `source`) e `https://pncp.gov.br/api/search/` (busca por palavra-chave sem `modalidade_id`, com `orgao_cnpj` normalizado via `pncpCnpj`).
++- **CNES (DataSUS):** `https://apidadosabertos.saude.gov.br/cnes/{estabelecimentos,profissionais}` (sem chave), com normalização de sigla UF de 2 letras para código IBGE via `UF_TO_IBGE_CODE` em `lib/tools/health.ts`.
+ - **Querido Diário (Open Knowledge Brasil):** `https://api.queridodiario.org.br/gazettes` (sem chave), com cache de sucessos preservando `source`.
+ - **Banco Central (BCData/SGS & Olinda OData):** `https://api.bcb.gov.br/dados/serie/bcdata.sgs` para séries 432, 433, 1, 21619 e 12 (`bacen_taxas`, sem chave); e `https://olinda.bcb.gov.br/olinda/servico/{PTAX,Expectativas}/versao/v1/odata` para cotações PTAX históricas e Expectativas Focus (`bcb_olinda`, sem chave).
+ - **BrasilAPI (FIPE, NCM, SFN/Pix/Corretoras CVM, Feriados & DDD):** `https://brasilapi.com.br/api/{fipe,ncm/v1,banks/v1,pix/v1/participants,cvm/corretoras/v1,feriados/v1,ddd/v1}` (sem chave), com cache e paginação server-side nas listas extensas (`pix`, `corretoras`).
+diff --git a/lib/shared/errors.ts b/lib/shared/errors.ts
+index 0796a39..737e159 100644
+--- a/lib/shared/errors.ts
++++ b/lib/shared/errors.ts
+@@ -97,10 +97,10 @@ export class ExternalAPIError extends MCPError {
+  * Timeout error - operation took too long
+  */
+ export class TimeoutError extends MCPError {
+-  constructor(operation: string, timeoutMs: number) {
++  constructor(operation: string, timeoutMs: number, customMessage?: string) {
+     super(
+       ErrorCode.TIMEOUT_ERROR,
+-      `Operation '${operation}' timed out after ${timeoutMs}ms`
++      customMessage || `Operation '${operation}' timed out after ${timeoutMs}ms`
+     );
+     this.name = "TimeoutError";
+   }
+@@ -130,10 +130,10 @@ export class ConfigurationError extends MCPError {
+  * Resource not found error
+  */
+ export class ResourceNotFoundError extends MCPError {
+-  constructor(resource: string, identifier: string) {
++  constructor(resource: string, identifier: string, customMessage?: string) {
+     super(
+       ErrorCode.RESOURCE_NOT_FOUND,
+-      `${resource} not found: ${identifier}`,
++      customMessage || `${resource} not found: ${identifier}`,
+       { resource, identifier }
+     );
+     this.name = "ResourceNotFoundError";
+@@ -153,7 +153,7 @@ export function categorizeError(error: Error | unknown): MCPError {
+ 
+     // Categorize by error message patterns
+     if (message.includes("timeout") || message.includes("timed out")) {
+-      return new TimeoutError("operation", 30000);
++      return new TimeoutError("operation", 30000, error.message);
+     }
+ 
+     if (message.includes("rate limit") || message.includes("too many requests")) {
+@@ -187,7 +187,7 @@ export function categorizeError(error: Error | unknown): MCPError {
+     }
+ 
+     if (message.includes("not found") || message.includes("404")) {
+-      return new ResourceNotFoundError("resource", "unknown");
++      return new ResourceNotFoundError("resource", "unknown", error.message);
+     }
+ 
+     // Default to external API error if not categorized
+diff --git a/lib/tools/government.ts b/lib/tools/government.ts
+index 6f59e0f..2bc437f 100644
+--- a/lib/tools/government.ts
++++ b/lib/tools/government.ts
+@@ -322,6 +322,7 @@ Requires TRANSPARENCIA_API_KEY — falls back to manual check URLs without it.`,
+ // ─── PNCP ───────────────────────────────────────────────────────────────────
+ 
+ const PNCP_PUBLICACOES = PNCP_ORIGIN + "/api/consulta/v1/contratacoes/publicacao";
++const PNCP_SEARCH = PNCP_ORIGIN + "/api/search/";
+ const PNCP_SOURCE = "Portal Nacional de Contratações Públicas (PNCP)";
+ 
+ interface PncpArgs {
+@@ -379,13 +380,19 @@ async function executePncpPublication(args: PncpArgs, cache?: Cache): Promise<Lo
+ 
+ async function executePncp(args: PncpArgs, cache?: Cache): Promise<LookupResult> {
+     if (args.modalidade_id !== undefined) return executePncpPublication(args, cache);
+-    const { query, cnpj_orgao, data_inicial, data_final, pagina = 1 } = args;
+-    const params = new URLSearchParams({ q: query, pagina: String(pagina), tamanhoPagina: "10" });
+-    if (cnpj_orgao) params.set("cnpjOrgao", cnpj_orgao);
+-    if (data_inicial) params.set("dataInicial", data_inicial);
+-    if (data_final) params.set("dataFinal", data_final);
+-    const url = `${PNCP_PUBLICACOES}?${params.toString()}`;
+-    const cacheKey = `pncp:legacy:${url}`;
++    const { query, cnpj_orgao, pagina = 1 } = args;
++    const params = new URLSearchParams({
++        q: query,
++        tipos_documento: "edital",
++        ordenacao: "-data",
++        pagina: String(pagina),
++        tam_pagina: "10",
++        status: "todos",
++    });
++    const cnpj = pncpCnpj(cnpj_orgao);
++    if (cnpj) params.set("orgao_cnpj", cnpj);
++    const url = `${PNCP_SEARCH}?${params.toString()}`;
++    const cacheKey = `pncp:search:${url}`;
+     try {
+         if (cache) {
+             const cached = await cache.get(cacheKey);
+diff --git a/lib/tools/health.ts b/lib/tools/health.ts
+index c4328a3..7bd0d06 100644
+--- a/lib/tools/health.ts
++++ b/lib/tools/health.ts
+@@ -9,6 +9,44 @@ import { Cache, LookupResult } from "../types/index.js";
+ 
+ const CNES_API = "https://apidadosabertos.saude.gov.br/cnes";
+ 
++const UF_TO_IBGE_CODE: Record<string, string> = {
++    AC: "12",
++    AL: "27",
++    AP: "16",
++    AM: "13",
++    BA: "29",
++    CE: "23",
++    DF: "53",
++    ES: "32",
++    GO: "52",
++    MA: "21",
++    MT: "51",
++    MS: "50",
++    MG: "31",
++    PA: "15",
++    PB: "25",
++    PR: "41",
++    PE: "26",
++    PI: "22",
++    RJ: "33",
++    RN: "24",
++    RS: "43",
++    RO: "11",
++    RR: "14",
++    SC: "42",
++    SP: "35",
++    SE: "28",
++    TO: "17",
++};
++
++function normalizeCnesUf(uf: string): string {
++    const trimmed = uf.trim();
++    if (/^[A-Za-z]{2}$/.test(trimmed)) {
++        return UF_TO_IBGE_CODE[trimmed.toUpperCase()] ?? uf;
++    }
++    return uf;
++}
++
+ interface CnesArgs { tipo: "estabelecimento" | "profissional"; codigo_cnes?: string; nome?: string; uf?: string; municipio?: string; }
+ 
+ async function executeCnes(args: CnesArgs, cache?: Cache): Promise<LookupResult> {
+@@ -16,7 +54,7 @@ async function executeCnes(args: CnesArgs, cache?: Cache): Promise<LookupResult>
+     const params = new URLSearchParams();
+     if (codigo_cnes) params.set("codigo_cnes", codigo_cnes);
+     if (nome) params.set("nome_fantasia", nome);
+-    if (uf) params.set("codigo_uf", uf);
++    if (uf) params.set("codigo_uf", normalizeCnesUf(uf));
+     if (municipio) params.set("codigo_municipio", municipio);
+     params.set("limit", "10"); params.set("offset", "0");
+     const endpoint = tipo === "profissional" ? `${CNES_API}/profissionais` : `${CNES_API}/estabelecimentos`;
+diff --git a/lib/tools/legal.ts b/lib/tools/legal.ts
+index ad3b463..196953b 100644
+--- a/lib/tools/legal.ts
++++ b/lib/tools/legal.ts
+@@ -60,11 +60,15 @@ async function executeDatajud(args: DatajudArgs, cache?: Cache): Promise<LookupR
+     const url = `${DATAJUD_BASE}/${apiName}/_search`;
+     const timeoutMs = TIMEOUTS.HTTP_REQUEST_MS;
+     const ctrl = createTimeoutController(timeoutMs);
++    const digits = query.replace(/\D/g, "");
++    const esQuery = digits.length === 20
++        ? { match: { numeroProcesso: digits } }
++        : { query_string: { query } };
+     try {
+         const resp = await fetch(url, {
+             method: "POST",
+             headers: { "Content-Type": "application/json", "Authorization": `APIKey ${apiKey}` },
+-            body: JSON.stringify({ query: { match: { "_all": query } }, size: tamanho }),
++            body: JSON.stringify({ query: esQuery, size: tamanho }),
+             signal: ctrl.signal,
+         });
+         if (!resp.ok) return { ok: false, error: `Datajud API error: HTTP ${resp.status}` };
+diff --git a/test/unit/errors.test.ts b/test/unit/errors.test.ts
+index ddfadc8..c6b1160 100644
+--- a/test/unit/errors.test.ts
++++ b/test/unit/errors.test.ts
+@@ -109,6 +109,14 @@ describe("Error Classes", () => {
+       expect(error.message).toBe("Operation 'fetchCNPJ' timed out after 8000ms");
+       expect(error.name).toBe("TimeoutError");
+     });
++
++    it("should accept custom message when provided", () => {
++      const error = new TimeoutError("fetchCNPJ", 8000, "Datajud request timeout after 15000ms");
++
++      expect(error.code).toBe(ErrorCode.TIMEOUT_ERROR);
++      expect(error.message).toBe("Datajud request timeout after 15000ms");
++      expect(error.name).toBe("TimeoutError");
++    });
+   });
+ 
+   describe("NetworkError", () => {
+@@ -138,6 +146,14 @@ describe("Error Classes", () => {
+       expect(error.message).toBe("CNPJ not found: 12345678000190");
+       expect(error.data).toEqual({ resource: "CNPJ", identifier: "12345678000190" });
+     });
++
++    it("should accept custom message when provided", () => {
++      const error = new ResourceNotFoundError("CNPJ", "12345678000190", "CNPJ 12345678000190 returned HTTP 404");
++
++      expect(error.code).toBe(ErrorCode.RESOURCE_NOT_FOUND);
++      expect(error.message).toBe("CNPJ 12345678000190 returned HTTP 404");
++      expect(error.data).toEqual({ resource: "CNPJ", identifier: "12345678000190" });
++    });
+   });
+ });
+ 
+@@ -155,6 +171,7 @@ describe("categorizeError", () => {
+ 
+     expect(categorized).toBeInstanceOf(TimeoutError);
+     expect(categorized.code).toBe(ErrorCode.TIMEOUT_ERROR);
++    expect(categorized.message).toBe("Operation timed out after 5000ms");
+   });
+ 
+   it("should categorize rate limit errors", () => {
+@@ -195,6 +212,7 @@ describe("categorizeError", () => {
+ 
+     expect(categorized).toBeInstanceOf(ResourceNotFoundError);
+     expect(categorized.code).toBe(ErrorCode.RESOURCE_NOT_FOUND);
++    expect(categorized.message).toBe("Resource not found: 404");
+   });
+ 
+   it("should default to external API error for unknown errors", () => {
+@@ -231,7 +249,7 @@ describe("formatErrorResponse", () => {
+     const formatted = formatErrorResponse(error);
+ 
+     expect(formatted.code).toBe(ErrorCode.TIMEOUT_ERROR);
+-    expect(formatted.message).toContain("timed out");
++    expect(formatted.message).toBe("API timeout");
+   });
+ 
+   it("should handle non-Error objects", () => {
+diff --git a/test/unit/pncp-app.test.ts b/test/unit/pncp-app.test.ts
+index 5f7a789..497f320 100644
+--- a/test/unit/pncp-app.test.ts
++++ b/test/unit/pncp-app.test.ts
+@@ -8,6 +8,7 @@ import { pncpCnpj, pncpDate, pncpNoticeUrl } from "../../lib/shared/pncp.js";
+ const mime = "text/html;profile=mcp-app";
+ const source = "Portal Nacional de Contratações Públicas (PNCP)";
+ const endpoint = "https://pncp.gov.br/api/consulta/v1/contratacoes/publicacao";
++const searchEndpoint = "https://pncp.gov.br/api/search/";
+ const results = { data: [{ anoCompra: 2026, sequencialCompra: 27, orgaoEntidade: { cnpj: "37115375000107" } }],
+   totalRegistros: 1, totalPaginas: 1, numeroPagina: 1, paginasRestantes: 0, empty: false };
+ const filters = {
+@@ -59,11 +60,13 @@ it("returns the same textual JSON for filtered requests regardless of app suppor
+   expect(enhanced.content).toEqual(plain.content);
+ });
+ 
+-it("preserves the legacy keyword request and its portal fallback", async () => {
++it("queries /api/search/ for keyword requests and preserves the portal fallback", async () => {
+   const upstream = vi.fn(async (_url: string) => new Response(null, { status: 400 }));
+   vi.stubGlobal("fetch", upstream);
+   const legacy = await call({ query: "informática e TI" }, true);
+-  expect(upstream.mock.calls[0][0]).toBe(endpoint + "?q=inform%C3%A1tica+e+TI&pagina=1&tamanhoPagina=10");
++  expect(upstream.mock.calls[0][0]).toBe(
++    searchEndpoint + "?q=inform%C3%A1tica+e+TI&tipos_documento=edital&ordenacao=-data&pagina=1&tam_pagina=10&status=todos"
++  );
+   expect(legacy).toEqual({
+     content: [{
+       type: "text",
+@@ -75,6 +78,27 @@ it("preserves the legacy keyword request and its portal fallback", async () => {
+   });
+ });
+ 
++it("passes normalized orgao_cnpj to /api/search/ when cnpj_orgao is valid and omits it when invalid", async () => {
++  const upstream = vi.fn(async (_url: string) => Response.json(results));
++  vi.stubGlobal("fetch", upstream);
++  await call({ query: "computador", cnpj_orgao: "37.115.375/0001-07", pagina: 2 });
++  const validUrl = new URL(upstream.mock.calls[0][0]);
++  expect(validUrl.origin + validUrl.pathname).toBe(searchEndpoint);
++  expect(Object.fromEntries(validUrl.searchParams)).toEqual({
++    q: "computador",
++    tipos_documento: "edital",
++    ordenacao: "-data",
++    pagina: "2",
++    tam_pagina: "10",
++    status: "todos",
++    orgao_cnpj: "37115375000107",
++  });
++
++  await call({ query: "computador", cnpj_orgao: "invalido" });
++  const invalidUrl = new URL(upstream.mock.calls[1][0]);
++  expect(invalidUrl.searchParams.has("orgao_cnpj")).toBe(false);
++});
++
+ it("preserves the prior success envelope when the legacy endpoint returns results", async () => {
+   vi.stubGlobal("fetch", vi.fn(async () => Response.json(results)));
+   const legacy = await call({ query: "informática" });
+diff --git a/test/unit/tools-company-health-osint-legal.test.ts b/test/unit/tools-company-health-osint-legal.test.ts
+index f069929..c5f6592 100644
+--- a/test/unit/tools-company-health-osint-legal.test.ts
++++ b/test/unit/tools-company-health-osint-legal.test.ts
+@@ -347,6 +347,24 @@ describe("MCP Tools (Company, Health, OSINT, Legal, Government) & Tool Orchestra
+       });
+     });
+ 
++    it("cnes_saude normalizes 2-letter UF abbreviations to IBGE codigo_uf while keeping numeric codes", async () => {
++      const fetchSpy = vi
++        .spyOn(globalThis, "fetch")
++        .mockResolvedValue(jsonResponse({ estabelecimentos: [] }));
++
++      const spRes = await executeTool("cnes_saude", { tipo: "estabelecimento", uf: "SP" }, apiConfig);
++      expect(spRes.ok).toBe(true);
++      expect(new URL(String(fetchSpy.mock.calls[0][0])).searchParams.get("codigo_uf")).toBe("35");
++
++      const rjLower = await executeTool("cnes_saude", { tipo: "estabelecimento", uf: "rj" }, apiConfig);
++      expect(rjLower.ok).toBe(true);
++      expect(new URL(String(fetchSpy.mock.calls[1][0])).searchParams.get("codigo_uf")).toBe("33");
++
++      const numeric = await executeTool("cnes_saude", { tipo: "estabelecimento", uf: "35" }, apiConfig);
++      expect(numeric.ok).toBe(true);
++      expect(new URL(String(fetchSpy.mock.calls[2][0])).searchParams.get("codigo_uf")).toBe("35");
++    });
++
+     it("strategic_osint_prompt renders all 5 templates cleanly with and without optional placeholders", async () => {
+       const templates = [
+         "due_diligence",
+@@ -395,7 +413,9 @@ describe("MCP Tools (Company, Health, OSINT, Legal, Government) & Tool Orchestra
+       expect(noKey.error).toContain("DATAJUD_API_KEY");
+ 
+       process.env.DATAJUD_API_KEY = "cnj-key";
+-      vi.spyOn(globalThis, "fetch")
++      const fetchSpy = vi
++        .spyOn(globalThis, "fetch")
++        .mockResolvedValueOnce(jsonResponse({ hits: { total: { value: 1 } } }))
+         .mockResolvedValueOnce(jsonResponse({ hits: { total: { value: 1 } } }))
+         .mockResolvedValueOnce(jsonResponse({}, 500))
+         .mockRejectedValueOnce(new Error("socket hangup"));
+@@ -407,6 +427,21 @@ describe("MCP Tools (Company, Health, OSINT, Legal, Government) & Tool Orchestra
+       );
+       expect(okRes.ok).toBe(true);
+       expect(okRes.data).toMatchObject({ source: "Datajud — CNJ (TJDF)" });
++      expect(JSON.parse(String(fetchSpy.mock.calls[0][1]?.body))).toEqual({
++        query: { query_string: { query: "11222333000181" } },
++        size: 5,
++      });
++
++      const cnjProcessRes = await executeTool(
++        "datajud_processos",
++        { query: "0000832-35.2018.4.01.3202", tribunal: "TRF1", tamanho: 3 },
++        apiConfig
++      );
++      expect(cnjProcessRes.ok).toBe(true);
++      expect(JSON.parse(String(fetchSpy.mock.calls[1][1]?.body))).toEqual({
++        query: { match: { numeroProcesso: "00008323520184013202" } },
++        size: 3,
++      });
+ 
+       const errHttp = await executeTool("datajud_processos", { query: "abc" }, apiConfig);
+       expect(errHttp).toEqual({ ok: false, error: "Datajud API error: HTTP 500" });

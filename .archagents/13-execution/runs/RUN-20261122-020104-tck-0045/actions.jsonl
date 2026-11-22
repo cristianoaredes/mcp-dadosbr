@@ -1,0 +1,5 @@
+{"action": "repair_pncp_search_contract", "files": ["lib/tools/government.ts", "test/unit/pncp-app.test.ts"], "gate_status": "flow", "step": 1, "ts": "2026-11-22T02:05:04Z", "type": "action"}
+{"action": "repair_cnes_uf_ibge_mapping", "files": ["lib/tools/health.ts", "test/unit/tools-company-health-osint-legal.test.ts"], "gate_status": "flow", "step": 2, "ts": "2026-11-22T02:05:04Z", "type": "action"}
+{"action": "repair_datajud_es_query_and_error_custom_message", "files": ["lib/tools/legal.ts", "lib/shared/errors.ts", "test/unit/tools-company-health-osint-legal.test.ts", "test/unit/errors.test.ts", ".archagents/05-integrations.md"], "gate_status": "flow", "step": 3, "ts": "2026-11-22T02:05:04Z", "type": "action"}
+{"action": "verify_build_worker_tsc_vitest_transport_criteria", "files": [], "gate_status": "flow", "step": 4, "ts": "2026-11-22T02:05:04Z", "type": "action"}
+{"action": "verify_live_e2e_stdio_pncp_and_cnes", "files": [], "gate_status": "flow", "step": 5, "ts": "2026-11-22T02:05:04Z", "type": "action"}

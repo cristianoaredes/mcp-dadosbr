@@ -347,6 +347,24 @@ describe("MCP Tools (Company, Health, OSINT, Legal, Government) & Tool Orchestra
       });
     });
 
+    it("cnes_saude normalizes 2-letter UF abbreviations to IBGE codigo_uf while keeping numeric codes", async () => {
+      const fetchSpy = vi
+        .spyOn(globalThis, "fetch")
+        .mockResolvedValue(jsonResponse({ estabelecimentos: [] }));
+
+      const spRes = await executeTool("cnes_saude", { tipo: "estabelecimento", uf: "SP" }, apiConfig);
+      expect(spRes.ok).toBe(true);
+      expect(new URL(String(fetchSpy.mock.calls[0][0])).searchParams.get("codigo_uf")).toBe("35");
+
+      const rjLower = await executeTool("cnes_saude", { tipo: "estabelecimento", uf: "rj" }, apiConfig);
+      expect(rjLower.ok).toBe(true);
+      expect(new URL(String(fetchSpy.mock.calls[1][0])).searchParams.get("codigo_uf")).toBe("33");
+
+      const numeric = await executeTool("cnes_saude", { tipo: "estabelecimento", uf: "35" }, apiConfig);
+      expect(numeric.ok).toBe(true);
+      expect(new URL(String(fetchSpy.mock.calls[2][0])).searchParams.get("codigo_uf")).toBe("35");
+    });
+
     it("strategic_osint_prompt renders all 5 templates cleanly with and without optional placeholders", async () => {
       const templates = [
         "due_diligence",
@@ -395,7 +413,9 @@ describe("MCP Tools (Company, Health, OSINT, Legal, Government) & Tool Orchestra
       expect(noKey.error).toContain("DATAJUD_API_KEY");
 
       process.env.DATAJUD_API_KEY = "cnj-key";
-      vi.spyOn(globalThis, "fetch")
+      const fetchSpy = vi
+        .spyOn(globalThis, "fetch")
+        .mockResolvedValueOnce(jsonResponse({ hits: { total: { value: 1 } } }))
         .mockResolvedValueOnce(jsonResponse({ hits: { total: { value: 1 } } }))
         .mockResolvedValueOnce(jsonResponse({}, 500))
         .mockRejectedValueOnce(new Error("socket hangup"));
@@ -407,6 +427,21 @@ describe("MCP Tools (Company, Health, OSINT, Legal, Government) & Tool Orchestra
       );
       expect(okRes.ok).toBe(true);
       expect(okRes.data).toMatchObject({ source: "Datajud — CNJ (TJDF)" });
+      expect(JSON.parse(String(fetchSpy.mock.calls[0][1]?.body))).toEqual({
+        query: { query_string: { query: "11222333000181" } },
+        size: 5,
+      });
+
+      const cnjProcessRes = await executeTool(
+        "datajud_processos",
+        { query: "0000832-35.2018.4.01.3202", tribunal: "TRF1", tamanho: 3 },
+        apiConfig
+      );
+      expect(cnjProcessRes.ok).toBe(true);
+      expect(JSON.parse(String(fetchSpy.mock.calls[1][1]?.body))).toEqual({
+        query: { match: { numeroProcesso: "00008323520184013202" } },
+        size: 3,
+      });
 
       const errHttp = await executeTool("datajud_processos", { query: "abc" }, apiConfig);
       expect(errHttp).toEqual({ ok: false, error: "Datajud API error: HTTP 500" });
