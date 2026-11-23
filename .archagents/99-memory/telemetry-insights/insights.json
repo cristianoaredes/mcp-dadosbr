@@ -1,0 +1,10 @@
+[
+  {
+    "id": "LRN-0001",
+    "ticket": "TCK-0046",
+    "title": "Propagacao assincrona de tarball no npm (2-5 min) exige smoke npx isolado apos publish",
+    "recommendation": "Aguardar propagacao de dist-tags e HTTP 200 do .tgz no registry.npmjs.org antes de rodar smoke npx -y em cache limpo",
+    "created_at": "2026-11-23T20:30:26Z",
+    "status": "proposed"
+  }
+]
