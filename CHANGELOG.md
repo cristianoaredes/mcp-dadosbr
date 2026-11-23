@@ -4,6 +4,12 @@ All notable changes to MCP DadosBR will be documented in this file.
 
 ## [Unreleased]
 
+### Documentation (`TCK-0046`)
+
+- **SEO/GEO documentation & v0.7.0 alignment**:
+  - Highlighted npm `latest` (`0.6.0`, 23 tools) vs repository `main` (`0.7.0`, 29 tools / 5 MCP Apps requiring source build until release) across `README.md` (PT-BR and English) and added observed external-upstream caveats (`tcu_certidoes` error responses and intermittent `querido_diario` / `pncp_licitacoes` timeouts verified on 2026-11-23).
+  - Created root `llms.txt` (`llmstxt.org` format covering all 29 tools, 5 MCP Apps, limits, and documentation links) and refreshed `CHANGELOG.md`, `package.json` SEO/GEO metadata, and stale tool/test metrics in `docs/README.md` and `docs/pt-br/desenvolvimento/metricas.md`.
+
 ### Planned
 
 - **📱 Flutter/Dart Library**: Comprehensive Flutter library for mobile, web, and desktop applications
@@ -17,6 +23,26 @@ All notable changes to MCP DadosBR will be documented in this file.
   - Platform-specific HTTP clients (dart:io for mobile/desktop, fetch for web)
   - Type-safe Dart classes mirroring the TypeScript interfaces
   - See [Flutter Library Documentation](docs/FLUTTER_LIBRARY.md) for details
+
+## [0.7.0] - 2026-11-21
+
+> Source version `0.7.0` on `main` (PR #27 + PR #28; npm `latest` remains `0.6.0` until package publication and GitHub release).
+
+### Added
+
+- **6 new zero-key Worker-safe public-data tools (expanding catalog to 29 tools + 5 MCP Apps, PR #27 / `SPC-0001`):**
+  - `tcu_certidoes` (`TCK-0041`): Consolidated PJ integrity certificates from TCU (`certidoes-apf.apps.tcu.gov.br` — TCU Licitantes Inidôneos, CNJ CNIA, CEIS/CNEP), integrated into `company_deep_profile`.
+  - `cnae_ncm_lookup` (`TCK-0042`): Structured CNAE classification (`IBGE v2`) and NCM (`BrasilAPI v1`) lookups with bounded pagination (`<= 50`).
+  - `sistema_financeiro_lookup` (`TCK-0042`): Pix participants, CVM/B3 brokers, and COMPE/ISPB banks via BrasilAPI.
+  - `feriados_ddd_lookup` (`TCK-0042`): Brazilian national holidays / business-day checks and DDD area code lookups (`BrasilAPI`).
+  - `bcb_olinda` (`TCK-0043`): Historical PTAX rates (`CotacaoDolarPeriodo` / `CotacaoMoedaPeriodo` with 7-day non-business-day resolution and `exact_date_match`) and Focus Market Expectations (`ExpectativasMercadoAnuais`).
+  - `ibge_indicadores` (`TCK-0043`): Population (`6579/9324`), GDP (`5938/37`), and estimated GDP per capita by UF (`N3`) or municipality (`N6`) via IBGE Agregados `v3`.
+
+### Changed & Fixed
+
+- **`lista_suja_lookup` & `consumidor_reclamacoes` reliability (`TCK-0041`, PR #27):** Migrated `lista_suja_lookup` to the official MTE CSV (`cadastro_de_empregadores.csv`) using Worker-safe RFC-4180 parsing (preserving `HOMONYM_HUMAN_REVIEW_NOTICE`); replaced blocked anti-bot scraping in `consumidor_reclamacoes` with a zero-fetch guided portal/open-data fallback.
+- **Live E2E contract hardening (`TCK-0045`, PR #28 merged 2026-11-22):** Updated `pncp_licitacoes` unfiltered search to `/api/search/` (`ordenacao=-data`), mapped all 27 UFs in `cnes_saude` via `UF_TO_IBGE_CODE`, refined `datajud_processos` Elastic queries (`numeroProcesso` / `query_string`), and preserved custom timeout/not-found error messages.
+- **Governance & security parity (`TCK-0044`, PR #27):** Synchronized `TOOL_DEFINITIONS` (`29`), `TOOL_SCHEMAS` (`29`), `.archagents/mcp-tool-allowlist.json`, `.archagents/_capabilities.json`, Worker OpenAPI `SERVER_VERSION` (`"0.7.0"`), `UNTRUSTED_EXTERNAL_DATA_NOTICE`, and zero `node:*` imports across `lib/shared/`, `lib/tools/`, and `lib/workers/`.
 
 ## [0.6.0] - 2026-11-19
 

@@ -16,8 +16,10 @@ O **MCP DadosBR** é um servidor open source do [Model Context Protocol (MCP)](h
 
 - **Zero chave nos 5 MCP Apps e no CEP** — IBGE, Querido Diário, Banco Central, PNCP, OpenCNPJ e OpenCEP funcionam sem cadastro prévio.
 - **Proveniência explícita** — URL consultada e horário da consulta no servidor (`fetchedAt`) nos 5 MCP Apps (`structuredContent`) e nas consultas de CNPJ/CEP (`source`/`fetchedAt`), com separação explícita entre `fetchedAt` e `updatedAt` na ficha cadastral.
-- **Local ou na borda** — CLI Node.js (`stdio` e `HTTP/SSE`) com painéis interativos, ou Cloudflare Worker com retorno JSON, REST e OAuth.
+- **Local ou na borda** — CLI Node.js (`stdio` e `HTTP/SSE`) com painéis interativos, ou Cloudflare Worker com retorno JSON e endpoints REST (`/oauth/*` desabilitado com `501`).
 - **Software livre AGPL-3.0 com rastro público** — desenvolvido e verificado com [Codebase OPS by Orqo](https://orqo.pro/).
+
+> **Versão publicada vs. código-fonte (`main`):** no [npm](https://www.npmjs.com/package/@aredes.me/mcp-dadosbr), a versão `latest` pública continua em **`0.6.0`** (23 ferramentas). As **29 ferramentas da versão `0.7.0`** presentes neste repositório (incluindo `tcu_certidoes`, `cnae_ncm_lookup`, `sistema_financeiro_lookup`, `feriados_ddd_lookup`, `bcb_olinda`, `ibge_indicadores` e o endurecimento E2E do PR #28) exigem [build a partir do código-fonte](#2-a-partir-do-código-fonte-desenvolvimento-auditoria-ou-customização) até a publicação da release.
 
 ---
 
@@ -47,7 +49,7 @@ Os cinco painéis implementam a extensão [MCP Apps](https://modelcontextprotoco
 | **Querido Diário** | `querido_diario` | `ui://dadosbr/querido-diario.html` | Pesquisa publicações em diários oficiais municipais por termo, `territory_id` (código IBGE) e período (`since`/`until`), ou lista edições recentes, com link para a edição original. | [API pública do Querido Diário](https://docs.queridodiario.ok.org.br/pt-br/latest/utilizando/api-publica.html) |
 | **Indicadores do Banco Central** | `bacen_taxas` | `ui://dadosbr/banco-central.html` | Visualiza gráfico e tabela para **Meta Selic** (`432`), **IPCA** (`433`), **Dólar venda** (`1`), **Euro venda** (`21619`) e **CDI** (`12`) em janelas de `30`, `90` ou `365` dias até o dia corrente em São Paulo. | [Banco Central — BCData/SGS](https://www3.bcb.gov.br/sgspub/) |
 | **Editais do PNCP** | `pncp_licitacoes` | `ui://dadosbr/editais-pncp.html` | Filtra publicações da Lei 14.133/2021 por período, modalidade (20 modalidades oficiais, ex.: `6` = Pregão Eletrônico) e CNPJ opcional do órgão, com links permanentes no portal oficial. | [API de Consultas do PNCP](https://pncp.gov.br/api/consulta/swagger-ui/index.html) |
-| **Ficha por CNPJ** | `cnpj_lookup` | `ui://dadosbr/ficha-cnpj.html` | Exibe razão social, nome fantasia, situação cadastral e data, CNAE principal e secundários, endereço, hostname do provedor, horário da consulta (`fetchedAt`) e data de atualização cadastral (`updatedAt`) quando informada. | [OpenCNPJ](https://opencnpj.org/) por padrão ou [provedor compatível](lib/config/index.ts#L17-L26) |
+| **Ficha por CNPJ** | `cnpj_lookup` | `ui://dadosbr/ficha-cnpj.html` | Exibe razão social, nome fantasia, situação cadastral e data, CNAE principal e secundários, endereço, hostname do provedor, horário da consulta (`fetchedAt`) e data de atualização cadastral (`updatedAt`) quando informada. | [OpenCNPJ](https://opencnpj.org/) por padrão ou [provedor compatível](lib/config/index.ts#L17-L24) |
 
 ### Experimente em uma conversa
 
@@ -139,7 +141,7 @@ O que muda entre os modos é onde o servidor executa e se o cliente recebe os pa
 | --- | --- | --- | --- | --- | --- |
 | **CLI local (padrão)** | `stdio` | **Sim (5 apps)** | Sim (29 ferramentas) | `stdout` reservado para JSON-RPC, cache em memória, deduplicação, retry + circuit breaker, allowlist SSRF | Uso local no Claude Desktop, Cursor, Windsurf, Claude Code e demais hosts desktop |
 | **CLI HTTP/SSE local** | `GET /mcp` + `POST /messages` | **Sim (5 apps)** | Sim (29 ferramentas) | Rate limit (30 req/min por IP), limpeza de sessões SSE inativas, CORS restrito, `MCP_API_KEY` obrigatória fora de loopback | Rede local, Docker, VPS própria ou clientes MCP remotos com suporte a SSE |
-| **Cloudflare Worker** | `POST /mcp`, `/sse`, REST e OAuth | Não (somente texto) | Sim | Autenticação/OAuth, rate limit na borda, `GET /health`, OpenAPI | Conectores remotos serverless e integrações HTTP sem manter servidor dedicado |
+| **Cloudflare Worker** | `POST /mcp`, `/sse` e REST | Não (somente texto) | Sim | Bearer/`X-API-Key` (`MCP_API_KEY`, OAuth desabilitado com `501`), rate limit na borda, `GET /health`, `GET /openapi.json` | Conectores remotos serverless e integrações HTTP sem manter servidor dedicado |
 
 > **Autenticação obrigatória fora de loopback (`MCP_API_KEY`):** por padrão, o modo `HTTP/SSE` escuta em `127.0.0.1`. Ao definir `MCP_HTTP_HOST` para um endereço não-loopback (`0.0.0.0`, `::`, IP de rede etc.), o servidor opera em modo **fail-closed** e recusa iniciar sem `MCP_API_KEY`. Com `MCP_API_KEY` configurada (inclusive em loopback), todas as requisições `GET /mcp` e `POST /messages` exigem `Authorization: Bearer <chave>` ou `X-API-Key: <chave>`.
 
@@ -154,9 +156,9 @@ O que muda entre os modos é onde o servidor executa e se o cliente recebe os pa
 
 ## Instalação e configuração
 
-**Pré-requisito:** Node.js **22.12 ou posterior na linha 22**, **24** ou **26** (`engines.node` em [`package.json`](package.json#L110)).
+**Pré-requisito:** Node.js **22.12 ou posterior na linha 22**, **24** ou **26** (`engines.node` em [`package.json`](package.json#L122-L124)).
 
-### 1. Início rápido via npm (recomendado — a partir da `0.5.0` inclui os 5 MCP Apps)
+### 1. Início rápido via npm (`0.6.0` no npm; `0.7.0` via código-fonte)
 
 Em clientes que utilizam `mcpServers` (Claude Desktop, Cursor, Windsurf, Claude Code e compatíveis), adicione:
 
@@ -171,7 +173,7 @@ Em clientes que utilizam `mcpServers` (Claude Desktop, Cursor, Windsurf, Claude 
 }
 ```
 
-> O pacote publicado no [npm](https://www.npmjs.com/package/@aredes.me/mcp-dadosbr) e os [releases no GitHub](https://github.com/cristianoaredes/mcp-dadosbr/releases) distribuem os cinco HTMLs em `build/lib/apps/` a partir da versão `0.5.0` (com a candidata `0.6.0` inaugurando a distribuição npm sob `AGPL-3.0-only` após publicação). Para fixar uma versão específica, use `"@aredes.me/mcp-dadosbr@<versão>"`.
+> No [npm](https://www.npmjs.com/package/@aredes.me/mcp-dadosbr) e nos [releases no GitHub](https://github.com/cristianoaredes/mcp-dadosbr/releases), a versão **`0.6.0`** (`latest`, 23 ferramentas sob `AGPL-3.0-only`) e os cinco HTMLs em `build/lib/apps/` já estão publicados (os 5 MCP Apps acompanham o pacote desde a `0.5.0`). A versão **`0.7.0`** deste repositório (**29 ferramentas**) ainda aguarda release; até lá, use a seção 2 abaixo para rodar a `0.7.0` pelo código-fonte ou fixe `"@aredes.me/mcp-dadosbr@<versão>"` para versões publicadas.
 
 ### 2. A partir do código-fonte (desenvolvimento, auditoria ou customização)
 
@@ -209,7 +211,7 @@ O servidor abre o stream SSE em `GET http://127.0.0.1:3000/mcp` e recebe mensage
 
 ### 4. Provedor customizado de CNPJ ou CEP (`.mcprc.json` ou variável de ambiente)
 
-A hierarquia de configuração em [`lib/config/index.ts`](lib/config/index.ts#L76-L137) é: **variáveis de ambiente > `.mcprc.json` no diretório atual > padrões (`OpenCNPJ` e `OpenCEP`)**.
+A hierarquia de configuração em [`lib/config/index.ts`](lib/config/index.ts#L147-L191) é: **variáveis de ambiente > `.mcprc.json` no diretório atual > padrões (`OpenCNPJ` e `OpenCEP`)**.
 
 Exemplo com variável de ambiente (ex.: CNPJ.ws):
 
@@ -244,7 +246,7 @@ Ou crie um `.mcprc.json` baseado em [`.mcprc.example.json`](.mcprc.example.json)
 }
 ```
 
-**Hosts permitidos na allowlist SSRF** ([`lib/config/index.ts`](lib/config/index.ts#L17-L35) — somente HTTPS, exceto `localhost`/`127.0.0.1`):
+**Hosts permitidos na allowlist SSRF** ([`lib/config/index.ts`](lib/config/index.ts#L17-L33) — somente HTTPS, exceto `localhost`/`127.0.0.1`):
 
 - **CNPJ:** `api.opencnpj.org`, `receitaws.com.br`, `www.receitaws.com.br`, `brasilapi.com.br`, `publica.cnpj.ws`, `minhareceita.org`, `localhost`, `127.0.0.1`
 - **CEP:** `opencep.com`, `viacep.com.br`, `brasilapi.com.br`, `cep.awesomeapi.com.br`, `localhost`, `127.0.0.1`
@@ -280,7 +282,7 @@ Para deploy serverless no Cloudflare Workers, consulte [`docs/CONFIGURATION.md`]
 ```mermaid
 flowchart LR
   Host["Host MCP"] -->|"stdio ou HTTP/SSE"| CLI["CLI Node.js"]
-  Host -->|"POST /mcp, /sse, REST, OAuth"| Worker["Cloudflare Worker"]
+  Host -->|"POST /mcp, /sse, REST"| Worker["Cloudflare Worker"]
   CLI --> Server["createMCPServer + 5 MCP Apps (ui://)"]
   Server --> Registry["Registry: 29 ferramentas"]
   Worker --> Registry
@@ -288,8 +290,8 @@ flowchart LR
   Infra --> APIs["IBGE · Querido Diário · BCB SGS/Olinda · PNCP · OpenCNPJ/CEP · TCU · MTE · BrasilAPI · CGU · CNJ · DataSUS"]
 ```
 
-- **Contrato `structuredContent` + fallback textual ([`lib/core/mcp-server.ts`](lib/core/mcp-server.ts#L109-L143)):** toda chamada bem-sucedida devolve o JSON serializado em `content[0].text`. Quando o cliente negocia `extensions["io.modelcontextprotocol/ui"]` com `text/html;profile=mcp-app`, o servidor acrescenta `structuredContent`: `{ items, source }` no IBGE, `{ ...result.data, provenance: result.source }` em Querido Diário/BACEN/PNCP, e `{ profile }` (via [`readCnpjProfile`](lib/shared/cnpj-profile.ts)) no CNPJ.
-- **Integridade do transporte `stdio` ([`lib/core/tools.ts`](lib/core/tools.ts#L27-L34)):** `stdout` é reservado exclusivamente a mensagens JSON-RPC; logs de inicialização, depuração e métricas periódicas (a cada 100 requisições) são gravados em `stderr`. O teste [`test/integration/transports.mjs`](test/integration/transports.mjs#L81-L94) valida 101 chamadas consecutivas sem erro de enquadramento.
+- **Contrato `structuredContent` + fallback textual ([`lib/core/mcp-server.ts`](lib/core/mcp-server.ts#L186-L223)):** toda chamada bem-sucedida devolve o JSON serializado em `content[0].text`. Quando o cliente negocia `extensions["io.modelcontextprotocol/ui"]` com `text/html;profile=mcp-app`, o servidor acrescenta `structuredContent`: `{ items, source }` no IBGE, `{ ...result.data, provenance: result.source }` em Querido Diário/BACEN/PNCP, e `{ profile }` (via [`readCnpjProfile`](lib/shared/cnpj-profile.ts)) no CNPJ.
+- **Integridade do transporte `stdio` ([`lib/core/tools.ts`](lib/core/tools.ts#L44-L51)):** `stdout` é reservado exclusivamente a mensagens JSON-RPC; logs de inicialização, depuração e métricas periódicas (a cada 100 requisições) são gravados em `stderr`. O teste [`test/integration/transports.mjs`](test/integration/transports.mjs#L87-L100) valida 101 chamadas consecutivas sem erro de enquadramento.
 - **Resiliência HTTP ([`lib/core/http-client.ts`](lib/core/http-client.ts)):** backoff exponencial (1s, 2s, 4s) para erros transitórios (`429`, `500`, `502`, `503`, `504` e falhas de rede), circuit breaker global, deduplicação de requisições em andamento (janela de 30s em `cnpj_lookup`/`cep_lookup`) e tratamento explícito de HTTP `204` como página vazia no modo filtrado do PNCP.
 - **Empacotamento seguro dos MCP Apps ([`scripts/build-apps.mjs`](scripts/build-apps.mjs#L13-L42)):** `esbuild` gera bundles IIFE minificados e embute CSS/JS nos templates HTML verificando marcadores obrigatórios e bloqueando `</script` ou `</style` no conteúdo inline.
 
@@ -300,11 +302,12 @@ flowchart LR
 Esta seção existe para evitar expectativas erradas antes da adoção.
 
 - **Não garante disponibilidade nem cobertura completa das APIs públicas.** Provedores governamentais e comunitários sofrem instabilidades e têm cobertura desigual — por exemplo, o Querido Diário cobre apenas municípios integrados ao projeto; CNES e Consumidor.gov.br podem cair para URLs de consulta manual.
+- **Instabilidades e timeouts observados em fontes externas (conferido em 23/11/2026):** verificações ao vivo registraram respostas de erro no upstream de `tcu_certidoes` (`certidoes-apf.apps.tcu.gov.br`, timeout dedicado `TCU_TIMEOUT_MS = 10000` ms) e timeouts ou respostas degradadas intermitentes em `querido_diario` e `pncp_licitacoes`. Quando há falha ou timeout (`MCP_API_TIMEOUT`, padrão `8000` ms), o servidor devolve erro explícito (`isError: true`) ou fallback documental sem fabricar dados.
 - **Não fabrica data de atualização cadastral.** Na ficha por CNPJ, `fetchedAt` registra quando o servidor consultou o provedor; `updatedAt` só aparece quando o próprio provedor devolve essa informação.
 - **Não consulta CPF na Receita Federal.** `cpf_validate` roda 100% localmente, validando apenas o dígito verificador (mod-11) e a região fiscal do 9º dígito — não confirma existência nem titularidade.
 - **Não burla CAPTCHAs nem faz scraping autenticado.** Quando portais como OAB/CNA ou BNMP exigem CAPTCHA, a ferramenta devolve o link oficial e os passos manuais em vez de tentar contornar o bloqueio.
-- **Não aceita endpoints arbitrários de CNPJ ou CEP.** URLs fora da allowlist HTTPS de [`lib/config/index.ts`](lib/config/index.ts#L17-L35) são recusadas na inicialização para mitigar SSRF.
-- **Não entrega painéis HTML interativos no Cloudflare Worker.** Os cinco recursos `ui://dadosbr/*.html` rodam no servidor Node.js (`stdio` e `HTTP/SSE`); o Worker serve o retorno textual JSON, REST e OAuth.
+- **Não aceita endpoints arbitrários de CNPJ ou CEP.** URLs fora da allowlist HTTPS de [`lib/config/index.ts`](lib/config/index.ts#L17-L33) são recusadas na inicialização para mitigar SSRF.
+- **Não entrega painéis HTML interativos no Cloudflare Worker.** Os cinco recursos `ui://dadosbr/*.html` rodam no servidor Node.js (`stdio` e `HTTP/SSE`); o Worker serve retorno textual JSON e endpoints REST (endpoints `/oauth/*` retornam `501` por desenho fail-closed).
 - **Não substitui assessoria jurídica, auditoria formal ou certificação de compliance.** Entrega dados verificáveis com fonte para subsidiar decisão humana.
 
 ---
@@ -328,11 +331,20 @@ Conheça mais sobre a camada de governança em **[orqo.pro](https://orqo.pro/)**
 **Preciso de chaves de API para começar?**
 Não. Os cinco MCP Apps (`ibge_localidades`, `querido_diario`, `bacen_taxas`, `pncp_licitacoes`, `cnpj_lookup`), além de `cep_lookup`, `cpf_validate`, `cnae_ncm_lookup`, `feriados_ddd_lookup`, `ibge_indicadores`, `bcb_olinda`, `sistema_financeiro_lookup`, `fipe_veiculos`, `domain_whois`, `cnes_saude`, `consumidor_reclamacoes`, `procurados_lookup`, `lista_suja_lookup`, `tcu_certidoes`, `strategic_osint_prompt` e `sequentialthinking`, funcionam sem nenhuma credencial. Chaves opcionais ampliam o alcance para Portal da Transparência, DataJud e busca web.
 
+**Qual versão estou usando via `npx -y @aredes.me/mcp-dadosbr`?**
+A tag `latest` do [npm](https://www.npmjs.com/package/@aredes.me/mcp-dadosbr) entrega a versão `0.6.0` (23 ferramentas). Para testar as **29 ferramentas** da `0.7.0` (`tcu_certidoes`, `cnae_ncm_lookup`, `sistema_financeiro_lookup`, `feriados_ddd_lookup`, `bcb_olinda`, `ibge_indicadores`) e as correções E2E do PR #28 antes da nova release no GitHub/npm, compile a partir do código-fonte (`npm ci && npm run build`) e aponte o cliente para `build/lib/adapters/cli.js`.
+
+**Como configuro no Claude Desktop, Cursor ou VS Code?**
+Adicione o bloco `mcpServers` apontando para `npx -y @aredes.me/mcp-dadosbr` (para `0.6.0`) ou `"command": "node"` com `/caminho/absoluto/mcp-dadosbr/build/lib/adapters/cli.js` (para `0.7.0` em `stdio`). Exemplos prontos por cliente e via `HTTP/SSE` estão em [`docs/MCP_CLIENT_INTEGRATION.md`](docs/MCP_CLIENT_INTEGRATION.md).
+
+**Quais fontes oficiais o MCP DadosBR consulta?**
+OpenCNPJ/OpenCEP (ou provedores da allowlist HTTPS), IBGE (Localidades e Agregados v3), Banco Central (BCData/SGS e Olinda PTAX/Focus), PNCP (Lei 14.133/2021), Querido Diário (OKBR), TCU Consulta Consolidada, CNJ DataJud e BNMP, Portal da Transparência (CGU), MTE (CSV oficial da Lista Suja), DataSUS (CNES), BrasilAPI (CNAE, NCM, FIPE, SFN/Pix/CVM, feriados e DDD), OAB (CNA), MJSP (Projeto Captura) e Registro.br/RDAP.
+
 **O que acontece se o meu cliente MCP não suportar MCP Apps?**
 Todas as 29 ferramentas continuam funcionando normalmente com retorno JSON estruturado em texto. O `structuredContent` e os recursos `ui://` só são ativados quando o cliente anuncia suporte a `io.modelcontextprotocol/ui`.
 
 **Posso trocar o provedor de CNPJ ou CEP?**
-Sim, via `CNPJ_API_BASE_URL` / `CEP_API_BASE_URL` ou `.mcprc.json`, desde que o host esteja na allowlist HTTPS de [`lib/config/index.ts`](lib/config/index.ts#L17-L35).
+Sim, via `CNPJ_API_BASE_URL` / `CEP_API_BASE_URL` ou `.mcprc.json`, desde que o host esteja na allowlist HTTPS de [`lib/config/index.ts`](lib/config/index.ts#L17-L33).
 
 **Como o projeto garante que logs não corrompem o transporte `stdio`?**
 Todo log de inicialização, depuração e métricas vai para `stderr` (`console.error`), e `npm run test:transport` executa 101 chamadas `stdio` validando ausência total de erros de protocolo.
@@ -369,7 +381,8 @@ npm run build:worker     # Validação de build do Cloudflare Worker
 
 - [Índice da documentação (`docs/README.md`)](docs/README.md) · [Documentação PT-BR (`docs/pt-br/README.md`)](docs/pt-br/README.md)
 - [Guia de configuração (`docs/CONFIGURATION.md`)](docs/CONFIGURATION.md) · [Integração com clientes MCP (`docs/MCP_CLIENT_INTEGRATION.md`)](docs/MCP_CLIENT_INTEGRATION.md)
-- [Exemplos de uso (`docs/USAGE_EXAMPLES.md`)](docs/USAGE_EXAMPLES.md) · [Governança do projeto (`.archagents/README.md`)](.archagents/README.md)
+- [Exemplos de uso (`docs/USAGE_EXAMPLES.md`)](docs/USAGE_EXAMPLES.md) · [Histórico de versões (`CHANGELOG.md`)](CHANGELOG.md)
+- [Contexto para LLMs (`llms.txt`)](llms.txt) · [Governança do projeto (`.archagents/README.md`)](.archagents/README.md)
 
 Leia o [guia de contribuição](CONTRIBUTING.md) ou abra uma [issue](https://github.com/cristianoaredes/mcp-dadosbr/issues/new).
 
@@ -391,7 +404,7 @@ O MCP DadosBR realiza consultas sob demanda a fontes públicas brasileiras e nã
 
 - **5 interactive MCP Apps (no API key required):** IBGE Locations (`ibge_localidades`), Querido Diário municipal gazettes (`querido_diario`), Central Bank SGS indicators (`bacen_taxas` — Selic, IPCA, USD, EUR, CDI over 30/90/365-day windows), PNCP public procurement notices (`pncp_licitacoes`), and Company Registration Profiles (`cnpj_lookup`).
 - **29 tools across 6 domains:** company/address/CNAE/NCM lookup & CPF/DDD/holiday checks, IBGE localities & population/GDP indicators, government/gazettes/procurement/transparency, Central Bank SGS & Olinda PTAX/Focus + SFN/Pix/CVM brokers + FIPE, TCU consolidated integrity certificates + CNJ DataJud/OAB/BNMP/MJSP/MTE Lista Suja CSV, CNES/Consumidor.gov.br, plus web search, RDAP WHOIS, OSINT templates, and sequential thinking.
-- **Two execution perimeters:** Node.js CLI (`stdio` or `HTTP/SSE`, with all 5 interactive MCP Apps and strict JSON-RPC `stdout` isolation) and Cloudflare Worker (serverless edge runtime with text JSON, REST, and OAuth).
+- **Two execution perimeters:** Node.js CLI (`stdio` or `HTTP/SSE`, with all 5 interactive MCP Apps and strict JSON-RPC `stdout` isolation) and Cloudflare Worker (serverless edge runtime with text JSON and REST endpoints; `/oauth/*` disabled with HTTP `501`).
 - **Quick start (Node.js 22.12+, 24, or 26):**
   ```json
   {
@@ -403,8 +416,9 @@ O MCP DadosBR realiza consultas sob demanda a fontes públicas brasileiras e nã
     }
   }
   ```
-  Version `0.5.0` on [npm](https://www.npmjs.com/package/@aredes.me/mcp-dadosbr) bundles all five MCP Apps. To build from source, run `npm ci && npm run build` and point `args` to `build/lib/adapters/cli.js`.
-- **What it does not do:** it does not guarantee third-party API uptime or municipal gazette coverage, never fabricates provider `updatedAt` timestamps, does not query federal tax databases for `cpf_validate` (local mod-11 check only), never bypasses CAPTCHAs, rejects non-allowlisted CNPJ/CEP hosts (SSRF protection), and serves interactive HTML apps only on the Node.js runtime (the Cloudflare Worker returns JSON text).
+  On [npm](https://www.npmjs.com/package/@aredes.me/mcp-dadosbr), the `latest` release is currently `0.6.0` (23 tools; the 5 MCP Apps have shipped in `build/lib/apps/*.html` since `0.5.0`). The 29-tool `0.7.0` on `main` requires building from source until release: run `npm ci && npm run build` and point `args` to `build/lib/adapters/cli.js`.
+- **What it does not do:** it does not guarantee third-party API uptime or municipal gazette coverage (live checks on 2026-11-23 observed upstream error responses from `tcu_certidoes` using `TCU_TIMEOUT_MS=10000` ms and intermittent timeouts or degraded responses in `querido_diario` and `pncp_licitacoes`, returning explicit errors or documentary fallbacks under `MCP_API_TIMEOUT`, default `8000` ms), never fabricates provider `updatedAt` timestamps, does not query federal tax databases for `cpf_validate` (local mod-11 check only), never bypasses CAPTCHAs or anti-bot checks, rejects non-allowlisted CNPJ/CEP hosts (SSRF protection), and serves interactive HTML apps only on the Node.js runtime (the Cloudflare Worker returns JSON text).
+- **Machine-readable index & changelog:** see [`llms.txt`](llms.txt) (`llmstxt.org` format) and [`CHANGELOG.md`](CHANGELOG.md).
 - **Governed in the open:** built with **[Codebase OPS by Orqo](https://orqo.pro/en/)** — every ticket, design, execution run, and independent verification lives in [`.archagents/`](.archagents/README.md).
 - **License:** [GNU AGPL-3.0-only](LICENSE) (network copyleft; releases up to `0.5.0` were distributed under MIT, and `AGPL-3.0-only` applies starting with `0.6.0`). Third-party acknowledgments live in [NOTICE.md](NOTICE.md).
 

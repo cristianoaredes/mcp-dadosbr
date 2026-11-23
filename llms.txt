@@ -1,0 +1,80 @@
+# MCP DadosBR (@aredes.me/mcp-dadosbr)
+
+> Open-source Model Context Protocol (MCP) server maintained by Orqo for querying Brazilian public data across 29 read-only tools and 5 interactive MCP Apps (`ui://dadosbr/*.html`), built for Node.js (`stdio` / `HTTP/SSE`) and Cloudflare Workers. Repository `main` holds v0.7.0 (29 tools); npm `latest` is currently v0.6.0 (23 tools), so v0.7.0 features require building from source until release.
+
+## Identity & Runtime Architecture
+- Package: `@aredes.me/mcp-dadosbr` (source version `0.7.0`; npm `latest` `0.6.0`)
+- Maintainer: Orqo (`https://orqo.pro/`) · Author: Cristiano Arêdes (`cristiano@aredes.me`)
+- License: `AGPL-3.0-only` (versions up to `0.5.0` were MIT; `AGPL-3.0-only` applies starting with `0.6.0`)
+- Runtime requirements: Node.js `^22.12.0 || ^24.0.0 || ^26.0.0`, TypeScript ESM, or Cloudflare Workers (`wrangler` / `build:worker`)
+- Entrypoints: `build/lib/bin/mcp-dadosbr.js` (`stdio` / `HTTP+SSE`), `build/lib/adapters/cli.js`, `build/lib/workers/worker.js`
+- Runtimes:
+  - Node.js CLI (`stdio` default, strict `stdout` JSON-RPC framing; `HTTP/SSE` on `GET /mcp` + `POST /messages` with rate limit 30 req/min/IP and fail-closed `MCP_API_KEY` outside loopback) — serves both structured JSON text and the 5 interactive `ui://` MCP Apps
+  - Cloudflare Worker (`POST /mcp`, `/sse`, REST `GET /cnpj/{cnpj}`, `GET /cep/{cep}`, `POST /search`, `POST /intelligence`, `POST /thinking`, `GET /health`, `GET /openapi.json`, `MCP_KV` rate limit 30 req/min/IP; `/oauth/*` returns fail-closed `501 oauth_not_supported`) — returns text JSON only (no interactive HTML MCP Apps)
+
+## 5 Interactive MCP Apps (`ui://dadosbr/*.html`)
+Zero API keys required; bundled as standalone HTML in `build/lib/apps/*.html` and returned via `structuredContent` when clients negotiate `io.modelcontextprotocol/ui`:
+- `ui://dadosbr/ibge-localidades.html` (`ibge_localidades`): Interactive explorer across 5 macro-regions, 27 states, and ~5,570 municipalities with direct drill-down into Querido Diário.
+- `ui://dadosbr/querido-diario.html` (`querido_diario`): Municipal official gazette search UI by term, `territory_id` (IBGE code), and date range (`since`/`until`).
+- `ui://dadosbr/banco-central.html` (`bacen_taxas`): Chart and table viewer for Selic (`432`), IPCA (`433`), USD (`1`), EUR (`21619`), and CDI (`12`) over 30, 90, or 365 days.
+- `ui://dadosbr/editais-pncp.html` (`pncp_licitacoes`): Procurement publication browser under Law 14.133/2021 with 20 official modalities and organ CNPJ filtering.
+- `ui://dadosbr/ficha-cnpj.html` (`cnpj_lookup`): Company registration profile displaying legal status, CNAEs, address, provider provenance (`source`), `fetchedAt`, and provider `updatedAt`.
+
+## 29 Read-Only Tools
+
+### Cadastro, Endereços, Validação e Classificação (5)
+- `cnpj_lookup`: Company registration data by Brazilian CNPJ (with or without punctuation) from OpenCNPJ or HTTPS SSRF-allowlisted providers. Triggers **MCP App** `ficha-cnpj`. No API key required.
+- `cep_lookup`: Brazilian postal code address lookup from OpenCEP or HTTPS SSRF-allowlisted providers. No API key required.
+- `cpf_validate`: Local mod-11 check-digit validation, formatting, and fiscal region lookup for Brazilian CPFs. Does not query Receita Federal. No API key required.
+- `cnae_ncm_lookup`: Structured CNAE classification (IBGE v2 divisions/groups/classes/subclasses) and NCM product codes (BrasilAPI v1) with paginated search. Added in v0.7.0. No API key required.
+- `feriados_ddd_lookup`: National holidays / business-day checks and Brazilian DDD area code lookup by UF and municipality (BrasilAPI). Added in v0.7.0. No API key required.
+
+### Governo, Diários, Contratações e Indicadores (6)
+- `ibge_localidades`: Regions, states, all municipalities, or municipalities by UF from IBGE Localidades API. Triggers **MCP App** `ibge-localidades`. No API key required.
+- `ibge_indicadores`: Estimated resident population (table 6579/9324), municipal/state GDP (5938/37), and estimated GDP per capita by UF (`N3`) or municipality (`N6`) via IBGE Agregados v3. Added in v0.7.0. No API key required.
+- `querido_diario`: Search official municipal gazettes published via Open Knowledge Brasil Querido Diário API. Triggers **MCP App** `querido-diario`. No API key required.
+- `pncp_licitacoes`: Query Law 14.133/2021 procurement notices via PNCP API or `/api/search/` keyword search. Triggers **MCP App** `editais-pncp`. No API key required.
+- `transparencia_lookup`: Query federal `contratos`, `licitacoes`, `convenios`, `servidores`, or `sancoes` via Portal da Transparência (CGU). Requires `TRANSPARENCIA_API_KEY`.
+- `ceis_cnep_lookup`: Check sanctions across CEIS, CNEP, and CEPIM (`tipo: ceis|cnep|cepim|all`). Works with `TRANSPARENCIA_API_KEY` or falls back to manual portal URLs.
+
+### Financeiro e Mercado (4)
+- `bacen_taxas`: Official Banco Central BCData/SGS series (`selic`, `ipca`, `dolar`, `euro`, `cdi`) by point count or period window (`30`/`90`/`365`). Triggers **MCP App** `banco-central`. No API key required.
+- `bcb_olinda`: Historical PTAX exchange rates (with 7-day non-business-day resolution and `exact_date_match`) and Focus Market Expectations via Banco Central Olinda OData. Added in v0.7.0. No API key required.
+- `sistema_financeiro_lookup`: Query COMPE/ISPB banks, Pix participants, and CVM brokers via BrasilAPI. Added in v0.7.0. No API key required.
+- `fipe_veiculos`: Vehicle valuation by `codigo_fipe` or brands by `tipo` (`carros`, `motos`, `caminhoes`) via BrasilAPI FIPE. No API key required.
+
+### Jurídico, Compliance e Integridade (6)
+- `datajud_processos`: Search court dockets across 17 mapped Brazilian courts via CNJ DataJud Public API (`numeroProcesso` match or `query_string`). Requires `DATAJUD_API_KEY`.
+- `tcu_certidoes`: Consolidated PJ integrity certificates from TCU (`certidoes-apf.apps.tcu.gov.br` — TCU Licitantes Inidôneos, CNJ Improbidade, CEIS, CNEP) by CNPJ. Added in v0.7.0. No API key required.
+- `oab_advogado`: National Bar Registry (OAB CNA) lookup by `nome`, `inscricao`, and `uf`; returns guided manual lookup steps when CAPTCHA-protected. No API key required.
+- `bnmp_mandados`: Arrest warrant lookup at CNJ BNMP by `nome` and `orgaoJulgador`; returns guided manual lookup URLs when CAPTCHA-protected. No API key required.
+- `procurados_lookup`: Partial-match lookup against the MJSP Projeto Captura federal wanted list (~195 entries). No API key required.
+- `lista_suja_lookup`: Employer registry check for analogous slave labor via the official MTE CSV (`cadastro_de_empregadores.csv`) with homonym human-review notice (`HOMONYM_HUMAN_REVIEW_NOTICE`). Rewritten in v0.7.0; no API key required.
+
+### Saúde e Consumo (2)
+- `cnes_saude`: Health facilities (`estabelecimento`) and professionals (`profissional`) via DataSUS CNES (27 UF-to-IBGE normalized codes). No API key required.
+- `consumidor_reclamacoes`: Guided zero-fetch fallback returning official portal and open-data links for Consumidor.gov.br (anti-bot protected; no public JSON API). Updated in v0.7.0; no API key required.
+
+### Inteligência, Busca Web, Domínio e Raciocínio (6)
+- `cnpj_search`: Targeted web search using dorks/filters for companies and CNPJs via Tavily or Perplexity. Requires `TAVILY_API_KEY` or `PERPLEXITY_API_KEY`.
+- `cnpj_intelligence`: Automated multi-category CNPJ web intelligence with configurable concurrency (`MCP_INTELLIGENCE_CONCURRENCY`, default `3`). Requires `TAVILY_API_KEY` or `PERPLEXITY_API_KEY`.
+- `company_deep_profile`: Parallel orchestrator across `cnpj_lookup`, `transparencia_lookup`, `tcu_certidoes`, `datajud_processos`, `domain_whois`, `lista_suja_lookup`, and `cnpj_search`, reporting both succeeded and failed/unconfigured sources.
+- `domain_whois`: Domain registration lookup via RDAP (Registro.br for `.br`, IANA RDAP fallback). No API key required.
+- `strategic_osint_prompt`: Generates structured investigation playbooks (`due_diligence`, `competitor_analysis`, `fraud_detection`, `esg_compliance`, `investment_screening`). No API key required.
+- `sequentialthinking`: Local step-by-step hypothesis decomposition and revision aid (`DISABLE_THOUGHT_LOGGING`). No API key required.
+
+## Known Operational Limits (Verified 2026-11-23)
+- Upstream instability observed in live checks on 2026-11-23: `tcu_certidoes` returned upstream error responses (`certidoes-apf.apps.tcu.gov.br`, timeout `TCU_TIMEOUT_MS=10000` ms), and `querido_diario` / `pncp_licitacoes` exhibited intermittent timeouts or degraded responses. On failure or timeout (`MCP_API_TIMEOUT=8000` ms default), tools return explicit errors (`isError: true`) or documentary fallbacks rather than fabricating data.
+- `cpf_validate` validates check digits offline only and does not query Receita Federal.
+- `oab_advogado`, `bnmp_mandados`, and `consumidor_reclamacoes` do not bypass CAPTCHA or interactive anti-bot protections.
+- Output per tool call is capped at `MCP_MAX_TOOL_OUTPUT_CHARS` (`100000` chars default) and attaches `UNTRUSTED_EXTERNAL_DATA_NOTICE` on newer external tools (`tcu_certidoes`, `cnae_ncm_lookup`, `sistema_financeiro_lookup`, `feriados_ddd_lookup`, `bcb_olinda`, `ibge_indicadores`, `lista_suja_lookup`) and `strategic_osint_prompt`.
+
+## Documentation & Governance Links (resolve on GitHub after branch merge)
+- [README.md](https://github.com/cristianoaredes/mcp-dadosbr/blob/main/README.md): Main overview, 5 MCP Apps, 29-tool catalog, execution perimeters, SSRF allowlists, and FAQ
+- [CHANGELOG.md](https://github.com/cristianoaredes/mcp-dadosbr/blob/main/CHANGELOG.md): Release history (`0.7.0`, `0.6.0` AGPL-3.0, `0.5.0`)
+- [PRIVACY.md](https://github.com/cristianoaredes/mcp-dadosbr/blob/main/PRIVACY.md): LGPD transparency notice and Data Protection Officer (`MCP_DPO_CONTACT`) details
+- [docs/README.md](https://github.com/cristianoaredes/mcp-dadosbr/blob/main/docs/README.md): English documentation hub
+- [docs/pt-br/README.md](https://github.com/cristianoaredes/mcp-dadosbr/blob/main/docs/pt-br/README.md): Portuguese (PT-BR) documentation hub
+- [docs/CONFIGURATION.md](https://github.com/cristianoaredes/mcp-dadosbr/blob/main/docs/CONFIGURATION.md): Environment variables, `.mcprc.json`, and Cloudflare Workers config
+- [docs/MCP_CLIENT_INTEGRATION.md](https://github.com/cristianoaredes/mcp-dadosbr/blob/main/docs/MCP_CLIENT_INTEGRATION.md): Claude Desktop, Cursor, HTTP/SSE, and REST client integrations
+- [docs/USAGE_EXAMPLES.md](https://github.com/cristianoaredes/mcp-dadosbr/blob/main/docs/USAGE_EXAMPLES.md): Tool invocation recipes and resilience patterns
