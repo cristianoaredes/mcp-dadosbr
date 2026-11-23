@@ -19,7 +19,7 @@ O **MCP DadosBR** é um servidor open source do [Model Context Protocol (MCP)](h
 - **Local ou na borda** — CLI Node.js (`stdio` e `HTTP/SSE`) com painéis interativos, ou Cloudflare Worker com retorno JSON e endpoints REST (`/oauth/*` desabilitado com `501`).
 - **Software livre AGPL-3.0 com rastro público** — desenvolvido e verificado com [Codebase OPS by Orqo](https://orqo.pro/).
 
-> **Versão publicada vs. código-fonte (`main`):** no [npm](https://www.npmjs.com/package/@aredes.me/mcp-dadosbr), a versão `latest` pública continua em **`0.6.0`** (23 ferramentas). As **29 ferramentas da versão `0.7.0`** presentes neste repositório (incluindo `tcu_certidoes`, `cnae_ncm_lookup`, `sistema_financeiro_lookup`, `feriados_ddd_lookup`, `bcb_olinda`, `ibge_indicadores` e o endurecimento E2E do PR #28) exigem [build a partir do código-fonte](#2-a-partir-do-código-fonte-desenvolvimento-auditoria-ou-customização) até a publicação da release.
+> **Versão publicada (`v0.7.0`):** o pacote [`@aredes.me/mcp-dadosbr`](https://www.npmjs.com/package/@aredes.me/mcp-dadosbr) na tag `latest` do **npm** já entrega todas as **29 ferramentas da versão `0.7.0`** e os **5 MCP Apps** (incluindo `tcu_certidoes`, `cnae_ncm_lookup`, `sistema_financeiro_lookup`, `feriados_ddd_lookup`, `bcb_olinda`, `ibge_indicadores` e o endurecimento E2E do PR #28) via `npx -y @aredes.me/mcp-dadosbr` (release/tag `v0.7.0` no GitHub vinculada ao merge deste PR).
 
 ---
 
@@ -173,7 +173,7 @@ Em clientes que utilizam `mcpServers` (Claude Desktop, Cursor, Windsurf, Claude 
 }
 ```
 
-> No [npm](https://www.npmjs.com/package/@aredes.me/mcp-dadosbr) e nos [releases no GitHub](https://github.com/cristianoaredes/mcp-dadosbr/releases), a versão **`0.6.0`** (`latest`, 23 ferramentas sob `AGPL-3.0-only`) e os cinco HTMLs em `build/lib/apps/` já estão publicados (os 5 MCP Apps acompanham o pacote desde a `0.5.0`). A versão **`0.7.0`** deste repositório (**29 ferramentas**) ainda aguarda release; até lá, use a seção 2 abaixo para rodar a `0.7.0` pelo código-fonte ou fixe `"@aredes.me/mcp-dadosbr@<versão>"` para versões publicadas.
+> No [npm](https://www.npmjs.com/package/@aredes.me/mcp-dadosbr), a versão **`0.7.0`** (`latest`, **29 ferramentas** e os **5 MCP Apps HTML** em `build/lib/apps/` sob `AGPL-3.0-only`) está publicada e pronta para execução via `npx -y @aredes.me/mcp-dadosbr`. Caso deseje auditar ou customizar localmente, siga a seção 2 abaixo (ou consulte as versões anteriores nos [releases no GitHub](https://github.com/cristianoaredes/mcp-dadosbr/releases)).
 
 ### 2. A partir do código-fonte (desenvolvimento, auditoria ou customização)
 
@@ -416,7 +416,7 @@ O MCP DadosBR realiza consultas sob demanda a fontes públicas brasileiras e nã
     }
   }
   ```
-  On [npm](https://www.npmjs.com/package/@aredes.me/mcp-dadosbr), the `latest` release is currently `0.6.0` (23 tools; the 5 MCP Apps have shipped in `build/lib/apps/*.html` since `0.5.0`). The 29-tool `0.7.0` on `main` requires building from source until release: run `npm ci && npm run build` and point `args` to `build/lib/adapters/cli.js`.
+  On [npm](https://www.npmjs.com/package/@aredes.me/mcp-dadosbr), `latest` is **`0.7.0`** (**29 tools** and all **5 HTML MCP Apps** in `build/lib/apps/*.html` under `AGPL-3.0-only`), runnable directly with `npx -y @aredes.me/mcp-dadosbr` (or build from source via `npm ci && npm run build`).
 - **What it does not do:** it does not guarantee third-party API uptime or municipal gazette coverage (live checks on 2026-11-23 observed upstream error responses from `tcu_certidoes` using `TCU_TIMEOUT_MS=10000` ms and intermittent timeouts or degraded responses in `querido_diario` and `pncp_licitacoes`, returning explicit errors or documentary fallbacks under `MCP_API_TIMEOUT`, default `8000` ms), never fabricates provider `updatedAt` timestamps, does not query federal tax databases for `cpf_validate` (local mod-11 check only), never bypasses CAPTCHAs or anti-bot checks, rejects non-allowlisted CNPJ/CEP hosts (SSRF protection), and serves interactive HTML apps only on the Node.js runtime (the Cloudflare Worker returns JSON text).
 - **Machine-readable index & changelog:** see [`llms.txt`](llms.txt) (`llmstxt.org` format) and [`CHANGELOG.md`](CHANGELOG.md).
 - **Governed in the open:** built with **[Codebase OPS by Orqo](https://orqo.pro/en/)** — every ticket, design, execution run, and independent verification lives in [`.archagents/`](.archagents/README.md).

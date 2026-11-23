@@ -1,9 +1,9 @@
 # MCP DadosBR (@aredes.me/mcp-dadosbr)
 
-> Open-source Model Context Protocol (MCP) server maintained by Orqo for querying Brazilian public data across 29 read-only tools and 5 interactive MCP Apps (`ui://dadosbr/*.html`), built for Node.js (`stdio` / `HTTP/SSE`) and Cloudflare Workers. Repository `main` holds v0.7.0 (29 tools); npm `latest` is currently v0.6.0 (23 tools), so v0.7.0 features require building from source until release.
+> Open-source Model Context Protocol (MCP) server maintained by Orqo for querying Brazilian public data across 29 read-only tools and 5 interactive MCP Apps (`ui://dadosbr/*.html`), built for Node.js (`stdio` / `HTTP/SSE`) and Cloudflare Workers. Published on npm as `@aredes.me/mcp-dadosbr@0.7.0` (`latest`: 29 tools + 5 MCP Apps, runnable via `npx -y @aredes.me/mcp-dadosbr`).
 
 ## Identity & Runtime Architecture
-- Package: `@aredes.me/mcp-dadosbr` (source version `0.7.0`; npm `latest` `0.6.0`)
+- Package: `@aredes.me/mcp-dadosbr` (`latest` on npm & `main`: `0.7.0`)
 - Maintainer: Orqo (`https://orqo.pro/`) · Author: Cristiano Arêdes (`cristiano@aredes.me`)
 - License: `AGPL-3.0-only` (versions up to `0.5.0` were MIT; `AGPL-3.0-only` applies starting with `0.6.0`)
 - Runtime requirements: Node.js `^22.12.0 || ^24.0.0 || ^26.0.0`, TypeScript ESM, or Cloudflare Workers (`wrangler` / `build:worker`)
