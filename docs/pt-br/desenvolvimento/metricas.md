@@ -2,11 +2,11 @@
 
 ## Qualidade do Código
 
-### Estatísticas Atuais
-- **Quality Score:** A (90/100)
-- **Test Coverage:** ~60%
-- **Tests Passing:** 88/88 (100%)
-- **TypeScript:** Strict mode ✅
+### Estatísticas Atuais (`v0.7.0`)
+- **Suíte Vitest:** `39` arquivos, `540/540` testes passando (`100%`)
+- **Cobertura (`vitest`):** medida sob demanda via `npm run test:coverage` (relatório `v8` em `coverage/`)
+- **Transportes (`npm run test:transport`):** `29` ferramentas + `5` MCP Apps + `101` chamadas `stdio` e `HTTP/SSE`
+- **TypeScript:** Strict mode ✅ (`tsc` + `tsc -p tsconfig.worker.json`)
 - **Thread-Safe:** 100% ✅
 - **LGPD Compliant:** ✅
 - **Production Ready:** ✅
@@ -31,10 +31,9 @@
 ## Suite de Testes
 
 ### Estatísticas
-- **Total:** 88 testes
-- **Pass rate:** 100%
-- **Duration:** ~4s
-- **Coverage:** ~60% global, 100% nos módulos testados
+- **Total:** `540` testes em `39` arquivos (`vitest run`, 29 ferramentas e 5 MCP Apps na `v0.7.0`)
+- **Pass rate:** `100%` (`540/540`)
+- **Coverage:** execute `npm run test:coverage` para relatório atual por módulo
 
 ### Testes Unitários (`test/unit/`)
 
@@ -93,8 +92,8 @@ npm run test:coverage # Coverage report
 #### 1. Cache LRU
 - Lazy expiration (não O(n) em cada get/set)
 - Background cleanup opcional
-- 256 entradas por padrão
-- TTL: 60s padrão
+- `256` entradas por padrão (`MCP_CACHE_SIZE`)
+- TTL padrão: `3600000` ms (`1` hora, via `MCP_CACHE_TTL`)
 
 #### 2. Deduplicação de Requisições
 - Requisições idênticas concorrentes compartilham resultado
@@ -156,7 +155,7 @@ interface CacheMetrics {
 
 #### 1. Performance
 - Use cache sempre que possível
-- Configure TTL adequado (default 60s)
+- Configure TTL adequado (default `3600000` ms / 1 hora via `MCP_CACHE_TTL`)
 - Monitore métricas regularmente
 
 #### 2. Segurança
@@ -210,7 +209,7 @@ interface CacheMetrics {
 | Recurso | Limite | Configurável |
 |---------|--------|--------------|
 | Cache Size | 256 entradas | ✅ `CACHE_SIZE` |
-| Cache TTL | 60s | ✅ `CACHE_TTL` |
+| Cache TTL | `3600000` ms (1h) | ✅ `MCP_CACHE_TTL` |
 | HTTP Timeout | 8s | ✅ `HTTP_TIMEOUT` |
 | Intelligence Timeout | 25s | ✅ `INTELLIGENCE_TIMEOUT` |
 | Max Search Results | 20 | ✅ `MAX_RESULTS` |

@@ -64,10 +64,10 @@ echo '{"method": "tools/call", "params": {"name": "cnpj_lookup", "arguments": {"
 - **Web Search** - Google Dorks and intelligent search
 
 ### Development
-- **[Development Docs](development/)** - Internal development documentation
-- **Code Review** - Architecture analysis and code quality
-- **Testing** - Test suite and quality assurance
-- **Feature Planning** - Roadmap and future development
+- **[PT-BR Documentation Hub](pt-br/README.md)** - Complete Portuguese (PT-BR) architecture & development index
+- **[Code Review & Metrics](pt-br/desenvolvimento/metricas.md)** - Test suites, resilience, and quality gates
+- **[Testing](../README.md#desenvolvimento-e-contribuição)** - Unit tests, transport smoke suite, and Cloudflare Worker validation
+- **[Project Governance](../.archagents/README.md)** - Traceable `codebase-ops` backlog, designs, runs, and P10 verifications
 
 ## 🌐 Multi-Platform Support
 
@@ -85,23 +85,27 @@ npm install -g @aredes.me/mcp-dadosbr
 - **Marketplace**: smithery.ai/server/dadosbr
 - **Auto-deployment**: Via Smithery CLI
 
-## 🛠️ Available Tools
+## 🛠️ Available Tools (29 Tools + 5 MCP Apps in v0.7.0)
 
-| Tool | Description | Input | Output |
-|------|-------------|-------|--------|
-| `cnpj_lookup` | Brazilian company data | CNPJ | Company details, address, status |
-| `cep_lookup` | Brazilian postal code | CEP | Address, neighborhood, city, state |
-| `cnpj_search` | Intelligent web search | Search query | Web results with Google Dorks |
-| `sequentialthinking` | Structured reasoning | Thought + progress | Reasoning status |
+> **Version note:** Repository `main` holds **v0.7.0** (29 tools across 6 domains + 5 interactive `ui://dadosbr/*.html` MCP Apps); npm `latest` currently distributes **v0.6.0** (23 tools). See the [complete catalog in `README.md`](../README.md#catálogo-completo-das-29-ferramentas) and [`llms.txt`](../llms.txt).
+
+| Domain | Count | Tools | Key Features |
+|--------|-------|-------|--------------|
+| Cadastro, Endereços & Classificação | 5 | `cnpj_lookup` (**MCP App**), `cep_lookup`, `cpf_validate`, `cnae_ncm_lookup`, `feriados_ddd_lookup` | OpenCNPJ/OpenCEP (SSRF allowlist), local mod-11 CPF check, IBGE CNAE v2, BrasilAPI NCM/holidays/DDD |
+| Governo, Diários, Contratações & Indicadores | 6 | `ibge_localidades` (**MCP App**), `ibge_indicadores`, `querido_diario` (**MCP App**), `pncp_licitacoes` (**MCP App**), `transparencia_lookup`, `ceis_cnep_lookup` | IBGE localities & population/GDP, municipal gazettes, PNCP Law 14.133 notices, CGU Portal da Transparência & sanctions |
+| Financeiro e Mercado | 4 | `bacen_taxas` (**MCP App**), `bcb_olinda`, `sistema_financeiro_lookup`, `fipe_veiculos` | Banco Central BCData/SGS & Olinda PTAX/Focus, Pix/ISPB/CVM registries, FIPE tables |
+| Jurídico, Compliance e Integridade | 6 | `datajud_processos`, `tcu_certidoes`, `oab_advogado`, `bnmp_mandados`, `procurados_lookup`, `lista_suja_lookup` | CNJ DataJud, TCU consolidated certificates, CAPTCHA-honest OAB/BNMP, MJSP Captura, official MTE CSV |
+| Saúde e Consumo | 2 | `cnes_saude`, `consumidor_reclamacoes` | DataSUS CNES (27 UF codes), guided Consumidor.gov.br open-data fallback |
+| Inteligência, Busca Web & Raciocínio | 6 | `cnpj_search`, `cnpj_intelligence`, `company_deep_profile`, `domain_whois`, `strategic_osint_prompt`, `sequentialthinking` | Tavily/Perplexity web OSINT, RDAP WHOIS, parallel due diligence, structured thinking |
 
 ## 📊 Quality Metrics
 
-- **Test Coverage**: ~60%
-- **Tests Passing**: 88/88 (100%)
-- **TypeScript**: Strict mode ✅
-- **Thread-Safe**: 100% ✅
-- **LGPD Compliant**: ✅
-- **Production Ready**: ✅
+- **Vitest Test Suite (`v0.7.0`):** `39` test files, `540/540` tests passing (`100%`) + `npm run test:transport` (101 stdio calls & HTTP/SSE)
+- **Code Coverage:** measured on demand via `npm run test:coverage` (`vitest run --coverage`)
+- **TypeScript:** Strict mode ✅ (`tsc` + `tsc -p tsconfig.worker.json`)
+- **Thread-Safe:** 100% ✅
+- **LGPD Compliant:** ✅ (`PRIVACY.md` & `HOMONYM_HUMAN_REVIEW_NOTICE`)
+- **Production Ready:** ✅
 
 ## 🤝 Contributing
 
